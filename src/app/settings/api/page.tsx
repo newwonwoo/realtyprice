@@ -7,7 +7,7 @@ import { readStorage, STORAGE_KEYS, writeStorage } from "@/lib/storage";
 // 공공데이터포털 키 하나로 단지목록·실거래·전월세 API 모두 사용 가능
 const providers = [
   ["data_go_kr", "공공데이터포털 API Key", "data.go.kr에서 발급. 아파트 단지 검색·실거래 수집에 모두 사용됩니다."],
-  ["kakao_rest_api", "카카오 REST API Key", "developers.kakao.com에서 발급 (무료). 아파트 주소 → GPS 좌표 변환에 사용됩니다. 없으면 학교까지 거리 계산 불가."],
+  ["vworld", "VWorld 지오코더 인증키", "vworld.kr에서 발급 (무료, 일 4만건). 단지 주소 → GPS 좌표 변환에 사용 (비교단지 1km 인접 필터). ⚠️ VWorld 약관상 좌표는 실시간 사용만 가능하며 저장하지 않습니다."],
   ["telegram_bot_token", "Telegram Bot Token", "알림 전송용 (선택)"],
   ["telegram_chat_id", "Telegram Chat ID", "알림 전송용 (선택)"]
 ] as const;

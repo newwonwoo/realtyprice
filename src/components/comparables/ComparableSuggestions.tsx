@@ -161,10 +161,23 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       );
       setDistrictMap(newMap);
 
-      // 대상 기준 좌표: 대상 좌표 우선, 없으면 대상의 배정초교 좌표
+      // VWorld 지오코더 실시간 좌표(저장 안 함). 키 없으면 배정초교 좌표 proxy로 폴백.
+      const vworldKey = keys.find((k) => k.provider === "vworld")?.value;
+      const geocode = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+        if (!vworldKey || !address) return null;
+        try {
+          const g = await fetch(`/api/geocode?address=${encodeURIComponent(address)}&vworldKey=${encodeURIComponent(vworldKey)}`);
+          const j = await g.json();
+          return !j.error && j.lat && j.lng ? { lat: j.lat, lng: j.lng } : null;
+        } catch { return null; }
+      };
+
+      // 대상 기준 좌표: VWorld(대상 주소) → 대상 저장좌표 → 대상 배정초교 좌표 순
       let refLat = target.latitude;
       let refLng = target.longitude;
-      if ((!refLat || !refLng)) {
+      const targetGeo = await geocode(target.address ?? target.region ?? "");
+      if (targetGeo) { refLat = targetGeo.lat; refLng = targetGeo.lng; }
+      else if (!refLat || !refLng) {
         try {
           const tr = await fetch(`/api/school-district?aptName=${encodeURIComponent(target.name)}&address=${encodeURIComponent((target.address ?? target.region ?? "").split(" ").slice(0, 3).join(" "))}`);
           const td = await tr.json();
@@ -172,18 +185,29 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
         } catch { /* 좌표 미상 */ }
       }
 
-      // 1km 인접 필터 — 배정초교 좌표 proxy 기반 (카카오 키 불필요)
+      // 비교단지 좌표: VWorld(단지 주소) 우선, 실패 시 배정초교 좌표 proxy
+      const coordMap: Record<string, { lat: number; lng: number }> = {};
+      await Promise.all(
+        ranked.map(async (item) => {
+          const g = await geocode(item.address);
+          if (g) coordMap[item.complexPk] = g;
+          else {
+            const d = newMap[item.name];
+            if (d?.schoolLat && d?.schoolLng) coordMap[item.complexPk] = { lat: d.schoolLat, lng: d.schoolLng };
+          }
+        })
+      );
+
+      // 1km 인접 필터
       const newDistMap: Record<string, number> = {};
       const canDistance = !!(refLat && refLng);
       let filtered = ranked;
       if (canDistance) {
         for (const item of ranked) {
-          const d = newMap[item.name];
-          if (d?.schoolLat && d?.schoolLng) {
-            newDistMap[item.complexPk] = haversineM(refLat!, refLng!, d.schoolLat, d.schoolLng);
-          }
+          const c = coordMap[item.complexPk];
+          if (c) newDistMap[item.complexPk] = haversineM(refLat!, refLng!, c.lat, c.lng);
         }
-        // 거리가 측정된 단지는 1km 이내만, 학교좌표 미상 단지는 보수적으로 유지
+        // 거리가 측정된 단지는 1km 이내만, 좌표 미상 단지는 보수적으로 유지
         filtered = ranked.filter((item) => {
           const dist = newDistMap[item.complexPk];
           return dist === undefined || dist <= ADJACENCY_M;
@@ -261,7 +285,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
               <p className="font-bold text-sm">자동추천 비교단지</p>
               <p className="text-xs text-slate-500">
                 {target.region} · 입지등급(상/동/하급지) 분류 · 세대수 −20% 이상만
-                {distApplied ? " · 반경 1km 이내(배정초교 좌표 기준)" : " · 거리기준 미적용(배정초교 좌표 없음)"}
+                {distApplied ? " · 반경 1km 이내(VWorld 좌표, 키 없으면 배정초교 좌표)" : " · 거리기준 미적용(좌표 확보 실패)"}
               </p>
             </div>
             <button className="text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>✕</button>

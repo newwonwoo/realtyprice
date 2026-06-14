@@ -167,17 +167,9 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
-    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
-    const kakaoKey = keys.find((k) => k.provider === "kakao_rest_api")?.value;
-    if (kakaoKey && item.address) {
-      try {
-        const res = await fetch(`/api/geocode?address=${encodeURIComponent(item.address)}&kakaoKey=${encodeURIComponent(kakaoKey)}`);
-        const geo = await res.json();
-        if (!geo.error) { apt.latitude = geo.lat; apt.longitude = geo.lng; }
-      } catch { /* 좌표 없이 추가 */ }
-    }
+    // 좌표는 저장하지 않음 — 비교단지 1km 필터 시 VWorld로 실시간 지오코딩(약관상 저장 금지)
     const added = onAdd(apt);
-    showMessage(added ? `"${item.name}" 추가됨${apt.latitude ? " (좌표 포함)" : ""}` : "이미 등록된 대상아파트입니다.");
+    showMessage(added ? `"${item.name}" 추가됨` : "이미 등록된 대상아파트입니다.");
   }
 
   async function addFromPresale(item: PresaleInfo) {
@@ -193,15 +185,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
-    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
-    const kakaoKey = keys.find((k) => k.provider === "kakao_rest_api")?.value;
-    if (kakaoKey && item.supplyLocation) {
-      try {
-        const res = await fetch(`/api/geocode?address=${encodeURIComponent(item.supplyLocation)}&kakaoKey=${encodeURIComponent(kakaoKey)}`);
-        const geo = await res.json();
-        if (!geo.error) { apt.latitude = geo.lat; apt.longitude = geo.lng; }
-      } catch { /* 좌표 없이 추가 */ }
-    }
+    // 좌표 미저장 — 1km 필터 시 VWorld 실시간 지오코딩(약관상 저장 금지)
     const added = onAdd(apt);
     showMessage(added ? `"${item.houseName}" 추가됨 (분양단지)` : "이미 등록된 대상아파트입니다.");
   }
