@@ -8,7 +8,8 @@ const conclusionLabel: Record<PriceEstimate["conclusion"], string> = {
   up: "상승예상",
   neutral: "보합",
   weak: "약세주의",
-  price_cut_needed: "매각가 조정 필요"
+  price_cut_needed: "매각가 조정 필요",
+  insufficient_data: "데이터 부족",
 };
 
 export function ApartmentSignalCard({ apartment, estimate }: { apartment: Apartment; estimate?: PriceEstimate }) {
