@@ -91,40 +91,55 @@ function buildSteps(store: any, hasApiKey: boolean): Step[] {
   const listingCount = store.listings.length;
   const estimateCount = store.priceEstimates.length;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hasPresalePrice = store.targets.some((t: any) => t.originalPresalePrice);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hasCoords = store.targets.some((t: any) => t.latitude);
+
   return [
     {
       label: "① 공공데이터 API 키 등록",
-      detail: hasApiKey ? "등록 완료" : "설정 > API 키 설정에서 data.go.kr 키를 등록하세요.",
+      detail: hasApiKey ? "등록 완료 — 단지검색(부동산원), 분양가(청약홈), 실거래(국토부) 사용 가능" : "설정 > API 키 설정에서 data.go.kr 키를 등록하세요.",
       done: hasApiKey,
       href: "/settings/api",
     },
     {
       label: "② 대상아파트 추가",
-      detail: targetCount ? `${targetCount}개 등록됨` : "매각 검토 중인 아파트를 추가하세요.",
+      detail: targetCount
+        ? `${targetCount}개 등록됨${hasPresalePrice ? " · 분양가 자동조회 완료" : ""}${hasCoords ? " · GPS 좌표 포함" : ""}`
+        : "완공단지(부동산원) + 분양단지(청약홈) 동시 검색 — 추가 시 분양가·좌표 자동저장",
       done: targetCount > 0,
       href: "/targets",
     },
     {
       label: "③ 비교단지 설정",
-      detail: comparableCount ? `${comparableCount}개 선택됨` : "자동추천 또는 수동으로 비교단지를 선택하세요.",
+      detail: comparableCount
+        ? `${comparableCount}개 선택됨 — 입지·학군·위치등급 기준 정렬`
+        : "자동추천: 행정구역 일치도·배정초등학교·신입생 수 기준 정렬. 수동 추가 가능.",
       done: comparableCount > 0,
       href: "/comparables",
     },
     {
       label: "④ 실거래 데이터 수집",
-      detail: txCount ? `${txCount}건 수집됨` : "대상아파트 페이지에서 국토부 실거래 데이터를 불러오세요.",
+      detail: txCount
+        ? `${txCount}건 수집됨 — 국토부 매매·전세·분양권전매`
+        : "대상아파트 페이지에서 국토부 실거래 자동수집 (매매·전세·분양권전매)",
       done: txCount > 0,
       href: store.targets[0] ? `/targets/${store.targets[0].id}` : "/targets",
     },
     {
       label: "⑤ 호가/매물 수집",
-      detail: listingCount ? `${listingCount}건 수집됨` : "네이버 부동산에서 현재 호가를 자동으로 불러오세요.",
+      detail: listingCount
+        ? `${listingCount}건 수집됨 — 매물소진율 산출 가능`
+        : "네이버 부동산 호가 자동수집 · 저가매물 소진율(매물소진속도 신호) 산출",
       done: listingCount > 0,
       href: "/listings",
     },
     {
       label: "⑥ 가격 추정 실행",
-      detail: estimateCount ? `${estimateCount}개 단지 추정 완료` : "대상아파트 페이지에서 가격 추정을 실행하세요.",
+      detail: estimateCount
+        ? `${estimateCount}개 단지 추정 완료 — 면적보정·위치등급·대장아파트앵커 반영`
+        : "선택 평형 기준 면적 보정, 비교단지 위치등급 압력, 대장아파트 앵커 포함 7개 구성값 가중평균",
       done: estimateCount > 0,
       href: store.targets[0] ? `/targets/${store.targets[0].id}` : "/targets",
     },

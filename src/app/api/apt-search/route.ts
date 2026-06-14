@@ -13,11 +13,12 @@ export type AptSearchResult = {
   dongCount: number;
 };
 
-// URLSearchParams encodes [] breaking odcloud cond[] filters — build raw URL
-function buildUrl(field: string, value: string, serviceKey: string): string {
-  const encoded = encodeURIComponent(value);
+// URLSearchParams encodes [] as %5B%5D which breaks odcloud cond[] filter syntax.
+// Build the URL manually so brackets stay literal, and pre-encode % as %25.
+function buildUrl(field: string, value: string, serviceKey: string, perPage = 100): string {
   const keyEncoded = encodeURIComponent(serviceKey);
-  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=100&cond[${field}::LIKE]=%25${encoded}%25&cond[COMPLEX_GB_CD::EQ]=1`;
+  const valueEncoded = encodeURIComponent(value);
+  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=${perPage}&cond[${field}::LIKE]=%25${valueEncoded}%25&cond[COMPLEX_GB_CD::EQ]=1`;
 }
 
 function toAptResult(item: Record<string, unknown>): AptSearchResult {
@@ -54,10 +55,11 @@ export async function GET(req: NextRequest) {
   try {
     const kw = keyword.trim();
     const kwNoSpace = kw.replace(/\s+/g, "");
+    // 키워드를 단어 단위로 분리 (공백 기준)
+    const words = kw.split(/\s+/).filter((t) => t.length >= 2);
 
     const seenPk = new Set<string>();
     const allRaw: Record<string, unknown>[] = [];
-
     const merge = (batch: Record<string, unknown>[]) => {
       for (const item of batch) {
         const pk = String(item["COMPLEX_PK"] ?? "");
@@ -68,17 +70,15 @@ export async function GET(req: NextRequest) {
     let strategies: Promise<Record<string, unknown>[]>[];
 
     if (kw.includes(" ")) {
-      // 공백 구분 키워드: 각 단어로 병렬 검색
-      const words = kw.split(/\s+/).filter((t) => t.length >= 2);
+      // 공백 있는 키워드 (예: "경기 오산시", "성동 자이"):
+      // 각 단어를 ADRES와 COMPLEX_NM1 양쪽으로 병렬 검색
       strategies = words.flatMap((w) => [
         fetchField("COMPLEX_NM1", w, serviceKey),
         fetchField("ADRES", w, serviceKey),
       ]);
     } else {
       // 공백 없는 키워드 (예: "성동자이리버뷰"):
-      // - 앞 2글자(지역명)로 ADRES 광역검색 → 전체 결과 수집 후 이름 필터
-      // - 마지막 3~4글자(브랜드/특징)로 COMPLEX_NM1 시도
-      // - 전체 키워드로 COMPLEX_NM1 시도
+      // 전체 + 뒤에서 3~5글자(브랜드명) + 앞 2글자(지역명)로 ADRES 광역검색
       const len = kwNoSpace.length;
       strategies = [
         fetchField("COMPLEX_NM1", kwNoSpace, serviceKey),
@@ -92,20 +92,26 @@ export async function GET(req: NextRequest) {
     const batches = await Promise.all(strategies);
     batches.forEach(merge);
 
-    // 공백 제거 후 이름/주소 포함 여부로 최종 필터 (양방향)
-    // - DB이름이 입력어를 포함하거나 (예: "성동자이리버뷰" ⊆ "성동자이리버뷰")
-    // - 입력어가 DB이름을 포함하거나 (예: DB="자이리버뷰", 입력="성동자이리버뷰")
-    // - 주소(공백제거)에 입력어 포함
-    const items = allRaw
-      .map(toAptResult)
-      .filter((item) => {
-        if (!item.complexPk || !item.name) return false;
-        const nameNoSpace = item.name.replace(/\s+/g, "");
-        const addrNoSpace = item.address.replace(/\s+/g, "");
+    // ── 후처리 필터 ─────────────────────────────────────────────────
+    // 공백 기준 검색(지역 검색)과 이름 검색을 분리해서 처리
+    const items = allRaw.map(toAptResult).filter((item) => {
+      if (!item.complexPk || !item.name) return false;
+      const nameNoSpace = item.name.replace(/\s+/g, "");
+      const addrNoSpace = item.address.replace(/\s+/g, "");
+
+      if (kw.includes(" ")) {
+        // 지역 검색: 모든 단어가 이름 또는 주소에 하나씩 포함되어 있으면 통과
+        return words.every((w) =>
+          nameNoSpace.includes(w) || item.name.includes(w) ||
+          addrNoSpace.includes(w) || item.address.includes(w)
+        );
+      } else {
+        // 이름 검색: 이름(공백제거) 양방향 포함 또는 주소 포함
         return nameNoSpace.includes(kwNoSpace)
           || kwNoSpace.includes(nameNoSpace)
           || addrNoSpace.includes(kwNoSpace);
-      });
+      }
+    });
 
     return NextResponse.json({ items, total: items.length });
   } catch (err) {
