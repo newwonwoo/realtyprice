@@ -85,7 +85,8 @@ type Step = { label: string; detail?: string; done: boolean; href?: string };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildSteps(store: any, hasApiKey: boolean): Step[] {
   const targetCount = store.targets.length;
-  const comparableCount = store.comparableApartments.filter((c) => c.selected).length;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const comparableCount = store.comparableApartments.filter((c: any) => c.selected).length;
   const txCount = store.transactions.length;
   const listingCount = store.listings.length;
   const estimateCount = store.priceEstimates.length;
