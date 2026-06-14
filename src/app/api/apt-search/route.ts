@@ -37,20 +37,35 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const kw = keyword.trim();
+    const kwNoSpace = kw.replace(/\s+/g, "");
+
+    // 공백 제거한 키워드로 각 토큰별 검색 (가장 긴 토큰으로 API 쿼리)
+    const tokens = kw.split(/\s+/).filter(Boolean);
+    const mainToken = tokens.reduce((a, b) => a.length >= b.length ? a : b, kw);
+
     // 단지명으로 먼저 시도, 결과 없으면 주소로 재시도
-    let raw = await fetchByField("COMPLEX_NM1", keyword.trim());
+    let raw = await fetchByField("COMPLEX_NM1", mainToken);
     if (!raw.length) {
-      raw = await fetchByField("ADRES", keyword.trim());
+      raw = await fetchByField("ADRES", mainToken);
     }
 
-    const items: AptSearchResult[] = raw.map((item) => ({
+    // 공백 무시 후처리 필터 (DB 단지명과 입력값 모두 공백 제거 후 비교)
+    const mapped: AptSearchResult[] = raw.map((item) => ({
       complexPk: String(item["COMPLEX_PK"] ?? ""),
       name: String(item["COMPLEX_NM1"] ?? ""),
       address: String(item["ADRES"] ?? ""),
       households: Number(item["UNIT_CNT"] ?? 0),
       builtDate: String(item["USEAPR_DT"] ?? ""),
       dongCount: Number(item["DONG_CNT"] ?? 0),
-    })).filter((item) => item.complexPk && item.name);
+    }));
+
+    const items = mapped.filter((item) => {
+      if (!item.complexPk || !item.name) return false;
+      const nameNoSpace = item.name.replace(/\s+/g, "");
+      const addrNoSpace = item.address.replace(/\s+/g, "");
+      return nameNoSpace.includes(kwNoSpace) || addrNoSpace.includes(kwNoSpace);
+    });
 
     return NextResponse.json({ items, total: items.length });
   } catch (err) {
