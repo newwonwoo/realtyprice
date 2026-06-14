@@ -83,11 +83,15 @@ export const defaultComparableRule = (targetApartmentId: string): ComparableRule
 });
 
 export const defaultModelWeights: ModelWeights = {
-  adjustedComparableSale: 0.30,  // 0.40 → 0.30 (대장앵커 신설로 조정)
-  askingPrice: 0.15,             // 0.20 → 0.15
-  jeonseFloorPrice: 0.15,
-  inventorySignal: 0.15,
+  targetSale: 0.20,
+  adjustedComparableSale: 0.25,
+  comparableAskingPrice: 0.10,
+  askingPrice: 0.12,
+  jeonseFloorPrice: 0.10,
+  inventorySignal: 0.08,
   presalePremium: 0.05,
-  macroSignal: 0.05,
-  leaderApartmentAnchor: 0.15   // 신규: 인근 대장아파트 실거래 spillover
+  macroSignal: 0.03,
+  leaderApartmentAnchor: 0.05,
+  locationPremium: 0.02,
+  comparableMarketPressure: 0.02
 };

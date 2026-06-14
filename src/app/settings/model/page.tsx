@@ -7,17 +7,21 @@ import { readStorage, STORAGE_KEYS, writeStorage } from "@/lib/storage";
 import type { ModelWeights } from "@/types/model";
 
 const labels: Record<keyof ModelWeights, string> = {
-  adjustedComparableSale: "비교단지 보정 실거래가 (시간감쇠 적용)",
-  askingPrice: "현재 매매호가",
+  targetSale: "대상단지 실거래가 (선택 평형 환산)",
+  adjustedComparableSale: "비교단지 보정 실거래가 (선택 평형 환산)",
+  comparableAskingPrice: "비교단지 현재 호가",
+  askingPrice: "대상단지 현재 호가",
   jeonseFloorPrice: "전세기반 하방가",
   inventorySignal: "매물소진속도",
   presalePremium: "분양가 대비 프리미엄",
   macroSignal: "거시환경",
-  leaderApartmentAnchor: "대장아파트 앵커 (인근 지하철 1~2역 최다거래 단지)"
+  leaderApartmentAnchor: "대장아파트 앵커 (인근 지하철 1~2역 최다거래 단지)",
+  locationPremium: "대상 자체 입지 보정 (초등학교·역세권·생활인프라)",
+  comparableMarketPressure: "비교단지 상·하급지 가격압력"
 };
 
 export default function ModelSettingsPage() {
-  const [weights, setWeights] = useState<ModelWeights>(() => readStorage<ModelWeights>(STORAGE_KEYS.modelSettings, defaultModelWeights));
+  const [weights, setWeights] = useState<ModelWeights>(() => ({ ...defaultModelWeights, ...readStorage<Partial<ModelWeights>>(STORAGE_KEYS.modelSettings, defaultModelWeights) }));
 
   function update(key: keyof ModelWeights, value: string) {
     const next = { ...weights, [key]: Number(value) / 100 };

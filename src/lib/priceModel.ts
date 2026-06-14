@@ -61,10 +61,16 @@ export function conclusionFromScore(score: number, hasData: boolean): PriceEstim
 
 export function estimatePrice(params: {
   targetApartmentId: string;
+  targetSaleTransactions: Transaction[];
   saleTransactions: Transaction[];
   jeonseTransactions: Transaction[];
   saleListings: Listing[];
+  comparableSaleListings?: Listing[];
   jeonseListings: Listing[];
+  targetArea: number;
+  locationPremiumRate?: number;
+  comparableLocationAdjustments?: Record<string, number>;
+  comparableMarketPressureRate?: number;
   weights: ModelWeights;
   lowPriceAbsorptionRate?: number;
   comparableWeights?: Record<string, number>;
@@ -73,12 +79,51 @@ export function estimatePrice(params: {
   leaderTransactions?: Transaction[];
   targetToLeaderRatio?: number;
 }) {
+  const targetArea = params.targetArea > 0 ? params.targetArea : 84;
+  const toTargetAreaPrice = (price: number, area?: number) => {
+    if (!price || !area || area <= 0) return price;
+    return Math.round((price / area) * targetArea);
+  };
+  const areaFitWeight = (area?: number) => {
+    if (!area || area <= 0) return 0.85;
+    const diff = Math.abs(area - targetArea) / targetArea;
+    if (diff <= 0.03) return 1.25;
+    if (diff <= 0.10) return 1.0;
+    if (diff <= 0.20) return 0.8;
+    return 0.6;
+  };
+
+  // ── 대상단지 실거래가 (선택 평형 기준, 면적 불일치 시 ㎡당가 환산) ───────
+  const adjustedTargetSales = params.targetSaleTransactions.map((tx) => {
+    const basePrice = tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade);
+    return {
+      price: toTargetAreaPrice(basePrice, tx.exclusiveArea),
+      weight: temporalWeight(tx.contractDate ?? "") * areaFitWeight(tx.exclusiveArea),
+    };
+  });
+  const targetSaleWeightTotal = adjustedTargetSales.reduce((s, x) => s + x.weight, 0);
+  const targetSalePrice = targetSaleWeightTotal
+    ? Math.round(adjustedTargetSales.reduce((s, x) => s + x.price * x.weight, 0) / targetSaleWeightTotal)
+    : median(adjustedTargetSales.map((x) => x.price));
+
   // ── 비교단지 보정 실거래가 (시간감쇠 가중치) ─────────────────────
+  const comparableLocationAdjustment = (apartmentId: string) => {
+    // 양수 = 비교단지가 대상보다 상급지 → 비교단지 가격을 대상 기준으로 낮춰 환산
+    // 음수 = 비교단지가 대상보다 하급지 → 비교단지 가격을 대상 기준으로 높여 환산
+    const rate = params.comparableLocationAdjustments?.[apartmentId] ?? 0;
+    return Math.min(0.12, Math.max(-0.12, rate));
+  };
+  const adjustedComparablePrice = (price: number, apartmentId: string) => {
+    const rate = comparableLocationAdjustment(apartmentId);
+    return Math.round(price * (1 - rate));
+  };
+
   const adjustedSales = params.saleTransactions.map((tx) => {
     const basePrice = tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade);
     const comparableW = Math.max(0, params.comparableWeights?.[tx.apartmentId] ?? 1);
     const timeW = temporalWeight(tx.contractDate ?? "");
-    return { price: basePrice, weight: comparableW * timeW };
+    const areaPrice = toTargetAreaPrice(basePrice, tx.exclusiveArea);
+    return { price: adjustedComparablePrice(areaPrice, tx.apartmentId), weight: comparableW * timeW * areaFitWeight(tx.exclusiveArea) };
   });
   const weightedSaleTotal = adjustedSales.reduce((s, x) => s + x.price * x.weight, 0);
   const weightTotal = adjustedSales.reduce((s, x) => s + x.weight, 0);
@@ -87,21 +132,27 @@ export function estimatePrice(params: {
     : median(adjustedSales.map((x) => x.price));
 
   // ── 현재 매매호가 ────────────────────────────────────────────────
-  const saleAskingPrice = median(params.saleListings.map((l) => l.adjustedAskingPrice ?? l.askingPrice));
+  const saleAskingPrice = median(params.saleListings.map((l) => toTargetAreaPrice(l.adjustedAskingPrice ?? l.askingPrice, l.exclusiveArea)));
+
+  // ── 비교단지 현재 매매호가 (선택 평형 없으면 ㎡당가 환산) ───────────────
+  const comparableAskingPrice = median((params.comparableSaleListings ?? []).map((l) => {
+    const areaPrice = toTargetAreaPrice(l.adjustedAskingPrice ?? l.askingPrice, l.exclusiveArea);
+    return adjustedComparablePrice(areaPrice, l.apartmentId);
+  }));
 
   // ── 전세기반 하방가 ──────────────────────────────────────────────
   // 전세 거래가: 가중 평균(시간감쇠) 별도 계산 — 호가와 혼합 금지
-  const jeonseRatio = deriveJeonseRatio(params.saleTransactions, params.jeonseTransactions);
+  const jeonseRatio = deriveJeonseRatio([...params.targetSaleTransactions, ...params.saleTransactions], params.jeonseTransactions);
   let weightedJeonsePrice = 0;
   if (params.jeonseTransactions.length > 0) {
     const jTxs = params.jeonseTransactions.map((tx) => ({
-      price: tx.price,
-      w: temporalWeight(tx.contractDate ?? ""),
+      price: toTargetAreaPrice(tx.price, tx.exclusiveArea),
+      w: temporalWeight(tx.contractDate ?? "") * areaFitWeight(tx.exclusiveArea),
     }));
     const jWTotal = jTxs.reduce((s, x) => s + x.w, 0);
     weightedJeonsePrice = jWTotal ? jTxs.reduce((s, x) => s + x.price * x.w, 0) / jWTotal : 0;
   }
-  const jeonseAskingMedian = median(params.jeonseListings.map((l) => l.askingPrice));
+  const jeonseAskingMedian = median(params.jeonseListings.map((l) => toTargetAreaPrice(l.askingPrice, l.exclusiveArea)));
   // 거래가와 호가 중 가용한 값으로 전세가 추정 (둘 다 있으면 평균)
   const expectedJeonsePrice =
     weightedJeonsePrice > 0 && jeonseAskingMedian > 0
@@ -111,7 +162,7 @@ export function estimatePrice(params: {
 
   // ── 매물소진 신호 ─────────────────────────────────────────────────
   const lowPriceAbsorptionRate = params.lowPriceAbsorptionRate ?? 0;
-  const priceAnchor = saleAskingPrice || adjustedComparableSalePrice || jeonseFloorPrice;
+  const priceAnchor = targetSalePrice || saleAskingPrice || adjustedComparableSalePrice || comparableAskingPrice || jeonseFloorPrice;
   const inventorySignalPriceEffect = priceAnchor * (
     lowPriceAbsorptionRate >= 0.3 ? 1.04
     : lowPriceAbsorptionRate >= 0.15 ? 1.02
@@ -120,10 +171,11 @@ export function estimatePrice(params: {
 
   // ── 분양가 프리미엄 ──────────────────────────────────────────────
   // 고정 5% 대신: 비교단지 대비 분양가 비율로 동적 산출
-  let presalePremiumPrice = adjustedComparableSalePrice;
+  let presalePremiumPrice = targetSalePrice || adjustedComparableSalePrice;
   if (params.presalePrice && params.presalePrice > 0) {
-    const premiumRatio = adjustedComparableSalePrice > 0
-      ? adjustedComparableSalePrice / params.presalePrice  // 실거래 대비 분양가 비율
+    const marketAnchor = targetSalePrice || adjustedComparableSalePrice || comparableAskingPrice;
+    const premiumRatio = marketAnchor > 0
+      ? marketAnchor / params.presalePrice  // 실거래 대비 분양가 비율
       : 1.05;
     // 비율 범위 제한 (0.90 ~ 1.30) — 이상치 방어
     presalePremiumPrice = Math.round(params.presalePrice * Math.min(1.30, Math.max(0.90, premiumRatio)));
@@ -139,8 +191,8 @@ export function estimatePrice(params: {
   if (params.leaderTransactions && params.leaderTransactions.length > 0) {
     const ratio = params.targetToLeaderRatio ?? 0.9;
     const lTxs = params.leaderTransactions.map((tx) => ({
-      price: tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade),
-      w: temporalWeight(tx.contractDate ?? ""),
+      price: toTargetAreaPrice(tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade), tx.exclusiveArea),
+      w: temporalWeight(tx.contractDate ?? "") * areaFitWeight(tx.exclusiveArea),
     }));
     const lWTotal = lTxs.reduce((s, x) => s + x.w, 0);
     const leaderWeightedPrice = lWTotal
@@ -149,28 +201,44 @@ export function estimatePrice(params: {
     leaderApartmentAnchorPrice = Math.round(leaderWeightedPrice * ratio);
   }
 
+  // ── 입지 프리미엄/디스카운트 ─────────────────────────────────────
+  const locationPremiumRate = Math.min(0.08, Math.max(-0.08, params.locationPremiumRate ?? 0));
+  const locationAnchor = targetSalePrice || adjustedComparableSalePrice || saleAskingPrice || comparableAskingPrice;
+  const locationPremiumPrice = locationAnchor > 0 ? Math.round(locationAnchor * (1 + locationPremiumRate)) : 0;
+
+  // ── 비교단지 상·하급지 압력 ─────────────────────────────────────
+  // 상급지 비교단지가 많으면 대상의 키 맞추기/가격 전이 가능성을 별도 상승압력으로,
+  // 하급지 비교단지가 많으면 시장 눈높이를 낮추는 압력으로 제한적으로 반영합니다.
+  const comparableMarketPressureRate = Math.min(0.05, Math.max(-0.05, params.comparableMarketPressureRate ?? 0));
+  const comparablePressureAnchor = targetSalePrice || adjustedComparableSalePrice || comparableAskingPrice || saleAskingPrice;
+  const comparableMarketPressurePrice = comparablePressureAnchor > 0 ? Math.round(comparablePressureAnchor * (1 + comparableMarketPressureRate)) : 0;
+
   // ── 가중 평균 (활성 컴포넌트만) ──────────────────────────────────
   const components = [
-    { value: adjustedComparableSalePrice, weight: params.weights.adjustedComparableSale },
-    { value: saleAskingPrice, weight: params.weights.askingPrice },
-    { value: jeonseFloorPrice, weight: params.weights.jeonseFloorPrice },
-    { value: inventorySignalPriceEffect, weight: params.weights.inventorySignal },
-    { value: presalePremiumPrice, weight: params.weights.presalePremium },
-    { value: macroSignalPrice, weight: macroSignalPrice > 0 ? params.weights.macroSignal : 0 },
+    { value: targetSalePrice, weight: params.weights.targetSale ?? 0 },
+    { value: adjustedComparableSalePrice, weight: params.weights.adjustedComparableSale ?? 0 },
+    { value: comparableAskingPrice, weight: params.weights.comparableAskingPrice ?? 0 },
+    { value: saleAskingPrice, weight: params.weights.askingPrice ?? 0 },
+    { value: jeonseFloorPrice, weight: params.weights.jeonseFloorPrice ?? 0 },
+    { value: inventorySignalPriceEffect, weight: params.weights.inventorySignal ?? 0 },
+    { value: presalePremiumPrice, weight: params.weights.presalePremium ?? 0 },
+    { value: macroSignalPrice, weight: macroSignalPrice > 0 ? (params.weights.macroSignal ?? 0) : 0 },
     { value: leaderApartmentAnchorPrice, weight: leaderApartmentAnchorPrice > 0 ? (params.weights.leaderApartmentAnchor ?? 0) : 0 },
+    { value: locationPremiumPrice, weight: locationPremiumPrice > 0 ? (params.weights.locationPremium ?? 0) : 0 },
+    { value: comparableMarketPressurePrice, weight: comparableMarketPressurePrice > 0 ? (params.weights.comparableMarketPressure ?? 0) : 0 },
   ].filter((c) => c.value > 0 && c.weight > 0);
 
   const activeWeight = components.reduce((s, c) => s + c.weight, 0);
   const weighted = activeWeight ? components.reduce((s, c) => s + c.value * c.weight, 0) / activeWeight : 0;
 
-  const expectedSaleMid = Math.round(weighted || saleAskingPrice || adjustedComparableSalePrice || 0);
+  const expectedSaleMid = Math.round(weighted || targetSalePrice || saleAskingPrice || adjustedComparableSalePrice || comparableAskingPrice || 0);
   const expectedSaleMin = Math.round(expectedSaleMid * 0.97);
   const expectedSaleMax = Math.round(expectedSaleMid * 1.03);
   const expectedJeonseMid = Math.round(expectedJeonsePrice) || 0;
 
   // ── upsideScore: 데이터 없으면 0에서 시작 (기저값 45 제거) ────────
-  const hasMinData = params.saleTransactions.length > 0 || params.saleListings.length >= 2;
-  const recentTxCount = params.saleTransactions.filter((tx) => temporalWeight(tx.contractDate ?? "") >= 1.1).length;
+  const hasMinData = params.targetSaleTransactions.length > 0 || params.saleTransactions.length > 0 || params.saleListings.length >= 2 || (params.comparableSaleListings ?? []).length >= 2;
+  const recentTxCount = [...params.targetSaleTransactions, ...params.saleTransactions].filter((tx) => temporalWeight(tx.contractDate ?? "") >= 1.1).length;
   const leaderBoost = leaderApartmentAnchorPrice > 0 && leaderApartmentAnchorPrice > (adjustedComparableSalePrice || saleAskingPrice) ? 5 : 0;
   const upsideScore = hasMinData
     ? Math.min(100, Math.round(
@@ -178,17 +246,19 @@ export function estimatePrice(params: {
         + lowPriceAbsorptionRate * 50
         + (recentTxCount >= 3 ? 10 : recentTxCount >= 1 ? 5 : 0)
         + (params.saleListings.length >= 2 ? 5 : 0)
+        + (comparableMarketPressureRate > 0 ? Math.round(comparableMarketPressureRate * 100) : 0)
+        + (comparableMarketPressureRate < 0 ? Math.round(comparableMarketPressureRate * 50) : 0)
         + leaderBoost
       ))
     : 0;
 
   // ── confidenceScore ───────────────────────────────────────────────
-  const totalTxCount = params.saleTransactions.length + params.jeonseTransactions.length;
-  const recentTxBonus = params.saleTransactions.filter((tx) => temporalWeight(tx.contractDate ?? "") >= 1.1).length * 8;
+  const totalTxCount = params.targetSaleTransactions.length + params.saleTransactions.length + params.jeonseTransactions.length;
+  const recentTxBonus = [...params.targetSaleTransactions, ...params.saleTransactions].filter((tx) => temporalWeight(tx.contractDate ?? "") >= 1.1).length * 8;
   const confidenceScore = Math.min(100, Math.round(
     totalTxCount * 5
     + recentTxBonus
-    + params.saleListings.length * 4
+    + (params.saleListings.length + (params.comparableSaleListings ?? []).length) * 3
     + (leaderApartmentAnchorPrice > 0 ? 10 : 0)
     + (activeWeight >= 0.8 ? 10 : 0)
     + (jeonseFloorPrice > 0 ? 5 : 0)
@@ -196,11 +266,15 @@ export function estimatePrice(params: {
 
   // ── 이유/경고 ────────────────────────────────────────────────────
   const reasonSummary = [
-    adjustedComparableSalePrice > 0 ? "비교단지 보정 실거래가(시간감쇠 가중치 적용)를 반영했습니다." : null,
+    targetSalePrice > 0 ? "대상단지 실거래가를 선택 평형 기준으로 반영했습니다." : null,
+    adjustedComparableSalePrice > 0 ? "비교단지 보정 실거래가를 선택 평형 기준으로 반영했습니다." : null,
+    comparableAskingPrice > 0 ? "비교단지 현재 호가를 선택 평형 기준으로 반영했습니다." : null,
     saleAskingPrice > 0 ? "현재 매매호가를 반영했습니다." : null,
     jeonseFloorPrice > 0 ? `전세기반 하방가를 반영했습니다. (전세가율 ${Math.round(jeonseRatio * 100)}% ${jeonseRatio !== 0.65 ? "실측" : "기본값"})` : null,
     lowPriceAbsorptionRate >= 0.15 ? "저가매물 소진율을 상승 신호로 반영했습니다." : null,
-    leaderApartmentAnchorPrice > 0 ? "인근 대장아파트 실거래가 앵커를 반영했습니다. (Giacoletti & Parsons 2023 spillover γ 적용)" : null,
+    leaderApartmentAnchorPrice > 0 ? "인근 대장아파트 실거래가 앵커를 반영했습니다." : null,
+    locationPremiumPrice > 0 && locationPremiumRate !== 0 ? `대상 자체 입지 보정률 ${Math.round(locationPremiumRate * 100)}%를 반영했습니다.` : null,
+    comparableMarketPressurePrice > 0 && comparableMarketPressureRate !== 0 ? `비교단지 상·하급지 압력 ${Math.round(comparableMarketPressureRate * 100)}%를 반영했습니다.` : null,
   ].filter(Boolean) as string[];
 
   const warnings = [
@@ -210,6 +284,8 @@ export function estimatePrice(params: {
     params.saleTransactions.filter((tx) => temporalWeight(tx.contractDate ?? "") < 1.0).length > params.saleTransactions.length * 0.5
       ? "실거래 데이터 대부분이 6개월 초과로 신뢰도가 낮습니다." : null,
     macroSignalPrice === 0 && params.weights.macroSignal > 0 ? "거시환경 가격을 입력하지 않아 해당 가중치가 제외됐습니다." : null,
+    params.targetSaleTransactions.length === 0 ? "대상단지 매매/분양권 실거래가 없어 대상 실거래 앵커가 제외됐습니다." : null,
+    (params.comparableSaleListings ?? []).length === 0 ? "비교단지 호가가 없어 비교 호가 앵커가 제외됐습니다." : null,
     "사라진 매물은 거래완료가 아니라 소진추정입니다.",
   ].filter(Boolean) as string[];
 
@@ -217,13 +293,19 @@ export function estimatePrice(params: {
     id: `estimate_${params.targetApartmentId}_${Date.now()}`,
     targetApartmentId: params.targetApartmentId,
     estimateDate: new Date().toISOString().slice(0, 10),
+    targetSalePrice,
     adjustedComparableSalePrice,
+    comparableAskingPrice,
     saleAskingPrice,
     jeonseFloorPrice: Math.round(jeonseFloorPrice),
     inventorySignalPrice: Math.round(inventorySignalPriceEffect),
     presalePremiumPrice: Math.round(presalePremiumPrice),
     macroSignalPrice: Math.round(macroSignalPrice),
     leaderApartmentAnchorPrice,
+    locationPremiumPrice,
+    comparableMarketPressurePrice,
+    comparableLocationAdjustmentRate: comparableMarketPressureRate,
+    selectedArea: targetArea,
     lowPriceAbsorptionRate,
     expectedSaleMin,
     expectedSaleMid,
