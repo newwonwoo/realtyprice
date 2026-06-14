@@ -21,27 +21,31 @@ export async function GET(req: NextRequest) {
   if (!serviceKey) return NextResponse.json({ error: "공공데이터포털 API 키가 없습니다. 설정 > API 키 설정에서 등록하세요." }, { status: 400 });
   if (!keyword.trim()) return NextResponse.json({ error: "검색어를 입력하세요." }, { status: 400 });
 
-  const params = new URLSearchParams({
-    serviceKey,
-    page: "1",
-    perPage: "30",
-    "cond[ADRES::LIKE]": keyword.trim(),
-    "cond[COMPLEX_GB_CD::EQ]": "1", // 아파트만
-  });
+  const key = serviceKey;
 
-  try {
+  async function fetchByField(field: string, value: string): Promise<Record<string, unknown>[]> {
+    const params = new URLSearchParams({
+      serviceKey: key,
+      page: "1",
+      perPage: "30",
+      [`cond[${field}::LIKE]`]: value,
+      "cond[COMPLEX_GB_CD::EQ]": "1",
+    });
     const res = await fetch(`${API_BASE}?${params.toString()}`, {
       headers: { Accept: "application/json" },
       next: { revalidate: 0 },
     });
-
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json({ error: `API 오류: ${res.status} ${text.slice(0, 200)}` }, { status: 502 });
-    }
-
+    if (!res.ok) throw new Error(`API 오류: ${res.status}`);
     const data = await res.json();
-    const raw: Record<string, unknown>[] = data?.data ?? [];
+    return (data?.data ?? []) as Record<string, unknown>[];
+  }
+
+  try {
+    // 단지명으로 먼저 시도, 결과 없으면 주소로 재시도
+    let raw = await fetchByField("COMPLEX_NM1", keyword.trim());
+    if (!raw.length) {
+      raw = await fetchByField("ADRES", keyword.trim());
+    }
 
     const items: AptSearchResult[] = raw.map((item) => ({
       complexPk: String(item["COMPLEX_PK"] ?? ""),
@@ -52,7 +56,7 @@ export async function GET(req: NextRequest) {
       dongCount: Number(item["DONG_CNT"] ?? 0),
     })).filter((item) => item.complexPk && item.name);
 
-    return NextResponse.json({ items, total: items.length, totalCount: data?.totalCount ?? 0 });
+    return NextResponse.json({ items, total: items.length });
   } catch (err) {
     return NextResponse.json({ error: `요청 실패: ${String(err)}` }, { status: 500 });
   }

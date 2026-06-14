@@ -23,26 +23,30 @@ export async function GET(req: NextRequest) {
   if (!serviceKey) return NextResponse.json({ error: "API 키가 없습니다." }, { status: 400 });
   if (!houseName) return NextResponse.json({ error: "단지명(houseName)이 필요합니다." }, { status: 400 });
 
-  try {
+  const key = serviceKey;
+
+  async function fetchByField(field: string, value: string): Promise<Record<string, unknown>[]> {
     const params = new URLSearchParams({
-      serviceKey,
+      serviceKey: key,
       page: "1",
       perPage: "10",
-      "cond[HOUSE_NM::LIKE]": houseName.trim(),
+      [`cond[${field}::LIKE]`]: value,
     });
-
     const res = await fetch(`${API_BASE}?${params.toString()}`, {
       headers: { Accept: "application/json" },
       next: { revalidate: 0 },
     });
-
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json({ error: `청약홈 API 오류: ${res.status} ${text.slice(0, 200)}` }, { status: 502 });
-    }
-
+    if (!res.ok) throw new Error(`청약홈 API 오류: ${res.status}`);
     const data = await res.json();
-    const raw: Record<string, unknown>[] = data?.data ?? [];
+    return (data?.data ?? []) as Record<string, unknown>[];
+  }
+
+  try {
+    // 단지명으로 먼저 시도, 없으면 공급위치(주소)로 재시도
+    let raw = await fetchByField("HOUSE_NM", houseName.trim());
+    if (!raw.length) {
+      raw = await fetchByField("HSSPLY_ADRES", houseName.trim());
+    }
 
     if (!raw.length) {
       return NextResponse.json({ error: "분양정보를 찾을 수 없습니다. (청약홈에 등록되지 않은 단지일 수 있습니다.)" }, { status: 404 });
