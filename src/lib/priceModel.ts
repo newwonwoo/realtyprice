@@ -5,15 +5,43 @@ import { normalizeToBGrade } from "./grade";
 import { median, getLowPriceListings } from "./inventory";
 
 // 거래일 기준 시간감쇠 가중치 (Hedonic Pricing, Rosen 1974 + USPAP)
-// ≤3mo: 1.3 (과거 1.5 → 단일 이상 거래 편향 방지를 위해 하향)
-function temporalWeight(contractDate: string): number {
+// 시차(Time-Lag) 리서치 반영: 시장별 정보 동조화 속도가 다르므로 recency 곡선을 차등화.
+//  - seoul: 2~4주의 초단기 시차 → 최근거래 가중 ↑, 과거 거래 빠르게 감쇠(stale 가속).
+//  - gyeonggi: 4~6주 지연 시차 → 최근 plateau를 넓혀 선행 구간을 길게 인정.
+//  - supplyCliff: 공급절벽 장세는 시차가 더 압축 → 최근 가중을 추가 강화.
+// ⚠️ 곡선 수치는 리서치 방향 기반 prior(실증 계수 아님). 시계열 누적 시 백테스트 보정.
+type TemporalOpts = { profile?: RegionProfile; supplyCliff?: boolean };
+function temporalWeight(contractDate: string, opts: TemporalOpts = {}): number {
   const txDate = new Date(contractDate);
   if (isNaN(txDate.getTime())) return 1.0;
   const monthsAgo = (Date.now() - txDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
-  if (monthsAgo <= 3) return 1.3;
-  if (monthsAgo <= 6) return 1.1;
-  if (monthsAgo <= 12) return 1.0;
-  return 0.7;
+  const profile = opts.profile ?? "default";
+  let w: number;
+  if (profile === "seoul") {
+    // 압축 시차: 최근 1개월 신호 가중 강화, 6개월 초과는 급감
+    if (monthsAgo <= 1) w = 1.5;
+    else if (monthsAgo <= 3) w = 1.3;
+    else if (monthsAgo <= 6) w = 1.0;
+    else if (monthsAgo <= 12) w = 0.75;
+    else w = 0.55;
+  } else if (profile === "gyeonggi") {
+    // 지연 시차: 1~3개월 선행 구간을 넓게 인정, 완만한 감쇠
+    if (monthsAgo <= 3) w = 1.25;
+    else if (monthsAgo <= 6) w = 1.15;
+    else if (monthsAgo <= 12) w = 0.95;
+    else w = 0.7;
+  } else {
+    if (monthsAgo <= 3) w = 1.3;
+    else if (monthsAgo <= 6) w = 1.1;
+    else if (monthsAgo <= 12) w = 1.0;
+    else w = 0.7;
+  }
+  // 공급절벽 장세: 시차 압축 → 최근(≤3mo) 신호를 추가 가중, 오래된 신호는 추가 감쇠
+  if (opts.supplyCliff) {
+    if (monthsAgo <= 3) w *= 1.15;
+    else if (monthsAgo > 12) w *= 0.85;
+  }
+  return w;
 }
 
 // 전세가율 동적 계산: 실거래 데이터 있으면 실측값, 없으면 지역 기본값 사용
@@ -164,6 +192,8 @@ export function estimatePrice(params: {
   let weights = applyRegionProfile(params.weights, regionProfile);
   // 공급절벽 모드(선택): 입지 약화·전세소진/호가 lock-in 강화로 가중치 재편
   if (supplyCliffMode) weights = applySupplyCliff(weights);
+  // 지역/장세별 시간감쇠 가중 (서울 압축시차·경기 지연시차·공급절벽 압축)
+  const tw = (date?: string) => temporalWeight(date ?? "", { profile: regionProfile, supplyCliff: supplyCliffMode });
   const toTargetAreaPrice = (price: number, area?: number) => {
     if (!price || !area || area <= 0) return price;
     return Math.round((price / area) * targetArea);
@@ -182,7 +212,7 @@ export function estimatePrice(params: {
     const basePrice = tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade);
     return {
       price: toTargetAreaPrice(basePrice, tx.exclusiveArea),
-      weight: temporalWeight(tx.contractDate ?? "") * areaFitWeight(tx.exclusiveArea),
+      weight: tw(tx.contractDate) * areaFitWeight(tx.exclusiveArea),
     };
   });
   const targetSaleWeightTotal = adjustedTargetSales.reduce((s, x) => s + x.weight, 0);
@@ -205,7 +235,7 @@ export function estimatePrice(params: {
   const adjustedSales = params.saleTransactions.map((tx) => {
     const basePrice = tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade);
     const comparableW = Math.max(0, params.comparableWeights?.[tx.apartmentId] ?? 1);
-    const timeW = temporalWeight(tx.contractDate ?? "");
+    const timeW = tw(tx.contractDate);
     const areaPrice = toTargetAreaPrice(basePrice, tx.exclusiveArea);
     return { price: adjustedComparablePrice(areaPrice, tx.apartmentId), weight: comparableW * timeW * areaFitWeight(tx.exclusiveArea) };
   });
@@ -231,7 +261,7 @@ export function estimatePrice(params: {
   if (params.jeonseTransactions.length > 0) {
     const jTxs = params.jeonseTransactions.map((tx) => ({
       price: toTargetAreaPrice(tx.price, tx.exclusiveArea),
-      w: temporalWeight(tx.contractDate ?? "") * areaFitWeight(tx.exclusiveArea),
+      w: tw(tx.contractDate) * areaFitWeight(tx.exclusiveArea),
     }));
     const jWTotal = jTxs.reduce((s, x) => s + x.w, 0);
     weightedJeonsePrice = jWTotal ? jTxs.reduce((s, x) => s + x.price * x.w, 0) / jWTotal : 0;
@@ -276,7 +306,7 @@ export function estimatePrice(params: {
     const ratio = params.targetToLeaderRatio ?? 0.9;
     const lTxs = params.leaderTransactions.map((tx) => ({
       price: toTargetAreaPrice(tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade), tx.exclusiveArea),
-      w: temporalWeight(tx.contractDate ?? "") * areaFitWeight(tx.exclusiveArea),
+      w: tw(tx.contractDate) * areaFitWeight(tx.exclusiveArea),
     }));
     const lWTotal = lTxs.reduce((s, x) => s + x.w, 0);
     const leaderWeightedPrice = lWTotal

@@ -48,31 +48,48 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!kaptCode) return;
     const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
     const serviceKey = keys.find((k) => k.provider === "data_go_kr")?.value;
     if (!serviceKey) return;
 
-    setLoading(true);
-    fetch(`/api/apt-info?serviceKey=${encodeURIComponent(serviceKey)}&kaptCode=${kaptCode}`)
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.error) setError(json.error);
-        else setInfo(json);
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+    // K-apt 단지 상세는 kaptCode가 있는 완공단지만 (cpk_ 검색단지는 청약홈 경로 이용)
+    if (kaptCode) {
+      setLoading(true);
+      fetch(`/api/apt-info?serviceKey=${encodeURIComponent(serviceKey)}&kaptCode=${kaptCode}`)
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.error) setError(json.error);
+          else {
+            setInfo(json);
+            // 브랜드(시공사) 자동 연계 — 비어있을 때만 저장
+            const builder = json?.bass?.kaptBcompany as string | undefined;
+            if (!apartment.brand && builder) {
+              store.setApartments(store.apartments.map((a) => a.id === apartment.id ? { ...a, brand: builder } : a));
+            }
+          }
+        })
+        .catch((e) => setError(String(e)))
+        .finally(() => setLoading(false));
+    }
 
-    // 청약홈 분양가 자동조회
+    // 청약홈 분양가 자동조회 (kaptCode 유무와 무관 — 검색단지 브랜드 연계 경로)
     const presaleParams = new URLSearchParams({ serviceKey, houseName: apartment.name });
     fetch(`/api/apt-presale?${presaleParams}`)
       .then((r) => r.json())
       .then((json) => {
         if (!json.error && json.items?.length) {
           setPresaleItems(json.items);
-          // 저장된 분양가가 없으면 첫 번째 결과로 자동 저장
-          if (!apartment.originalPresalePrice && json.items[0]?.lowestPrice) {
-            const updated = { ...apartment, originalPresalePrice: json.items[0].lowestPrice };
+          const top = json.items[0];
+          // 저장된 분양가가 없으면 첫 번째 결과로 자동 저장 + 브랜드(시공사) 자동 연계
+          const needsPresale = !apartment.originalPresalePrice && top?.lowestPrice;
+          const builder = top?.constructor as string | undefined;
+          const needsBrand = !apartment.brand && builder;
+          if (needsPresale || needsBrand) {
+            const updated = {
+              ...apartment,
+              ...(needsPresale ? { originalPresalePrice: top.lowestPrice } : {}),
+              ...(needsBrand ? { brand: builder } : {}),
+            };
             store.setApartments(store.apartments.map((a) => a.id === apartment.id ? updated : a));
           }
         }
@@ -92,12 +109,13 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
       .catch(() => {});
   }, [kaptCode, apartment.name, apartment.address, apartment.region, apartment.latitude, apartment.longitude]);
 
-  if (!kaptCode) return null; // 수동 추가 아파트는 단지코드 없음
   if (loading) return <p className="text-xs text-slate-400">단지 정보 로딩 중…</p>;
-  if (error) return <p className="text-xs text-red-500">{error}</p>;
-  if (!info) return null;
+  // K-apt 상세도 없고 청약홈 분양정보도 없으면 표출할 내용 없음 (수동 추가 등)
+  if (!info && !presaleItems.length) {
+    return error ? <p className="text-xs text-red-500">{error}</p> : null;
+  }
 
-  const { bass, dtl } = info;
+  const { bass, dtl } = info ?? { bass: {}, dtl: {} };
   const subwayText = [dtl.subwayLine, dtl.subwayStation].filter(Boolean).join(" ") || undefined;
   const presale = presaleItems[0];
 
@@ -121,8 +139,8 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
               </div>
             </div>
           )}
-          <Row label="시공사" value={bass.kaptBcompany} />
-          <Row label="시행사" value={bass.kaptMgCmp} />
+          <Row label="시공사" value={bass.kaptBcompany || presale?.constructor} />
+          <Row label="시행사" value={bass.kaptMgCmp || presale?.developer} />
           <Row label="난방방식" value={bass.heatMethodNm} />
           <Row label="복도유형" value={bass.hallNm} />
         </div>

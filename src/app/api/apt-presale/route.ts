@@ -21,6 +21,8 @@ export type PresaleInfo = {
   recruitPublicNoticeDate: string;
   lowestPrice?: number;
   highestPrice?: number;
+  constructor?: string; // 시공사(건설업체명)
+  developer?: string;   // 시행사(사업주체명)
 };
 
 type StrategyDiag = { field: string; value: string; httpStatus: number; rawCount: number; error?: string };
@@ -43,6 +45,8 @@ function toPresale(item: Record<string, unknown>): PresaleInfo {
     recruitPublicNoticeDate: String(item["RCRIT_PBLANC_DE"] ?? ""),
     lowestPrice: lowestRaw ? Math.round(Number(lowestRaw) / 10000) : undefined,
     highestPrice: highestRaw ? Math.round(Number(highestRaw) / 10000) : undefined,
+    constructor: String(item["CNSTRCT_ENTRPS_NM"] ?? "") || undefined,
+    developer: String(item["BSNS_MBY_NM"] ?? "") || undefined,
   };
 }
 
