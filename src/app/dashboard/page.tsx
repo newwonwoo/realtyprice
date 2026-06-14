@@ -76,6 +76,11 @@ export default function DashboardPage() {
         ))}
         {!store.targets.length && <div className="card p-6 text-slate-600">대상아파트를 먼저 추가하세요.</div>}
       </div>
+
+      <div className="mt-8 text-right text-xs text-slate-400">
+        빌드 <code className="font-mono">{process.env.NEXT_PUBLIC_COMMIT_HASH ?? "dev"}</code>
+        {" · "}{process.env.NEXT_PUBLIC_BUILD_TIME ? new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
+      </div>
     </AppShell>
   );
 }
