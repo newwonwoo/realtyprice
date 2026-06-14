@@ -5,6 +5,9 @@ import type { Apartment } from "@/types/apartment";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import type { AptCombinedInfo } from "@/app/api/apt-info/route";
 import type { SchoolDistrictResult } from "@/app/api/school-district/route";
+import type { PresaleInfo } from "@/app/api/apt-presale/route";
+import { useRealtyStore } from "@/lib/clientStore";
+import { formatEok } from "@/lib/format";
 
 function kaptCodeFromId(id: string): string | null {
   // 구형: "kapt_A10025967" → "A10025967"
@@ -37,8 +40,10 @@ function formatDist(m?: string) {
 
 export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
   const kaptCode = kaptCodeFromId(apartment.id);
+  const store = useRealtyStore();
   const [info, setInfo] = useState<AptCombinedInfo | null>(null);
   const [district, setDistrict] = useState<SchoolDistrictResult | null>(null);
+  const [presaleItems, setPresaleItems] = useState<PresaleInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -57,6 +62,22 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
+
+    // 청약홈 분양가 자동조회
+    const presaleParams = new URLSearchParams({ serviceKey, houseName: apartment.name });
+    fetch(`/api/apt-presale?${presaleParams}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (!json.error && json.items?.length) {
+          setPresaleItems(json.items);
+          // 저장된 분양가가 없으면 첫 번째 결과로 자동 저장
+          if (!apartment.originalPresalePrice && json.items[0]?.lowestPrice) {
+            const updated = { ...apartment, originalPresalePrice: json.items[0].lowestPrice };
+            store.setApartments(store.apartments.map((a) => a.id === apartment.id ? updated : a));
+          }
+        }
+      })
+      .catch(() => {});
 
     // 학구 정보 조회 (학구도 로컬 데이터, 좌표 있으면 거리 계산)
     const distParams = new URLSearchParams({
@@ -78,6 +99,7 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
 
   const { bass, dtl } = info;
   const subwayText = [dtl.subwayLine, dtl.subwayStation].filter(Boolean).join(" ") || undefined;
+  const presale = presaleItems[0];
 
   return (
     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -88,6 +110,17 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
           <Row label="세대수" value={bass.kaptdaCnt ? `${Number(bass.kaptdaCnt).toLocaleString()}세대` : undefined} />
           <Row label="동수" value={bass.kaptdongCnt ? `${bass.kaptdongCnt}동` : undefined} />
           <Row label="사용승인" value={formatDate(bass.kaptUsedate)} />
+          {(apartment.originalPresalePrice || presale?.lowestPrice) && (
+            <div className="border-b border-slate-100 py-1.5 text-sm">
+              <span className="text-slate-500 shrink-0">모집공고 분양가</span>
+              <div className="mt-0.5 font-semibold flex flex-wrap gap-1 items-center">
+                <span className="text-blue-700">{formatEok(apartment.originalPresalePrice ?? presale?.lowestPrice ?? 0)}</span>
+                {presale?.recruitPublicNoticeDate && (
+                  <span className="text-xs text-slate-400">(공고일 {presale.recruitPublicNoticeDate})</span>
+                )}
+              </div>
+            </div>
+          )}
           <Row label="시공사" value={bass.kaptBcompany} />
           <Row label="시행사" value={bass.kaptMgCmp} />
           <Row label="난방방식" value={bass.heatMethodNm} />

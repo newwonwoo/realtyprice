@@ -14,6 +14,7 @@ export type Apartment = {
   defaultArea?: number;
   latitude?: number;
   longitude?: number;
+  originalPresalePrice?: number; // 모집공고 분양가(만원), 청약홈 API 자동조회
   createdAt: string;
   updatedAt: string;
 };

@@ -75,7 +75,9 @@ export default function TargetDetailPage() {
     const weights = readStorage<ModelWeights>(STORAGE_KEYS.modelSettings, defaultModelWeights);
     const targetSaleListings = targetListings.filter((item) => item.listingType === "sale");
     const targetJeonseListings = targetListings.filter((item) => item.listingType === "jeonse");
-    const presalePrice = median(targetTransactions.filter((item) => item.transactionType === "presale").map((item) => item.price));
+    // 모집공고 분양가(청약홈) 우선, 없으면 분양권 전매 실거래 중간값 fallback
+    const presaleTxMedian = median(targetTransactions.filter((item) => item.transactionType === "presale").map((item) => item.price));
+    const presalePrice = apartment?.originalPresalePrice ?? presaleTxMedian;
     const result = estimatePrice({
       targetApartmentId: id,
       saleTransactions: comparableTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
