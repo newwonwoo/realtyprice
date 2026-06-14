@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Apartment } from "@/types/apartment";
 import type { PriceEstimate } from "@/types/model";
-import { formatEok } from "@/lib/format";
+import { formatEok, formatPercent } from "@/lib/format";
 
 const conclusionLabel: Record<PriceEstimate["conclusion"], string> = {
   strong_up: "강한 상승예상",
@@ -29,6 +29,8 @@ export function ApartmentSignalCard({ apartment, estimate }: { apartment: Apartm
         <Metric label="권장 매각호가" value={estimate ? formatEok(estimate.recommendedAskingPrice) : "-"} />
         <Metric label="예상 전세가" value={estimate ? formatEok(estimate.expectedJeonseMid) : "-"} />
         <Metric label="상승가능성" value={estimate ? `${estimate.upsideScore}점` : "-"} />
+        <Metric label="저가소진율" value={estimate ? formatPercent(estimate.lowPriceAbsorptionRate) : "-"} />
+        <Metric label="방어가격" value={estimate ? formatEok(estimate.defensePrice) : "-"} />
       </div>
       <div className="mt-5 flex justify-end">
         <Link className="btn-secondary" href={`/targets/${apartment.id}`}>상세 보기</Link>
@@ -39,7 +41,7 @@ export function ApartmentSignalCard({ apartment, estimate }: { apartment: Apartm
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-slate-50 p-4">
+    <div className="rounded-lg bg-slate-50 p-4">
       <p className="text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-black">{value}</p>
     </div>

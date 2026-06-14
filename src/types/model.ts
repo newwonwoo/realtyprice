@@ -15,6 +15,13 @@ export type PriceEstimate = {
   id: string;
   targetApartmentId: string;
   estimateDate: string;
+  adjustedComparableSalePrice: number;
+  saleAskingPrice: number;
+  jeonseFloorPrice: number;
+  inventorySignalPrice: number;
+  presalePremiumPrice: number;
+  macroSignalPrice: number;
+  lowPriceAbsorptionRate: number;
   expectedSaleMin: number;
   expectedSaleMid: number;
   expectedSaleMax: number;

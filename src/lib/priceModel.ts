@@ -33,10 +33,17 @@ export function estimatePrice(params: {
   jeonseListings: Listing[];
   weights: ModelWeights;
   lowPriceAbsorptionRate?: number;
+  comparableWeights?: Record<string, number>;
   presalePrice?: number;
+  macroSignalPrice?: number;
 }) {
-  const adjustedSales = params.saleTransactions.map((tx) => tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade));
-  const adjustedComparableSalePrice = median(adjustedSales);
+  const adjustedSales = params.saleTransactions.map((tx) => ({
+    price: tx.adjustedPrice ?? normalizeToBGrade(tx.price, tx.grade),
+    weight: Math.max(0, params.comparableWeights?.[tx.apartmentId] ?? 1)
+  }));
+  const weightedSaleTotal = adjustedSales.reduce((sum, item) => sum + item.price * item.weight, 0);
+  const weightTotal = adjustedSales.reduce((sum, item) => sum + item.weight, 0);
+  const adjustedComparableSalePrice = weightTotal ? Math.round(weightedSaleTotal / weightTotal) : median(adjustedSales.map((item) => item.price));
   const saleAskingPrice = median(params.saleListings.map((listing) => listing.adjustedAskingPrice ?? listing.askingPrice));
   const expectedJeonsePrice = median([
     ...params.jeonseTransactions.map((tx) => tx.price),
@@ -44,8 +51,10 @@ export function estimatePrice(params: {
   ]);
   const jeonseFloorPrice = calculateJeonseFloorPrice(expectedJeonsePrice, 0.65);
   const lowPriceAbsorptionRate = params.lowPriceAbsorptionRate ?? 0;
-  const inventorySignalPriceEffect = saleAskingPrice * (lowPriceAbsorptionRate >= 0.3 ? 1.04 : lowPriceAbsorptionRate >= 0.15 ? 1.02 : 1);
+  const priceAnchor = saleAskingPrice || adjustedComparableSalePrice || jeonseFloorPrice;
+  const inventorySignalPriceEffect = priceAnchor * (lowPriceAbsorptionRate >= 0.3 ? 1.04 : lowPriceAbsorptionRate >= 0.15 ? 1.02 : 1);
   const presalePremiumPrice = params.presalePrice ? params.presalePrice * 1.05 : adjustedComparableSalePrice;
+  const macroSignalPrice = params.macroSignalPrice ?? adjustedComparableSalePrice;
 
   const weighted =
     adjustedComparableSalePrice * params.weights.adjustedComparableSale +
@@ -53,7 +62,7 @@ export function estimatePrice(params: {
     jeonseFloorPrice * params.weights.jeonseFloorPrice +
     inventorySignalPriceEffect * params.weights.inventorySignal +
     presalePremiumPrice * params.weights.presalePremium +
-    adjustedComparableSalePrice * params.weights.macroSignal;
+    macroSignalPrice * params.weights.macroSignal;
 
   const expectedSaleMid = Math.round(weighted || saleAskingPrice || adjustedComparableSalePrice || 0);
   const expectedSaleMin = Math.round(expectedSaleMid * 0.97);
@@ -65,6 +74,13 @@ export function estimatePrice(params: {
     id: `estimate_${params.targetApartmentId}_${Date.now()}`,
     targetApartmentId: params.targetApartmentId,
     estimateDate: new Date().toISOString().slice(0, 10),
+    adjustedComparableSalePrice,
+    saleAskingPrice,
+    jeonseFloorPrice: Math.round(jeonseFloorPrice),
+    inventorySignalPrice: Math.round(inventorySignalPriceEffect),
+    presalePremiumPrice: Math.round(presalePremiumPrice),
+    macroSignalPrice: Math.round(macroSignalPrice),
+    lowPriceAbsorptionRate,
     expectedSaleMin,
     expectedSaleMid,
     expectedSaleMax,

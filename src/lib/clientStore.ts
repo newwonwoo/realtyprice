@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Apartment, ComparableApartment, ComparableRule } from "@/types/apartment";
-import type { Listing } from "@/types/listing";
+import type { InventorySignal, Listing } from "@/types/listing";
 import type { PriceEstimate } from "@/types/model";
 import type { Transaction } from "@/types/transaction";
 import { defaultComparableRule, defaultModelWeights, seedApartments } from "./seed";
@@ -14,6 +14,7 @@ export function useRealtyStore() {
   const [comparableApartments, setComparableApartments] = useState<ComparableApartment[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
+  const [inventorySignals, setInventorySignals] = useState<InventorySignal[]>([]);
   const [priceEstimates, setPriceEstimates] = useState<PriceEstimate[]>([]);
   const [ready, setReady] = useState(false);
 
@@ -25,6 +26,7 @@ export function useRealtyStore() {
     setComparableApartments(readStorage<ComparableApartment[]>(STORAGE_KEYS.comparableApartments, []));
     setTransactions(readStorage<Transaction[]>(STORAGE_KEYS.transactions, []));
     setListings(readStorage<Listing[]>(STORAGE_KEYS.listings, []));
+    setInventorySignals(readStorage<InventorySignal[]>(STORAGE_KEYS.inventorySignals, []));
     setPriceEstimates(readStorage<PriceEstimate[]>(STORAGE_KEYS.priceEstimates, []));
     writeStorage(STORAGE_KEYS.apartments, initialApartments);
     if (!readStorage(STORAGE_KEYS.modelSettings, null)) writeStorage(STORAGE_KEYS.modelSettings, defaultModelWeights);
@@ -52,6 +54,10 @@ export function useRealtyStore() {
   }, [listings, ready]);
 
   useEffect(() => {
+    if (ready) writeStorage(STORAGE_KEYS.inventorySignals, inventorySignals);
+  }, [inventorySignals, ready]);
+
+  useEffect(() => {
     if (ready) writeStorage(STORAGE_KEYS.priceEstimates, priceEstimates);
   }, [priceEstimates, ready]);
 
@@ -67,12 +73,14 @@ export function useRealtyStore() {
     comparableApartments,
     transactions,
     listings,
+    inventorySignals,
     priceEstimates,
     setApartments,
     setComparableRules,
     setComparableApartments,
     setTransactions,
     setListings,
+    setInventorySignals,
     setPriceEstimates
   };
 }
