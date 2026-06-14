@@ -92,14 +92,19 @@ export async function GET(req: NextRequest) {
     const batches = await Promise.all(strategies);
     batches.forEach(merge);
 
-    // 공백 제거 후 이름/주소 포함 여부로 최종 필터
+    // 공백 제거 후 이름/주소 포함 여부로 최종 필터 (양방향)
+    // - DB이름이 입력어를 포함하거나 (예: "성동자이리버뷰" ⊆ "성동자이리버뷰")
+    // - 입력어가 DB이름을 포함하거나 (예: DB="자이리버뷰", 입력="성동자이리버뷰")
+    // - 주소(공백제거)에 입력어 포함
     const items = allRaw
       .map(toAptResult)
       .filter((item) => {
         if (!item.complexPk || !item.name) return false;
         const nameNoSpace = item.name.replace(/\s+/g, "");
         const addrNoSpace = item.address.replace(/\s+/g, "");
-        return nameNoSpace.includes(kwNoSpace) || addrNoSpace.includes(kwNoSpace);
+        return nameNoSpace.includes(kwNoSpace)
+          || kwNoSpace.includes(nameNoSpace)
+          || addrNoSpace.includes(kwNoSpace);
       });
 
     return NextResponse.json({ items, total: items.length });
