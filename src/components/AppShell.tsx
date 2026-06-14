@@ -24,6 +24,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
       </aside>
+      <header className="border-b border-slate-200 bg-white lg:hidden">
+        <div className="px-5 py-4">
+          <Link href="/" className="text-lg font-black text-slate-950">realtyprice</Link>
+          <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {nav.map(([label, href]) => (
+              <Link key={href} href={href} className="whitespace-nowrap rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600">
+                {label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      </header>
       <main className="lg:pl-64">
         <div className="mx-auto max-w-7xl px-5 py-8">{children}</div>
       </main>

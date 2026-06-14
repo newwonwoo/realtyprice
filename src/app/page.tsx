@@ -25,7 +25,7 @@ export default function LandingPage() {
 
       <section className="mx-auto grid max-w-7xl gap-8 px-5 py-12 lg:grid-cols-[1fr_420px] lg:items-center">
         <div>
-          <h1 className="max-w-3xl text-4xl font-black leading-tight lg:text-5xl">분양권 매각 판단을 위한 업무용 가격 대시보드</h1>
+          <h1 className="max-w-3xl text-3xl font-black leading-tight sm:text-4xl lg:text-5xl">분양권 매각 판단을 위한 업무용 가격 대시보드</h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600">
             비교단지 보정 실거래가, 현재 호가, 전세 하방가, 매물소진 신호를 한 화면에서 관리하고 예상 매매가와 권장 매각호가를 계산합니다.
           </p>

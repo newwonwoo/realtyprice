@@ -56,13 +56,16 @@ export function estimatePrice(params: {
   const presalePremiumPrice = params.presalePrice ? params.presalePrice * 1.05 : adjustedComparableSalePrice;
   const macroSignalPrice = params.macroSignalPrice ?? adjustedComparableSalePrice;
 
-  const weighted =
-    adjustedComparableSalePrice * params.weights.adjustedComparableSale +
-    saleAskingPrice * params.weights.askingPrice +
-    jeonseFloorPrice * params.weights.jeonseFloorPrice +
-    inventorySignalPriceEffect * params.weights.inventorySignal +
-    presalePremiumPrice * params.weights.presalePremium +
-    macroSignalPrice * params.weights.macroSignal;
+  const components = [
+    { value: adjustedComparableSalePrice, weight: params.weights.adjustedComparableSale },
+    { value: saleAskingPrice, weight: params.weights.askingPrice },
+    { value: jeonseFloorPrice, weight: params.weights.jeonseFloorPrice },
+    { value: inventorySignalPriceEffect, weight: params.weights.inventorySignal },
+    { value: presalePremiumPrice, weight: params.weights.presalePremium },
+    { value: macroSignalPrice, weight: params.weights.macroSignal }
+  ].filter((component) => component.value > 0 && component.weight > 0);
+  const activeWeight = components.reduce((sum, component) => sum + component.weight, 0);
+  const weighted = activeWeight ? components.reduce((sum, component) => sum + component.value * component.weight, 0) / activeWeight : 0;
 
   const expectedSaleMid = Math.round(weighted || saleAskingPrice || adjustedComparableSalePrice || 0);
   const expectedSaleMin = Math.round(expectedSaleMid * 0.97);
@@ -97,7 +100,10 @@ export function estimatePrice(params: {
       "전세기반 하방가격을 반영했습니다.",
       "저가매물 소진율을 상승 신호로 반영했습니다."
     ],
-    warnings: ["사라진 매물은 거래완료가 아니라 소진추정입니다."],
+    warnings: [
+      "사라진 매물은 거래완료가 아니라 소진추정입니다.",
+      activeWeight < 1 ? "일부 산식 구성값이 없어 사용 가능한 항목 기준으로 환산했습니다." : ""
+    ].filter(Boolean),
     createdAt: new Date().toISOString()
   };
   return estimate;

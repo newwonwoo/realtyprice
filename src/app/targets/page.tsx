@@ -12,6 +12,11 @@ export default function TargetsPage() {
   const store = useRealtyStore();
 
   function addTarget(apartment: Apartment) {
+    const sameTargetExists = store.targets.some((target) =>
+      target.name.trim().toLowerCase() === apartment.name.trim().toLowerCase() &&
+      target.address.trim().toLowerCase() === apartment.address.trim().toLowerCase()
+    );
+    if (sameTargetExists) return false;
     const now = nowIso();
     const target: Apartment = {
       ...apartment,
@@ -24,6 +29,7 @@ export default function TargetsPage() {
     if (!store.comparableRules.some((rule) => rule.targetApartmentId === target.id)) {
       store.setComparableRules([...store.comparableRules, defaultComparableRule(target.id)]);
     }
+    return true;
   }
 
   function deleteTarget(apartmentId: string) {
