@@ -112,10 +112,31 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
         });
       }
 
-      const combined: CombinedResult[] = [
+      const rawCombined: CombinedResult[] = [
         ...((completedRes.items ?? []) as AptSearchResult[]).map((d): CombinedResult => ({ source: "completed", data: d })),
         ...((presaleRes.items ?? []) as PresaleInfo[]).map((d): CombinedResult => ({ source: "presale", data: d })),
       ];
+
+      // ── 최종 엄격 필터: 사용자가 실제 입력한 키워드(kw)가 정말 포함됐는지 검증 ──
+      // (자동으로 덧붙인 지역어 "경기도" 등은 기준에서 제외 → 경기도 전체가 쏟아지는 문제 방지)
+      const noSpace = (s: string) => (s || "").replace(/\s+/g, "");
+      const kwNoSpace = noSpace(kw);
+      const kwWords = kw.split(/\s+/).filter((w) => w.length >= 2);
+      const strictMatch = (name: string, addr: string) => {
+        const n = noSpace(name);
+        const a = noSpace(addr);
+        if (kwWords.length >= 2) {
+          // 지역+단지명 등 여러 단어: 모든 단어가 이름 또는 주소에 포함되어야 통과
+          return kwWords.every((w) => n.includes(w) || a.includes(w));
+        }
+        // 단일 키워드: 그 키워드가 이름 또는 주소에 실제로 포함되어야 통과
+        return n.includes(kwNoSpace) || a.includes(kwNoSpace);
+      };
+      const combined = rawCombined.filter((r) =>
+        r.source === "completed"
+          ? strictMatch(r.data.name, r.data.address)
+          : strictMatch(r.data.houseName, r.data.supplyLocation)
+      );
 
       if (!combined.length) {
         setApiError(
