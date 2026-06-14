@@ -4,6 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 // https://www.data.go.kr/data/15098547/openapi.do
 const API_BASE = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancList";
 
+// ⚠️ 이 청약홈 데이터셋은 cond[FIELD::LIKE] 텍스트 필터를 허용하지 않습니다(HTTP 400).
+// 완공단지(AptIdInfoSvc)는 LIKE를 허용하지만, 청약홈은 셋별 허용 연산자가 달라서
+// 텍스트 LIKE가 비활성화되어 있습니다. 따라서 필터 없이 목록을 받아 서버에서 직접 거릅니다.
+const PER_PAGE = 1000; // odcloud 한 페이지 최대 행수
+const MAX_PAGES = 5;   // 최대 5,000행까지 조회 (전국 최근 분양 공고 충분 커버)
+
 export type PresaleInfo = {
   houseName: string;
   houseManageNo: string;
@@ -14,37 +20,27 @@ export type PresaleInfo = {
   highestPrice?: number;
 };
 
-// URLSearchParams encodes [] as %5B%5D — must build URL manually.
-// odcloud ::LIKE does substring matching; do NOT wrap value in % wildcards.
-function buildUrl(field: string, value: string, serviceKey: string): string {
-  const keyEncoded = encodeURIComponent(serviceKey);
-  const valueEncoded = encodeURIComponent(value);
-  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=10&cond[${field}::LIKE]=${valueEncoded}`;
-}
-
 type StrategyDiag = { field: string; value: string; httpStatus: number; rawCount: number; error?: string };
 
-async function fetchField(
-  field: string,
-  value: string,
-  serviceKey: string,
-  diag?: StrategyDiag[],
-): Promise<Record<string, unknown>[]> {
-  try {
-    const url = buildUrl(field, value, serviceKey);
-    const res = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 0 } });
-    if (!res.ok) {
-      diag?.push({ field, value, httpStatus: res.status, rawCount: 0 });
-      return [];
-    }
-    const data = await res.json();
-    const rows = (data?.data ?? []) as Record<string, unknown>[];
-    diag?.push({ field, value, httpStatus: res.status, rawCount: rows.length });
-    return rows;
-  } catch (e) {
-    diag?.push({ field, value, httpStatus: 0, rawCount: 0, error: String(e) });
-    return [];
-  }
+function buildListUrl(page: number, serviceKey: string): string {
+  const keyEncoded = encodeURIComponent(serviceKey);
+  return `${API_BASE}?serviceKey=${keyEncoded}&page=${page}&perPage=${PER_PAGE}`;
+}
+
+const noSpace = (s: string) => s.replace(/\s+/g, "");
+
+function toPresale(item: Record<string, unknown>): PresaleInfo {
+  const lowestRaw = String(item["LTTOT_TOP_AMOUNT"] ?? item["MIN_LTTOT_PRICE"] ?? "0").replace(/,/g, "");
+  const highestRaw = String(item["LTTOT_TOP_AMOUNT"] ?? item["MAX_LTTOT_PRICE"] ?? "0").replace(/,/g, "");
+  return {
+    houseName: String(item["HOUSE_NM"] ?? ""),
+    houseManageNo: String(item["HOUSE_MANAGE_NO"] ?? ""),
+    supplyLocation: String(item["HSSPLY_ADRES"] ?? ""),
+    totalSupplyHouseholds: Number(item["TOT_SUPLY_HSHLDCO"] ?? 0),
+    recruitPublicNoticeDate: String(item["RCRIT_PBLANC_DE"] ?? ""),
+    lowestPrice: lowestRaw ? Math.round(Number(lowestRaw) / 10000) : undefined,
+    highestPrice: highestRaw ? Math.round(Number(highestRaw) / 10000) : undefined,
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -59,29 +55,65 @@ export async function GET(req: NextRequest) {
 
   try {
     const kw = houseName.trim();
-    // 단지명으로 먼저 시도, 없으면 공급위치(주소)로 재시도
-    let raw = await fetchField("HOUSE_NM", kw, serviceKey, diag);
-    if (!raw.length) raw = await fetchField("HSSPLY_ADRES", kw, serviceKey, diag);
+    const kwNoSpace = noSpace(kw);
+    // 띄어쓰기로 분리한 각 단어 (지역+단지명 조합 대응)
+    const words = kw.split(/\s+/).filter((t) => t.length >= 2).map(noSpace);
 
-    if (!raw.length) {
-      return NextResponse.json({ error: "분양정보를 찾을 수 없습니다. (청약홈에 등록되지 않은 단지일 수 있습니다.)", ...(debug ? { diag } : {}) }, { status: 404 });
+    const matched: PresaleInfo[] = [];
+    const seen = new Set<string>();
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const url = buildListUrl(page, serviceKey);
+      let rows: Record<string, unknown>[] = [];
+      let totalCount = 0;
+      try {
+        const res = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 0 } });
+        if (!res.ok) {
+          diag.push({ field: `page ${page}`, value: "(no filter)", httpStatus: res.status, rawCount: 0 });
+          break;
+        }
+        const data = await res.json();
+        rows = (data?.data ?? []) as Record<string, unknown>[];
+        totalCount = Number(data?.totalCount ?? data?.matchCount ?? 0);
+        diag.push({ field: `page ${page}`, value: "(no filter)", httpStatus: res.status, rawCount: rows.length });
+      } catch (e) {
+        diag.push({ field: `page ${page}`, value: "(no filter)", httpStatus: 0, rawCount: 0, error: String(e) });
+        break;
+      }
+
+      // 서버측 부분일치 필터 (띄어쓰기 무시)
+      for (const item of rows) {
+        const p = toPresale(item);
+        if (!p.houseName) continue;
+        const nameNoSpace = noSpace(p.houseName);
+        const addrNoSpace = noSpace(p.supplyLocation);
+        const hit = words.length
+          ? words.every((w) => nameNoSpace.includes(w) || addrNoSpace.includes(w))
+          : (nameNoSpace.includes(kwNoSpace) || addrNoSpace.includes(kwNoSpace));
+        // 단어 분리 매칭이 너무 빡빡할 수 있으니 전체 키워드 포함도 OR 처리
+        const looseHit = hit || nameNoSpace.includes(kwNoSpace) || kwNoSpace.includes(nameNoSpace);
+        if (looseHit && !seen.has(p.houseManageNo)) {
+          seen.add(p.houseManageNo);
+          matched.push(p);
+        }
+      }
+
+      // 더 받을 페이지가 없으면 종료
+      if (rows.length < PER_PAGE) break;
+      if (totalCount && page * PER_PAGE >= totalCount) break;
     }
 
-    const items: PresaleInfo[] = raw.map((item) => {
-      const lowestRaw = String(item["LTTOT_TOP_AMOUNT"] ?? item["MIN_LTTOT_PRICE"] ?? "0").replace(/,/g, "");
-      const highestRaw = String(item["LTTOT_TOP_AMOUNT"] ?? item["MAX_LTTOT_PRICE"] ?? "0").replace(/,/g, "");
-      return {
-        houseName: String(item["HOUSE_NM"] ?? ""),
-        houseManageNo: String(item["HOUSE_MANAGE_NO"] ?? ""),
-        supplyLocation: String(item["HSSPLY_ADRES"] ?? ""),
-        totalSupplyHouseholds: Number(item["TOT_SUPLY_HSHLDCO"] ?? 0),
-        recruitPublicNoticeDate: String(item["RCRIT_PBLANC_DE"] ?? ""),
-        lowestPrice: lowestRaw ? Math.round(Number(lowestRaw) / 10000) : undefined,
-        highestPrice: highestRaw ? Math.round(Number(highestRaw) / 10000) : undefined,
-      };
-    }).filter((item) => item.houseName);
+    if (!matched.length) {
+      return NextResponse.json(
+        { error: "분양정보를 찾을 수 없습니다. (청약홈에 등록되지 않은 단지일 수 있습니다.)", ...(debug ? { diag } : {}) },
+        { status: 404 },
+      );
+    }
 
-    return NextResponse.json({ items, total: items.length, ...(debug ? { diag } : {}) });
+    // 최신 공고 우선 정렬
+    matched.sort((a, b) => (b.recruitPublicNoticeDate || "").localeCompare(a.recruitPublicNoticeDate || ""));
+
+    return NextResponse.json({ items: matched, total: matched.length, ...(debug ? { diag } : {}) });
   } catch (err) {
     return NextResponse.json({ error: `요청 실패: ${String(err)}`, ...(debug ? { diag } : {}) }, { status: 500 });
   }
