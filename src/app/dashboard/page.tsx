@@ -143,8 +143,8 @@ function buildSteps(store: any, hasApiKey: boolean): Step[] {
     {
       label: "⑥ 가격 추정 실행",
       detail: estimateCount
-        ? `${estimateCount}개 단지 추정 완료 — 면적보정·위치등급·대장아파트앵커 반영`
-        : "선택 평형 기준 면적 보정, 비교단지 위치등급 압력, 대장아파트 앵커 포함 7개 구성값 가중평균",
+        ? `${estimateCount}개 단지 추정 완료 — 면적보정·위치등급·대장앵커·지역레짐(서울/경기) 반영`
+        : "선택 평형 면적보정, 비교단지 위치등급 압력, 대장 앵커, 주소기반 지역레짐(서울/경기) 가중치 전환",
       done: estimateCount > 0,
       href: store.targets[0] ? `/targets/${store.targets[0].id}` : "/targets",
     },

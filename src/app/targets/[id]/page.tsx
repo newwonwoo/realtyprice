@@ -9,7 +9,7 @@ import { AptDetailInfo } from "@/components/targets/AptDetailInfo";
 import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultModelWeights } from "@/lib/seed";
-import { estimatePrice } from "@/lib/priceModel";
+import { estimatePrice, regionProfileFromAddress } from "@/lib/priceModel";
 import { median } from "@/lib/inventory";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import type { ModelWeights } from "@/types/model";
@@ -109,6 +109,7 @@ export default function TargetDetailPage() {
       presalePrice,
       leaderTransactions,
       targetToLeaderRatio: rule?.targetToLeaderRatio,
+      regionProfile: regionProfileFromAddress(apartment?.address),
     });
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
     setEstimating(false);

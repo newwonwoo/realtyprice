@@ -37,6 +37,51 @@ function deriveJeonseRatio(saleTransactions: Transaction[], jeonseTransactions: 
   return 0.65; // 데이터 없으면 전국 평균 fallback
 }
 
+// ── 지역 레짐(regime) 판별 및 가중치 프로파일 ───────────────────────────
+// 서울 중심지와 경기·수도권 외곽은 상승 동인이 다릅니다(첨부 리서치).
+//  - 서울: 대장아파트 신고가 리딩 / 상급지 압력 / 호가밴드 정렬이 선행
+//  - 경기: 분양권 프리미엄 / 전세갭(실수요 매수전환) / 저가매물 소진이 동력
+// ⚠️ 아래 배수는 실증 계수가 아니라 리서치 기반 휴리스틱(prior)입니다. 추후 보정 대상.
+export type RegionProfile = "seoul" | "gyeonggi" | "default";
+
+export function regionProfileFromAddress(address?: string): RegionProfile {
+  const a = (address ?? "").trim();
+  if (!a) return "default";
+  if (a.startsWith("서울")) return "seoul";
+  if (a.startsWith("경기") || a.startsWith("인천")) return "gyeonggi";
+  return "default";
+}
+
+// 기존 가격 앵커 가중치에 곱하는 배수. 1.0=변화없음.
+const REGION_WEIGHT_MULTIPLIERS: Record<RegionProfile, Partial<Record<keyof ModelWeights, number>>> = {
+  // 서울: 대장 신고가·상급지 압력·호가 리딩 강조, 분양권 비중↓
+  seoul: {
+    leaderApartmentAnchor: 1.4,
+    comparableMarketPressure: 1.4,
+    askingPrice: 1.2,
+    comparableAskingPrice: 1.2,
+    presalePremium: 0.7,
+  },
+  // 경기: 분양권 프리미엄·전세갭·소진율 강조 (풍선효과·실수요 전환)
+  gyeonggi: {
+    presalePremium: 1.4,
+    jeonseFloorPrice: 1.3,
+    inventorySignal: 1.3,
+    adjustedComparableSale: 1.15,
+    leaderApartmentAnchor: 0.85,
+  },
+  default: {},
+};
+
+export function applyRegionProfile(weights: ModelWeights, profile: RegionProfile): ModelWeights {
+  const mult = REGION_WEIGHT_MULTIPLIERS[profile];
+  const out = { ...weights };
+  (Object.keys(mult) as (keyof ModelWeights)[]).forEach((k) => {
+    out[k] = (out[k] ?? 0) * (mult[k] ?? 1);
+  });
+  return out;
+}
+
 export function calculateJeonseFloorPrice(expectedJeonsePrice: number, jeonseRatio: number) {
   if (!jeonseRatio) return 0;
   return expectedJeonsePrice / jeonseRatio;
@@ -78,8 +123,12 @@ export function estimatePrice(params: {
   macroSignalPrice?: number;
   leaderTransactions?: Transaction[];
   targetToLeaderRatio?: number;
+  regionProfile?: RegionProfile;
 }) {
   const targetArea = params.targetArea > 0 ? params.targetArea : 84;
+  // 지역 레짐에 맞춰 가격 앵커 가중치 재조정 (서울/경기 상승 동인 차이 반영)
+  const regionProfile = params.regionProfile ?? "default";
+  const weights = applyRegionProfile(params.weights, regionProfile);
   const toTargetAreaPrice = (price: number, area?: number) => {
     if (!price || !area || area <= 0) return price;
     return Math.round((price / area) * targetArea);
@@ -215,17 +264,17 @@ export function estimatePrice(params: {
 
   // ── 가중 평균 (활성 컴포넌트만) ──────────────────────────────────
   const components = [
-    { value: targetSalePrice, weight: params.weights.targetSale ?? 0 },
-    { value: adjustedComparableSalePrice, weight: params.weights.adjustedComparableSale ?? 0 },
-    { value: comparableAskingPrice, weight: params.weights.comparableAskingPrice ?? 0 },
-    { value: saleAskingPrice, weight: params.weights.askingPrice ?? 0 },
-    { value: jeonseFloorPrice, weight: params.weights.jeonseFloorPrice ?? 0 },
-    { value: inventorySignalPriceEffect, weight: params.weights.inventorySignal ?? 0 },
-    { value: presalePremiumPrice, weight: params.weights.presalePremium ?? 0 },
-    { value: macroSignalPrice, weight: macroSignalPrice > 0 ? (params.weights.macroSignal ?? 0) : 0 },
-    { value: leaderApartmentAnchorPrice, weight: leaderApartmentAnchorPrice > 0 ? (params.weights.leaderApartmentAnchor ?? 0) : 0 },
-    { value: locationPremiumPrice, weight: locationPremiumPrice > 0 ? (params.weights.locationPremium ?? 0) : 0 },
-    { value: comparableMarketPressurePrice, weight: comparableMarketPressurePrice > 0 ? (params.weights.comparableMarketPressure ?? 0) : 0 },
+    { value: targetSalePrice, weight: weights.targetSale ?? 0 },
+    { value: adjustedComparableSalePrice, weight: weights.adjustedComparableSale ?? 0 },
+    { value: comparableAskingPrice, weight: weights.comparableAskingPrice ?? 0 },
+    { value: saleAskingPrice, weight: weights.askingPrice ?? 0 },
+    { value: jeonseFloorPrice, weight: weights.jeonseFloorPrice ?? 0 },
+    { value: inventorySignalPriceEffect, weight: weights.inventorySignal ?? 0 },
+    { value: presalePremiumPrice, weight: weights.presalePremium ?? 0 },
+    { value: macroSignalPrice, weight: macroSignalPrice > 0 ? (weights.macroSignal ?? 0) : 0 },
+    { value: leaderApartmentAnchorPrice, weight: leaderApartmentAnchorPrice > 0 ? (weights.leaderApartmentAnchor ?? 0) : 0 },
+    { value: locationPremiumPrice, weight: locationPremiumPrice > 0 ? (weights.locationPremium ?? 0) : 0 },
+    { value: comparableMarketPressurePrice, weight: comparableMarketPressurePrice > 0 ? (weights.comparableMarketPressure ?? 0) : 0 },
   ].filter((c) => c.value > 0 && c.weight > 0);
 
   const activeWeight = components.reduce((s, c) => s + c.weight, 0);
@@ -275,15 +324,17 @@ export function estimatePrice(params: {
     leaderApartmentAnchorPrice > 0 ? "인근 대장아파트 실거래가 앵커를 반영했습니다." : null,
     locationPremiumPrice > 0 && locationPremiumRate !== 0 ? `대상 자체 입지 보정률 ${Math.round(locationPremiumRate * 100)}%를 반영했습니다.` : null,
     comparableMarketPressurePrice > 0 && comparableMarketPressureRate !== 0 ? `비교단지 상·하급지 압력 ${Math.round(comparableMarketPressureRate * 100)}%를 반영했습니다.` : null,
+    regionProfile === "seoul" ? "서울 레짐: 대장 신고가·상급지 압력·호가 리딩 가중을 강조했습니다." : null,
+    regionProfile === "gyeonggi" ? "경기·수도권 레짐: 분양권 프리미엄·전세갭·저가매물 소진 가중을 강조했습니다." : null,
   ].filter(Boolean) as string[];
 
   const warnings = [
     !hasMinData ? "실거래·호가 데이터가 없어 가격 추정의 신뢰도가 매우 낮습니다." : null,
     activeWeight < 0.8 ? "일부 산식 구성값이 없어 사용 가능한 항목 기준으로 환산했습니다." : null,
-    leaderApartmentAnchorPrice === 0 && (params.weights.leaderApartmentAnchor ?? 0) > 0 ? "대장아파트가 미설정되어 해당 구성요소가 제외됐습니다." : null,
+    leaderApartmentAnchorPrice === 0 && (weights.leaderApartmentAnchor ?? 0) > 0 ? "대장아파트가 미설정되어 해당 구성요소가 제외됐습니다." : null,
     params.saleTransactions.filter((tx) => temporalWeight(tx.contractDate ?? "") < 1.0).length > params.saleTransactions.length * 0.5
       ? "실거래 데이터 대부분이 6개월 초과로 신뢰도가 낮습니다." : null,
-    macroSignalPrice === 0 && params.weights.macroSignal > 0 ? "거시환경 가격을 입력하지 않아 해당 가중치가 제외됐습니다." : null,
+    macroSignalPrice === 0 && weights.macroSignal > 0 ? "거시환경 가격을 입력하지 않아 해당 가중치가 제외됐습니다." : null,
     params.targetSaleTransactions.length === 0 ? "대상단지 매매/분양권 실거래가 없어 대상 실거래 앵커가 제외됐습니다." : null,
     (params.comparableSaleListings ?? []).length === 0 ? "비교단지 호가가 없어 비교 호가 앵커가 제외됐습니다." : null,
     "사라진 매물은 거래완료가 아니라 소진추정입니다.",
