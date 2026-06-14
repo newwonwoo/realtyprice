@@ -77,16 +77,19 @@ export async function GET(req: NextRequest) {
         fetchField("ADRES", w, serviceKey),
       ]);
     } else {
-      // 공백 없는 키워드 (예: "성동자이리버뷰"):
-      // 전체 + 뒤에서 3~5글자(브랜드명) + 앞 2글자(지역명)로 ADRES 광역검색
+      // 공백 없는 키워드 (예: "힐스테이트레이크", "성동자이리버뷰"):
+      // DB에는 "힐스테이트 레이크 송도"처럼 공백이 있어 전체 문자열 LIKE로 못 찾음.
+      // 앞 4글자·뒤 4글자 토큰으로 후보를 넓게 가져온 뒤 클라이언트에서 공백제거 비교.
       const len = kwNoSpace.length;
+      const prefix4 = kwNoSpace.slice(0, Math.min(4, len));
+      const suffix4 = len >= 4 ? kwNoSpace.slice(-4) : "";
       strategies = [
-        fetchField("COMPLEX_NM1", kwNoSpace, serviceKey),
-        fetchField("ADRES", kwNoSpace.slice(0, 2), serviceKey),
+        fetchField("COMPLEX_NM1", prefix4, serviceKey),
+        fetchField("ADRES", prefix4, serviceKey),
       ];
-      if (len >= 3) strategies.push(fetchField("COMPLEX_NM1", kwNoSpace.slice(-3), serviceKey));
-      if (len >= 4) strategies.push(fetchField("COMPLEX_NM1", kwNoSpace.slice(-4), serviceKey));
-      if (len >= 5) strategies.push(fetchField("COMPLEX_NM1", kwNoSpace.slice(-5), serviceKey));
+      if (suffix4 && suffix4 !== prefix4) {
+        strategies.push(fetchField("COMPLEX_NM1", suffix4, serviceKey));
+      }
     }
 
     const batches = await Promise.all(strategies);
@@ -106,7 +109,8 @@ export async function GET(req: NextRequest) {
           addrNoSpace.includes(w) || item.address.includes(w)
         );
       } else {
-        // 이름 검색: 이름(공백제거) 양방향 포함 또는 주소 포함
+        // 이름 검색: 공백제거 후 양방향 포함 (DB에 공백 있어도 매칭)
+        // "힐스테이트레이크" ↔ "힐스테이트레이크송도" (nameNoSpace)
         return nameNoSpace.includes(kwNoSpace)
           || kwNoSpace.includes(nameNoSpace)
           || addrNoSpace.includes(kwNoSpace);
