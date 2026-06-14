@@ -50,7 +50,7 @@ const thisMonth = String(new Date().getMonth() + 1).padStart(2, "0");
 export function TransactionFetcher({ apartment, existingTransactions, onImport }: Props) {
   const [fromYm, setFromYm] = useState(`${thisYear - 1}${thisMonth}`);
   const [toYm, setToYm] = useState(`${thisYear}${thisMonth}`);
-  const [type, setType] = useState<"all" | "sale" | "rent">("all");
+  const [type, setType] = useState<"all" | "sale" | "rent" | "presale">("all");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [error, setError] = useState("");
@@ -118,9 +118,10 @@ export function TransactionFetcher({ apartment, existingTransactions, onImport }
         <label className="block">
           <span className="text-xs font-semibold text-slate-600">유형</span>
           <select className="input mt-1" value={type} onChange={(e) => setType(e.target.value as typeof type)}>
-            <option value="all">매매+전월세</option>
+            <option value="all">매매+전월세+분양권</option>
             <option value="sale">매매만</option>
             <option value="rent">전월세만</option>
+            <option value="presale">분양권전매만</option>
           </select>
         </label>
         <div className="flex items-end">

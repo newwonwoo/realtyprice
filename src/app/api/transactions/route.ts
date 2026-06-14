@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 const SALE_API = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev";
 // 국토교통부 아파트 전월세 자료
 const RENT_API = "https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent";
+// 국토교통부 아파트 분양권전매 실거래가 자료
+const PRESALE_API = "https://apis.data.go.kr/1613000/RTMSDataSvcSilvTrade/getRTMSDataSvcSilvTrade";
 
 export type MolitTransaction = {
   aptNm: string;       // 단지명
@@ -42,7 +44,7 @@ export async function GET(req: NextRequest) {
   const aptName = searchParams.get("aptName");    // 단지명 필터
   const fromYm = searchParams.get("fromYm") ?? "";  // YYYYMM
   const toYm = searchParams.get("toYm") ?? "";      // YYYYMM
-  const type = searchParams.get("type") ?? "all";   // sale | rent | all
+  const type = searchParams.get("type") ?? "all";   // sale | rent | presale | all
 
   if (!serviceKey) return NextResponse.json({ error: "국토부 실거래 API 키가 없습니다. 설정 > API 키 설정에서 등록하세요." }, { status: 400 });
   if (!lawdCd) return NextResponse.json({ error: "지역코드(lawdCd)가 필요합니다." }, { status: 400 });
@@ -75,6 +77,11 @@ export async function GET(req: NextRequest) {
           const monthly = Number((item as MolitTransaction).monthlyRent ?? "0");
           (item as MolitTransaction).transactionType = monthly > 0 ? "monthly_rent" : "jeonse";
         });
+        allTx.push(...items);
+      }
+      if (type === "presale" || type === "all") {
+        const items = await fetchPage(PRESALE_API, baseParams);
+        items.forEach((item) => { (item as MolitTransaction).transactionType = "sale"; }); // 분양권전매는 매매로 분류
         allTx.push(...items);
       }
     }

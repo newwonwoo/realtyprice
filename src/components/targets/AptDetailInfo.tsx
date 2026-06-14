@@ -6,8 +6,10 @@ import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import type { AptCombinedInfo } from "@/app/api/apt-info/route";
 
 function kaptCodeFromId(id: string): string | null {
-  // id = "kapt_A10025967" → "A10025967"
-  return id.startsWith("kapt_") ? id.slice(5) : null;
+  // 구형: "kapt_A10025967" → "A10025967"
+  // cpk_ 형식(한국부동산원 단지고유번호)은 국토교통부 kaptCode와 달라 사용 불가
+  if (id.startsWith("kapt_")) return id.slice(5);
+  return null;
 }
 
 function Row({ label, value }: { label: string; value?: string }) {

@@ -1,32 +1,38 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { Apartment } from "@/types/apartment";
 import { searchApartments } from "@/lib/searchApartments";
 import { nowIso } from "@/lib/format";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
-import { searchRegions } from "@/data/regionCodes";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
 
 type Tab = "api" | "local" | "manual";
 
+function builtYear(date: string): number | undefined {
+  const y = parseInt(date?.slice(0, 4), 10);
+  return isNaN(y) ? undefined : y;
+}
+
+function builtLabel(date: string): string {
+  if (!date || date.length < 6) return "-";
+  return `${date.slice(0, 4)}.${date.slice(4, 6)}`;
+}
+
 export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apartment[]; onAdd: (apartment: Apartment) => boolean }) {
   const [tab, setTab] = useState<Tab>("api");
 
-  // --- API 검색 상태 ---
-  const [regionKeyword, setRegionKeyword] = useState("");
-  const [aptNameKeyword, setAptNameKeyword] = useState("");
-  const [selectedRegion, setSelectedRegion] = useState<{ sido: string; name: string; code: string } | null>(null);
+  // API 검색
+  const [keyword, setKeyword] = useState("");
   const [apiResults, setApiResults] = useState<AptSearchResult[]>([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState("");
-  const regionSuggestions = useMemo(() => (regionKeyword ? searchRegions(regionKeyword) : []), [regionKeyword]);
 
-  // --- 로컬 검색 상태 ---
+  // 로컬 검색
   const [localRegion, setLocalRegion] = useState("");
   const [localName, setLocalName] = useState("");
 
-  // --- 직접 추가 상태 ---
+  // 직접 입력
   const [manualName, setManualName] = useState("");
   const [manualRegion, setManualRegion] = useState("");
   const [manualAddress, setManualAddress] = useState("");
@@ -40,9 +46,9 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     msgTimer.current = setTimeout(() => setMessage(""), 3000);
   }
 
-  // ── API 검색 ──────────────────────────────────────────────
+  // ── 공공데이터 검색 ──────────────────────────────────────
   async function searchByApi() {
-    if (!selectedRegion) { setApiError("지역(시군구)을 선택하세요."); return; }
+    if (!keyword.trim()) { setApiError("검색어를 입력하세요."); return; }
     const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
     const serviceKey = keys.find((k) => k.provider === "data_go_kr")?.value;
     if (!serviceKey) { setApiError("공공데이터포털 API 키가 없습니다. 설정 > API 키 설정에서 등록하세요."); return; }
@@ -51,8 +57,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     setApiError("");
     setApiResults([]);
     try {
-      const params = new URLSearchParams({ serviceKey, sggCode: selectedRegion.code });
-      if (aptNameKeyword.trim()) params.set("aptName", aptNameKeyword.trim());
+      const params = new URLSearchParams({ serviceKey, keyword: keyword.trim() });
       const res = await fetch(`/api/apt-search?${params.toString()}`);
       const json = await res.json();
       if (!res.ok) { setApiError(json.error ?? "오류가 발생했습니다."); return; }
@@ -66,36 +71,32 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
   }
 
   function addFromApi(item: AptSearchResult) {
-    const builtYear = item.kaptUsedate ? parseInt(item.kaptUsedate.slice(0, 4), 10) : undefined;
-    const households = item.kaptdaCnt ? parseInt(item.kaptdaCnt, 10) : undefined;
     const added = onAdd({
-      id: `kapt_${item.kaptCode}`,
-      name: item.kaptName,
-      region: selectedRegion?.name ?? selectedRegion?.sido ?? "미입력",
-      address: item.kaptAddr || selectedRegion?.name || "미입력",
+      id: `cpk_${item.complexPk}`,
+      name: item.name,
+      region: item.address.split(" ").slice(0, 2).join(" "),
+      address: item.address,
       role: "target",
       group: "custom",
-      brand: item.kaptBcompany || undefined,
-      builtYear: isNaN(builtYear!) ? undefined : builtYear,
-      households: isNaN(households!) ? undefined : households,
+      builtYear: builtYear(item.builtDate),
+      households: item.households || undefined,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     });
-    showMessage(added ? `"${item.kaptName}" 대상아파트로 추가했습니다.` : "이미 등록된 대상아파트입니다.");
+    showMessage(added ? `"${item.name}" 대상아파트로 추가했습니다.` : "이미 등록된 대상아파트입니다.");
   }
 
-  // ── 로컬 검색 ────────────────────────────────────────────
-  const localResults = useMemo(
-    () => searchApartments(apartments, { regionKeyword: localRegion, nameKeyword: localName }).filter((a) => a.role !== "target"),
-    [apartments, localRegion, localName]
-  );
+  // ── 로컬 검색 ──────────────────────────────────────────
+  const localResults = (localRegion || localName)
+    ? searchApartments(apartments, { regionKeyword: localRegion, nameKeyword: localName }).filter((a) => a.role !== "target")
+    : [];
 
   function addFromLocal(apt: Apartment) {
     const added = onAdd({ ...apt, id: `target_${Date.now()}`, role: "target", updatedAt: nowIso() });
     showMessage(added ? "대상아파트로 추가했습니다." : "이미 등록된 대상아파트입니다.");
   }
 
-  // ── 직접 추가 ─────────────────────────────────────────────
+  // ── 직접 입력 ─────────────────────────────────────────
   function addManual() {
     if (!manualName.trim()) return;
     const added = onAdd({
@@ -112,14 +113,13 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     if (added) { setManualName(""); setManualRegion(""); setManualAddress(""); }
   }
 
-  // ─────────────────────────────────────────────────────────
   return (
     <div className="card p-5">
       <h2 className="text-lg font-black">대상아파트 추가</h2>
 
       {/* 탭 */}
-      <div className="mt-4 flex gap-2 border-b border-slate-200 pb-0">
-        {([ ["api", "공공데이터 단지 검색"], ["local", "저장된 아파트 검색"], ["manual", "직접 입력"] ] as [Tab, string][]).map(([id, label]) => (
+      <div className="mt-4 flex gap-2 border-b border-slate-200">
+        {([["api", "단지 검색 (공공데이터)"], ["local", "저장된 아파트"], ["manual", "직접 입력"]] as [Tab, string][]).map(([id, label]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -133,34 +133,18 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       {/* 공공데이터 단지 검색 */}
       {tab === "api" && (
         <div className="mt-4">
-          <p className="mb-3 text-xs text-slate-500">공공데이터포털 아파트 단지 목록 API로 단지명을 자동 검색합니다. <a href="/settings/api" className="text-blue-600 underline">API 키 설정</a>이 필요합니다.</p>
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-            <div className="relative">
-              <input
-                className="input"
-                value={regionKeyword}
-                onChange={(e) => { setRegionKeyword(e.target.value); setSelectedRegion(null); }}
-                placeholder="지역명 입력 (예: 오산, 연수구, 강남구)"
-              />
-              {regionSuggestions.length > 0 && !selectedRegion && (
-                <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-                  {regionSuggestions.map((r) => (
-                    <li
-                      key={r.code}
-                      className="cursor-pointer px-3 py-2 text-sm hover:bg-blue-50"
-                      onClick={() => { setSelectedRegion(r); setRegionKeyword(`${r.sido} ${r.name}`); }}
-                    >
-                      <span className="font-semibold">{r.name}</span>
-                      <span className="ml-2 text-xs text-slate-400">{r.sido}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {selectedRegion && (
-                <p className="mt-1 text-xs text-blue-700">선택됨: {selectedRegion.sido} {selectedRegion.name} ({selectedRegion.code})</p>
-              )}
-            </div>
-            <input className="input" value={aptNameKeyword} onChange={(e) => setAptNameKeyword(e.target.value)} placeholder="단지명 키워드 (선택, 예: 래미안, 힐스테이트)" onKeyDown={(e) => e.key === "Enter" && searchByApi()} />
+          <p className="mb-3 text-xs text-slate-500">
+            한국부동산원 단지 식별정보 API로 주소 또는 단지명을 검색합니다.
+            <a href="/settings/api" className="ml-1 text-blue-600 underline">API 키 설정</a> 필요.
+          </p>
+          <div className="flex gap-2">
+            <input
+              className="input flex-1"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && searchByApi()}
+              placeholder="단지명 또는 주소 입력 (예: 오산역 금강, 인천 연수구 송도)"
+            />
             <button className="btn-primary whitespace-nowrap" onClick={searchByApi} disabled={apiLoading}>
               {apiLoading ? "검색 중…" : "검색"}
             </button>
@@ -169,15 +153,14 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
           {apiResults.length > 0 && (
             <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
               <table className="table w-full">
-                <thead><tr><th>단지명</th><th>주소</th><th>세대</th><th>사용승인</th><th>시공사</th><th>추가</th></tr></thead>
+                <thead><tr><th>단지명</th><th>주소</th><th>세대</th><th>사용승인</th><th>추가</th></tr></thead>
                 <tbody>
                   {apiResults.map((item) => (
-                    <tr key={item.kaptCode}>
-                      <td className="font-semibold">{item.kaptName}</td>
-                      <td className="text-xs">{item.kaptAddr}</td>
-                      <td className="text-right">{item.kaptdaCnt ? `${Number(item.kaptdaCnt).toLocaleString()}세대` : "-"}</td>
-                      <td>{item.kaptUsedate ? `${item.kaptUsedate.slice(0, 4)}.${item.kaptUsedate.slice(4, 6)}` : "-"}</td>
-                      <td className="text-xs text-slate-500">{item.kaptBcompany || "-"}</td>
+                    <tr key={item.complexPk}>
+                      <td className="font-semibold">{item.name}</td>
+                      <td className="text-xs">{item.address}</td>
+                      <td className="text-right">{item.households ? `${item.households.toLocaleString()}세대` : "-"}</td>
+                      <td>{builtLabel(item.builtDate)}</td>
                       <td><button className="btn-secondary" onClick={() => addFromApi(item)}>추가</button></td>
                     </tr>
                   ))}
@@ -192,8 +175,8 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       {tab === "local" && (
         <div className="mt-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <input className="input" value={localRegion} onChange={(e) => setLocalRegion(e.target.value)} placeholder="지역 contains 예: 오산, 송도" />
-            <input className="input" value={localName} onChange={(e) => setLocalName(e.target.value)} placeholder="아파트명 contains 예: 금강, 힐스테이트" />
+            <input className="input" value={localRegion} onChange={(e) => setLocalRegion(e.target.value)} placeholder="지역 (예: 오산, 송도)" />
+            <input className="input" value={localName} onChange={(e) => setLocalName(e.target.value)} placeholder="아파트명 (예: 금강, 힐스테이트)" />
           </div>
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
             <table className="table w-full">
@@ -207,7 +190,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
                     <td><button className="btn-secondary" onClick={() => addFromLocal(apt)}>추가</button></td>
                   </tr>
                 ))}
-                {!localResults.length && <tr><td colSpan={4} className="text-center text-slate-500">검색 가능한 후보가 없습니다.</td></tr>}
+                {!localResults.length && <tr><td colSpan={4} className="text-center text-slate-500">검색 결과 없음</td></tr>}
               </tbody>
             </table>
           </div>
