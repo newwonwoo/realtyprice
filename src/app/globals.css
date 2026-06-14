@@ -10,6 +10,7 @@ body {
   margin: 0;
   background: #f8fafc;
   color: #0f172a;
+  word-break: keep-all;
 }
 
 * {
@@ -21,15 +22,15 @@ body {
 }
 
 .btn-primary {
-  @apply rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700;
+  @apply whitespace-nowrap rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700;
 }
 
 .btn-secondary {
-  @apply rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50;
+  @apply whitespace-nowrap rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50;
 }
 
 .btn-danger {
-  @apply rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100;
+  @apply whitespace-nowrap rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100;
 }
 
 .input {
