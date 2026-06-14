@@ -77,13 +77,17 @@ export async function GET(req: NextRequest) {
         fetchField("ADRES", w, serviceKey),
       ]);
     } else {
-      // 공백 없는 순수 단지명 (예: "힐스테이트레이크"):
-      // API는 주소(ADRES) 기반 검색이 핵심이라 단지명만으론 결과가 제한적.
-      // 지역명을 포함하지 않은 경우 힌트 메시지를 내려보냄.
-      return NextResponse.json(
-        { items: [], total: 0, hint: "지역명을 포함해서 검색하면 더 정확합니다. 예: \"인천 힐스테이트레이크\", \"송도 더샵\", \"오산 금강\"" },
-        { status: 200 }
-      );
+      // 공백 없는 키워드: COMPLEX_NM1 앞 4글자로 후보 확보 후 클라이언트 필터
+      const len = kwNoSpace.length;
+      const prefix4 = kwNoSpace.slice(0, Math.min(4, len));
+      const suffix4 = len >= 4 ? kwNoSpace.slice(-4) : "";
+      strategies = [
+        fetchField("COMPLEX_NM1", prefix4, serviceKey),
+        fetchField("ADRES", prefix4, serviceKey),
+      ];
+      if (suffix4 && suffix4 !== prefix4) {
+        strategies.push(fetchField("COMPLEX_NM1", suffix4, serviceKey));
+      }
     }
 
     const batches = await Promise.all(strategies);
