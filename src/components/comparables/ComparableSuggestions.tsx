@@ -5,7 +5,7 @@ import type { Apartment } from "@/types/apartment";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import { nowIso } from "@/lib/format";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
-import type { SchoolInfo } from "@/app/api/school-info/route";
+import type { SchoolDistrictResult } from "@/app/api/school-district/route";
 
 type Props = {
   target: Apartment;
@@ -53,13 +53,13 @@ function similarityScore(target: Apartment, item: AptSearchResult): number {
   return Math.max(0, score);
 }
 
-// 지역별 초등학교 캐시 (시군구 단위)
-const schoolCache: Record<string, SchoolInfo[]> = {};
+// 단지명 → 학군 캐시
+const districtCache: Record<string, SchoolDistrictResult | null> = {};
 
 export function ComparableSuggestions({ target, existingComparableIds, onAddComparable }: Props) {
   const [suggestions, setSuggestions] = useState<AptSearchResult[]>([]);
-  // 주소(구 단위) → 초등학교 목록 매핑
-  const [schoolMap, setSchoolMap] = useState<Record<string, SchoolInfo[]>>({});
+  // 단지명 → 학군 정보
+  const [districtMap, setDistrictMap] = useState<Record<string, SchoolDistrictResult | null>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [added, setAdded] = useState<Set<string>>(new Set());
@@ -102,33 +102,30 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       }
       setSuggestions(filtered);
 
-      // 고유 구 단위로 초등학교 일괄 조회
-      const uniqueGus = Array.from(
-        new Set(filtered.map((item) => item.address.split(" ").slice(0, 3).join(" ")))
-      );
-      const newMap: Record<string, SchoolInfo[]> = { ...schoolCache };
+      // 단지별 학군 일괄 조회 (학구도 로컬 데이터)
+      const newMap: Record<string, SchoolDistrictResult | null> = { ...districtCache };
       await Promise.all(
-        uniqueGus.map(async (gu) => {
-          if (newMap[gu]) return; // 캐시 히트
+        filtered.map(async (item) => {
+          if (item.name in newMap) return;
           try {
-            const r = await fetch(`/api/school-info?address=${encodeURIComponent(gu)}`);
+            const r = await fetch(`/api/school-district?aptName=${encodeURIComponent(item.name)}&address=${encodeURIComponent(item.address.split(" ").slice(0, 3).join(" "))}`);
             const d = await r.json();
-            newMap[gu] = d.schools ?? [];
-            schoolCache[gu] = newMap[gu];
+            newMap[item.name] = d.error ? null : (d as SchoolDistrictResult);
+            districtCache[item.name] = newMap[item.name];
           } catch {
-            newMap[gu] = [];
+            newMap[item.name] = null;
           }
         })
       );
-      setSchoolMap(newMap);
+      setDistrictMap(newMap);
 
-      // 학교 수 반영해서 재정렬 (같은 입지 점수면 학교 많은 순)
+      // 학군 신입생 수 반영 재정렬
       setSuggestions((prev) =>
         [...prev].sort((a, b) => {
-          const ga = newMap[a.address.split(" ").slice(0, 3).join(" ")]?.length ?? 0;
-          const gb = newMap[b.address.split(" ").slice(0, 3).join(" ")]?.length ?? 0;
-          const sa = similarityScore(target, a) + (ga >= 5 ? 5 : ga >= 3 ? 2 : 0);
-          const sb = similarityScore(target, b) + (gb >= 5 ? 5 : gb >= 3 ? 2 : 0);
+          const na = newMap[a.name]?.newStudents ?? 0;
+          const nb = newMap[b.name]?.newStudents ?? 0;
+          const sa = similarityScore(target, a) + (na >= 100 ? 8 : na >= 50 ? 4 : na >= 30 ? 2 : 0);
+          const sb = similarityScore(target, b) + (nb >= 100 ? 8 : nb >= 50 ? 4 : nb >= 30 ? 2 : 0);
           return sb - sa;
         })
       );
@@ -139,9 +136,8 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
     }
   }
 
-  function getSchoolCount(item: AptSearchResult): number {
-    const gu = item.address.split(" ").slice(0, 3).join(" ");
-    return schoolMap[gu]?.length ?? 0;
+  function getDistrict(item: AptSearchResult): SchoolDistrictResult | null {
+    return districtMap[item.name] ?? null;
   }
 
   function handleAdd(item: AptSearchResult) {
@@ -181,28 +177,36 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
 
           {suggestions.length > 0 && (
             <>
-              <div className="px-4 py-2 bg-amber-50 border-b border-amber-100">
-                <p className="text-xs text-amber-700">
-                  <span className="font-bold">초교</span>: 같은 구 내 초등학교 수(학군 참고용) &nbsp;|&nbsp;
-                  <span className="font-bold">역세권</span>: 단지 상세페이지(대상아파트)에서 확인
+              <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                <p className="text-xs text-blue-700">
+                  <span className="font-bold">학군</span>: 학구도 공공데이터(2025) 기반 배정 초등학교 &nbsp;|&nbsp;
+                  <span className="font-bold">신입생</span>: 학년별 신입생 수(학군 인기도 proxy)
                 </p>
               </div>
               <table className="table w-full">
                 <thead>
-                  <tr><th>단지명</th><th>세대</th><th>준공</th><th>초교</th><th></th></tr>
+                  <tr><th>단지명</th><th>세대</th><th>준공</th><th>배정초교</th><th>신입생</th><th></th></tr>
                 </thead>
                 <tbody>
                   {suggestions.map((item) => {
                     const alreadyAdded = added.has(item.complexPk) || existingComparableIds.has(`cpk_${item.complexPk}`);
-                    const schoolCount = getSchoolCount(item);
+                    const district = getDistrict(item);
                     return (
                       <tr key={item.complexPk}>
                         <td className="font-semibold text-sm">{item.name}</td>
                         <td className="text-right text-sm">{item.households ? item.households.toLocaleString() : "-"}</td>
                         <td className="text-sm">{item.builtDate ? item.builtDate.slice(0, 4) : "-"}</td>
                         <td className="text-sm">
-                          {schoolCount > 0
-                            ? <span className={`font-semibold ${schoolCount >= 5 ? "text-blue-600" : "text-slate-600"}`}>{schoolCount}개</span>
+                          {district
+                            ? <span className="text-slate-700">{district.schoolName.replace(/^서울|^경기|^부산/, "")}</span>
+                            : <span className="text-slate-300">-</span>
+                          }
+                        </td>
+                        <td className="text-sm">
+                          {district
+                            ? <span className={`font-bold ${district.newStudents >= 100 ? "text-blue-600" : district.newStudents >= 50 ? "text-slate-700" : "text-slate-400"}`}>
+                                {district.newStudents}명
+                              </span>
                             : <span className="text-slate-300">-</span>
                           }
                         </td>

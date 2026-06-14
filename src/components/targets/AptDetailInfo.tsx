@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Apartment } from "@/types/apartment";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import type { AptCombinedInfo } from "@/app/api/apt-info/route";
+import type { SchoolDistrictResult } from "@/app/api/school-district/route";
 
 function kaptCodeFromId(id: string): string | null {
   // 구형: "kapt_A10025967" → "A10025967"
@@ -37,6 +38,7 @@ function formatDist(m?: string) {
 export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
   const kaptCode = kaptCodeFromId(apartment.id);
   const [info, setInfo] = useState<AptCombinedInfo | null>(null);
+  const [district, setDistrict] = useState<SchoolDistrictResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -55,7 +57,13 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [kaptCode]);
+
+    // 학구 정보 조회 (학구도 로컬 데이터)
+    fetch(`/api/school-district?aptName=${encodeURIComponent(apartment.name)}&address=${encodeURIComponent(apartment.address ?? apartment.region ?? "")}`)
+      .then((r) => r.json())
+      .then((json) => { if (!json.error) setDistrict(json); })
+      .catch(() => {});
+  }, [kaptCode, apartment.name, apartment.address, apartment.region]);
 
   if (!kaptCode) return null; // 수동 추가 아파트는 단지코드 없음
   if (loading) return <p className="text-xs text-slate-400">단지 정보 로딩 중…</p>;
@@ -82,6 +90,19 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
         <div>
           <Row label="지하철" value={subwayText} />
           <Row label="지하철역 거리" value={formatDist(dtl.subwayDist)} />
+          {district && (
+            <div className="border-b border-slate-100 py-1.5 text-sm">
+              <span className="text-slate-500 shrink-0">배정초등학교</span>
+              <div className="mt-0.5 font-semibold">
+                {district.schoolName}
+                {district.newStudents > 0 && (
+                  <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${district.newStudents >= 100 ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
+                    신입생 {district.newStudents}명
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           <Row label="버스정류장" value={formatDist(dtl.busDist)} />
           <Row label="주차(지하)" value={dtl.parkingCntUnderGnd ? `${Number(dtl.parkingCntUnderGnd).toLocaleString()}대` : undefined} />
           <Row label="주차(지상)" value={dtl.parkingCntOverGnd ? `${Number(dtl.parkingCntOverGnd).toLocaleString()}대` : undefined} />
