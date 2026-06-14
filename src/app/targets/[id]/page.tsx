@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
 import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
+import { AptDetailInfo } from "@/components/targets/AptDetailInfo";
 import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultModelWeights } from "@/lib/seed";
@@ -79,7 +80,9 @@ export default function TargetDetailPage() {
         <ExternalLinks apartmentName={apartment.name} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-4">
+      <AptDetailInfo apartment={apartment} />
+
+      <div className="grid gap-5 lg:grid-cols-4 mt-6">
         <Summary label="결론" value={latestEstimate ? conclusionLabel[latestEstimate.conclusion] : "계산 필요"} />
         <Summary label="예상 매매가" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"} />
         <Summary label="권장 매각호가" value={latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"} />
