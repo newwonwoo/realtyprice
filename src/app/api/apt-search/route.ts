@@ -34,14 +34,27 @@ function toAptResult(item: Record<string, unknown>): AptSearchResult {
   };
 }
 
-async function fetchField(field: string, value: string, serviceKey: string): Promise<Record<string, unknown>[]> {
+type StrategyDiag = { field: string; value: string; httpStatus: number; rawCount: number; error?: string };
+
+async function fetchField(
+  field: string,
+  value: string,
+  serviceKey: string,
+  diag?: StrategyDiag[],
+): Promise<Record<string, unknown>[]> {
   try {
     const url = buildUrl(field, value, serviceKey);
     const res = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 0 } });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      diag?.push({ field, value, httpStatus: res.status, rawCount: 0 });
+      return [];
+    }
     const data = await res.json();
-    return (data?.data ?? []) as Record<string, unknown>[];
-  } catch {
+    const rows = (data?.data ?? []) as Record<string, unknown>[];
+    diag?.push({ field, value, httpStatus: res.status, rawCount: rows.length });
+    return rows;
+  } catch (e) {
+    diag?.push({ field, value, httpStatus: 0, rawCount: 0, error: String(e) });
     return [];
   }
 }
@@ -53,6 +66,9 @@ export async function GET(req: NextRequest) {
 
   if (!serviceKey) return NextResponse.json({ error: "공공데이터포털 API 키가 없습니다. 설정 > API 키 설정에서 등록하세요." }, { status: 400 });
   if (!keyword.trim()) return NextResponse.json({ error: "검색어를 입력하세요." }, { status: 400 });
+
+  const debug = searchParams.get("debug") === "1";
+  const diag: StrategyDiag[] = [];
 
   try {
     const kw = keyword.trim();
@@ -75,8 +91,8 @@ export async function GET(req: NextRequest) {
       // 공백 있는 키워드 (예: "경기 오산시", "성동 자이"):
       // 각 단어를 ADRES와 COMPLEX_NM1 양쪽으로 병렬 검색
       strategies = words.flatMap((w) => [
-        fetchField("COMPLEX_NM1", w, serviceKey),
-        fetchField("ADRES", w, serviceKey),
+        fetchField("COMPLEX_NM1", w, serviceKey, diag),
+        fetchField("ADRES", w, serviceKey, diag),
       ]);
     } else {
       // 공백 없는 키워드: COMPLEX_NM1 앞 4글자로 후보 확보 후 클라이언트 필터
@@ -84,11 +100,11 @@ export async function GET(req: NextRequest) {
       const prefix4 = kwNoSpace.slice(0, Math.min(4, len));
       const suffix4 = len >= 4 ? kwNoSpace.slice(-4) : "";
       strategies = [
-        fetchField("COMPLEX_NM1", prefix4, serviceKey),
-        fetchField("ADRES", prefix4, serviceKey),
+        fetchField("COMPLEX_NM1", prefix4, serviceKey, diag),
+        fetchField("ADRES", prefix4, serviceKey, diag),
       ];
       if (suffix4 && suffix4 !== prefix4) {
-        strategies.push(fetchField("COMPLEX_NM1", suffix4, serviceKey));
+        strategies.push(fetchField("COMPLEX_NM1", suffix4, serviceKey, diag));
       }
     }
 
@@ -109,8 +125,8 @@ export async function GET(req: NextRequest) {
       ) || nameNoSpace.includes(kwNoSpace) || kwNoSpace.includes(nameNoSpace);
     });
 
-    return NextResponse.json({ items, total: items.length });
+    return NextResponse.json({ items, total: items.length, ...(debug ? { diag, rawTotal: allRaw.length } : {}) });
   } catch (err) {
-    return NextResponse.json({ error: `요청 실패: ${String(err)}` }, { status: 500 });
+    return NextResponse.json({ error: `요청 실패: ${String(err)}`, ...(debug ? { diag } : {}) }, { status: 500 });
   }
 }
