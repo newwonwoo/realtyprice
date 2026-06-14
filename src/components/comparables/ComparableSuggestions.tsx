@@ -5,6 +5,7 @@ import type { Apartment } from "@/types/apartment";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import { nowIso } from "@/lib/format";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
+import type { SchoolInfo } from "@/app/api/school-info/route";
 
 type Props = {
   target: Apartment;
@@ -52,8 +53,13 @@ function similarityScore(target: Apartment, item: AptSearchResult): number {
   return Math.max(0, score);
 }
 
+// 지역별 초등학교 캐시 (시군구 단위)
+const schoolCache: Record<string, SchoolInfo[]> = {};
+
 export function ComparableSuggestions({ target, existingComparableIds, onAddComparable }: Props) {
   const [suggestions, setSuggestions] = useState<AptSearchResult[]>([]);
+  // 주소(구 단위) → 초등학교 목록 매핑
+  const [schoolMap, setSchoolMap] = useState<Record<string, SchoolInfo[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [added, setAdded] = useState<Set<string>>(new Set());
@@ -68,7 +74,6 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       return;
     }
 
-    // 지역명(앞 두 단어)으로 검색
     const regionKeyword = target.region.split(" ").slice(0, 2).join(" ");
 
     setLoading(true);
@@ -88,7 +93,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
         .map((item) => ({ item, score: similarityScore(target, item) }))
         .filter(({ score }) => score >= 55)
         .sort((a, b) => b.score - a.score)
-        .slice(0, 20)
+        .slice(0, 25)
         .map(({ item }) => item);
 
       if (!filtered.length) {
@@ -96,11 +101,47 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
         return;
       }
       setSuggestions(filtered);
+
+      // 고유 구 단위로 초등학교 일괄 조회
+      const uniqueGus = Array.from(
+        new Set(filtered.map((item) => item.address.split(" ").slice(0, 3).join(" ")))
+      );
+      const newMap: Record<string, SchoolInfo[]> = { ...schoolCache };
+      await Promise.all(
+        uniqueGus.map(async (gu) => {
+          if (newMap[gu]) return; // 캐시 히트
+          try {
+            const r = await fetch(`/api/school-info?address=${encodeURIComponent(gu)}`);
+            const d = await r.json();
+            newMap[gu] = d.schools ?? [];
+            schoolCache[gu] = newMap[gu];
+          } catch {
+            newMap[gu] = [];
+          }
+        })
+      );
+      setSchoolMap(newMap);
+
+      // 학교 수 반영해서 재정렬 (같은 입지 점수면 학교 많은 순)
+      setSuggestions((prev) =>
+        [...prev].sort((a, b) => {
+          const ga = newMap[a.address.split(" ").slice(0, 3).join(" ")]?.length ?? 0;
+          const gb = newMap[b.address.split(" ").slice(0, 3).join(" ")]?.length ?? 0;
+          const sa = similarityScore(target, a) + (ga >= 5 ? 5 : ga >= 3 ? 2 : 0);
+          const sb = similarityScore(target, b) + (gb >= 5 ? 5 : gb >= 3 ? 2 : 0);
+          return sb - sa;
+        })
+      );
     } catch (e) {
       setError(`요청 실패: ${String(e)}`);
     } finally {
       setLoading(false);
     }
+  }
+
+  function getSchoolCount(item: AptSearchResult): number {
+    const gu = item.address.split(" ").slice(0, 3).join(" ");
+    return schoolMap[gu]?.length ?? 0;
   }
 
   function handleAdd(item: AptSearchResult) {
@@ -139,29 +180,44 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
           {error && <p className="p-4 text-sm text-red-600">{error}</p>}
 
           {suggestions.length > 0 && (
-            <table className="table w-full">
-              <thead>
-                <tr><th>단지명</th><th>세대</th><th>준공</th><th></th></tr>
-              </thead>
-              <tbody>
-                {suggestions.map((item) => {
-                  const alreadyAdded = added.has(item.complexPk) || existingComparableIds.has(`cpk_${item.complexPk}`);
-                  return (
-                    <tr key={item.complexPk}>
-                      <td className="font-semibold text-sm">{item.name}</td>
-                      <td className="text-right text-sm">{item.households ? item.households.toLocaleString() : "-"}</td>
-                      <td className="text-sm">{item.builtDate ? item.builtDate.slice(0, 4) : "-"}</td>
-                      <td>
-                        {alreadyAdded
-                          ? <span className="text-xs text-green-600 font-semibold">추가됨</span>
-                          : <button className="btn-secondary text-xs" onClick={() => handleAdd(item)}>추가</button>
-                        }
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <>
+              <div className="px-4 py-2 bg-amber-50 border-b border-amber-100">
+                <p className="text-xs text-amber-700">
+                  <span className="font-bold">초교</span>: 같은 구 내 초등학교 수(학군 참고용) &nbsp;|&nbsp;
+                  <span className="font-bold">역세권</span>: 단지 상세페이지(대상아파트)에서 확인
+                </p>
+              </div>
+              <table className="table w-full">
+                <thead>
+                  <tr><th>단지명</th><th>세대</th><th>준공</th><th>초교</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {suggestions.map((item) => {
+                    const alreadyAdded = added.has(item.complexPk) || existingComparableIds.has(`cpk_${item.complexPk}`);
+                    const schoolCount = getSchoolCount(item);
+                    return (
+                      <tr key={item.complexPk}>
+                        <td className="font-semibold text-sm">{item.name}</td>
+                        <td className="text-right text-sm">{item.households ? item.households.toLocaleString() : "-"}</td>
+                        <td className="text-sm">{item.builtDate ? item.builtDate.slice(0, 4) : "-"}</td>
+                        <td className="text-sm">
+                          {schoolCount > 0
+                            ? <span className={`font-semibold ${schoolCount >= 5 ? "text-blue-600" : "text-slate-600"}`}>{schoolCount}개</span>
+                            : <span className="text-slate-300">-</span>
+                          }
+                        </td>
+                        <td>
+                          {alreadyAdded
+                            ? <span className="text-xs text-green-600 font-semibold">추가됨</span>
+                            : <button className="btn-secondary text-xs" onClick={() => handleAdd(item)}>추가</button>
+                          }
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       )}
