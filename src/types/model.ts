@@ -3,7 +3,9 @@ import type { InventorySignal, Listing } from "./listing";
 import type { Transaction } from "./transaction";
 
 export type ModelWeights = {
+  targetSale: number;
   adjustedComparableSale: number;
+  comparableAskingPrice: number;
   askingPrice: number;
   jeonseFloorPrice: number;
   inventorySignal: number;
@@ -11,19 +13,27 @@ export type ModelWeights = {
   macroSignal: number;
   // 대장아파트 앵커 (Giacoletti & Parsons 2023: γ=0.25~0.50 spillover)
   leaderApartmentAnchor: number;
+  locationPremium: number;
+  comparableMarketPressure: number;
 };
 
 export type PriceEstimate = {
   id: string;
   targetApartmentId: string;
   estimateDate: string;
+  targetSalePrice: number;
   adjustedComparableSalePrice: number;
+  comparableAskingPrice: number;
   saleAskingPrice: number;
   jeonseFloorPrice: number;
   inventorySignalPrice: number;
   presalePremiumPrice: number;
   macroSignalPrice: number;
   leaderApartmentAnchorPrice: number;
+  locationPremiumPrice: number;
+  comparableMarketPressurePrice: number;
+  comparableLocationAdjustmentRate: number;
+  selectedArea: number;
   lowPriceAbsorptionRate: number;
   expectedSaleMin: number;
   expectedSaleMid: number;

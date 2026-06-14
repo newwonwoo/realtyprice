@@ -26,14 +26,14 @@ export default function DashboardPage() {
     <AppShell>
       <div className="mb-8">
         <p className="text-sm font-semibold text-blue-600">Dashboard</p>
-        <h1 className="text-2xl font-black sm:text-3xl">분양권 매각판단 대시보드</h1>
-        <p className="mt-2 text-slate-600">대상아파트별 예상가격과 상승가능성 신호를 요약합니다.</p>
+        <h1 className="text-2xl font-black sm:text-3xl">가격추정 작업판</h1>
+        <p className="mt-2 text-slate-600">다음에 무엇을 해야 하는지와 최근 추정 결과만 빠르게 확인합니다.</p>
       </div>
 
       {/* Progress Timeline */}
       <div className="mb-8 card p-5">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-black">설정 진행 현황</h2>
+          <h2 className="text-base font-black">추정 준비 타임라인</h2>
           <span className="text-sm font-semibold text-slate-500">{completedSteps} / {steps.length} 완료</span>
         </div>
         <div className="relative">
@@ -55,7 +55,7 @@ export default function DashboardPage() {
                   {step.detail && <p className="text-xs text-slate-500 mt-0.5">{step.detail}</p>}
                 </div>
                 {step.href && !step.done && (
-                  <a href={step.href} className="shrink-0 rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700">설정 →</a>
+                  <a href={step.href} className="shrink-0 rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700">이동 →</a>
                 )}
               </li>
             ))}

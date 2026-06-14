@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
 import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
@@ -36,6 +36,7 @@ export default function TargetDetailPage() {
   const store = useRealtyStore();
   const [estimating, setEstimating] = useState(false);
   const [justDone, setJustDone] = useState(false);
+  const [selectedArea, setSelectedArea] = useState<number | null>(null);
 
   const apartment = store.targets.find((item) => item.id === id);
   const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
@@ -45,6 +46,7 @@ export default function TargetDetailPage() {
   const targetListings = store.listings.filter((item) => item.apartmentId === id);
   const targetTransactions = store.transactions.filter((item) => item.apartmentId === id);
   const comparableTransactions = store.transactions.filter((item) => selectedComparableIds.includes(item.apartmentId));
+  const comparableListings = store.listings.filter((item) => selectedComparableIds.includes(item.apartmentId));
   const comparableWeights = Object.fromEntries(selectedLinks.map((item) => [item.apartmentId, item.compareWeight || 1]));
   const inventorySignal = store.inventorySignals.find((item) => item.apartmentId === id);
   const rule = store.comparableRules.find((item) => item.targetApartmentId === id);
@@ -52,6 +54,16 @@ export default function TargetDetailPage() {
   const leaderTransactions = rule?.leaderApartmentId
     ? store.transactions.filter((tx) => tx.apartmentId === rule.leaderApartmentId && (tx.transactionType === "sale" || tx.transactionType === "presale"))
     : [];
+  const areaOptions = useMemo(() => {
+    const areas = [apartment?.defaultArea, ...targetTransactions.map((tx) => tx.exclusiveArea), ...targetListings.map((listing) => listing.exclusiveArea)]
+      .filter((area): area is number => !!area && area > 0)
+      .map((area) => Math.round(area * 10) / 10);
+    return Array.from(new Set(areas)).sort((a, b) => a - b);
+  }, [apartment?.defaultArea, targetListings, targetTransactions]);
+  const effectiveArea = selectedArea ?? apartment?.defaultArea ?? areaOptions[0] ?? 84;
+  const matchingComparableListingCount = comparableListings.filter((listing) => Math.abs(listing.exclusiveArea - effectiveArea) / effectiveArea <= 0.03).length;
+  const locationPremiumRate = calculateLocationPremium(apartment);
+  const comparableGradeAnalysis = calculateComparableGradeAnalysis(apartment, selectedComparables);
 
   // ── 조작 동선 단계 체크 ─────────────────────────────────────────
   const steps = [
@@ -72,18 +84,25 @@ export default function TargetDetailPage() {
     setEstimating(true);
     setJustDone(false);
     await new Promise((r) => setTimeout(r, 400)); // 진행 표시용 딜레이
-    const weights = readStorage<ModelWeights>(STORAGE_KEYS.modelSettings, defaultModelWeights);
+    const weights = { ...defaultModelWeights, ...readStorage<Partial<ModelWeights>>(STORAGE_KEYS.modelSettings, defaultModelWeights) };
     const targetSaleListings = targetListings.filter((item) => item.listingType === "sale");
     const targetJeonseListings = targetListings.filter((item) => item.listingType === "jeonse");
+    const comparableSaleListings = comparableListings.filter((item) => item.listingType === "sale");
     // 모집공고 분양가(청약홈) 우선, 없으면 분양권 전매 실거래 중간값 fallback
     const presaleTxMedian = median(targetTransactions.filter((item) => item.transactionType === "presale").map((item) => item.price));
     const presalePrice = apartment?.originalPresalePrice ?? presaleTxMedian;
     const result = estimatePrice({
       targetApartmentId: id,
+      targetSaleTransactions: targetTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
       saleTransactions: comparableTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
       jeonseTransactions: [...comparableTransactions, ...targetTransactions].filter((item) => item.transactionType === "jeonse"),
       saleListings: targetSaleListings,
-      jeonseListings: targetJeonseListings,
+      comparableSaleListings,
+      jeonseListings: [...targetJeonseListings, ...comparableListings.filter((item) => item.listingType === "jeonse")],
+      targetArea: effectiveArea,
+      locationPremiumRate,
+      comparableLocationAdjustments: comparableGradeAnalysis.adjustments,
+      comparableMarketPressureRate: comparableGradeAnalysis.marketPressureRate,
       weights,
       lowPriceAbsorptionRate: inventorySignal?.lowPriceAbsorptionRate ?? 0,
       comparableWeights,
@@ -153,8 +172,14 @@ export default function TargetDetailPage() {
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h2 className="text-xl font-black">가격추정 실행</h2>
-              <p className="mt-1 text-sm text-slate-500">선택 비교단지 실거래와 대상아파트 호가/전세/매물소진 신호를 반영합니다.</p>
+              <p className="mt-1 text-sm text-slate-500">대상·비교단지 실거래/호가를 선택 평형 기준으로 환산하고 입지 보정을 반영합니다.</p>
             </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="text-xs font-bold text-slate-600">전용면적
+                <select className="input ml-2 w-32" value={effectiveArea} onChange={(event) => setSelectedArea(Number(event.target.value))}>
+                  {areaOptions.length ? areaOptions.map((area) => <option key={area} value={area}>{area}㎡</option>) : <option value={effectiveArea}>{effectiveArea}㎡</option>}
+                </select>
+              </label>
             <button
               className={`btn-primary relative min-w-[120px] ${!allReady ? "opacity-70" : ""}`}
               onClick={runEstimate}
@@ -167,6 +192,7 @@ export default function TargetDetailPage() {
                 </span>
               ) : "가격추정 실행"}
             </button>
+            </div>
           </div>
 
           {/* 완료 메시지 */}
@@ -198,23 +224,28 @@ export default function TargetDetailPage() {
             <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
             <Summary label="저가소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} />
             <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} />
+            <Summary label="적용 평형" value={`${latestEstimate?.selectedArea ?? effectiveArea}㎡`} />
           </div>
         </div>
 
         <div className="card p-6">
           <h2 className="text-xl font-black">산식 구성값</h2>
           <div className="mt-4 space-y-3">
-            <Line label="비교단지 보정 실거래가 30%" value={formatEok(latestEstimate?.adjustedComparableSalePrice)} />
-            <Line label="현재 매매호가 15%" value={formatEok(latestEstimate?.saleAskingPrice)} />
+            <Line label="대상단지 실거래가 20%" value={formatEok(latestEstimate?.targetSalePrice)} />
+            <Line label="비교단지 보정 실거래가 25%" value={formatEok(latestEstimate?.adjustedComparableSalePrice)} />
+            <Line label="비교단지 현재 호가 10%" value={formatEok(latestEstimate?.comparableAskingPrice)} />
+            <Line label="대상단지 현재 호가 12%" value={formatEok(latestEstimate?.saleAskingPrice)} />
             <Line label="전세기반 하방가 15%" value={formatEok(latestEstimate?.jeonseFloorPrice)} />
-            <Line label="매물소진속도 15%" value={formatEok(latestEstimate?.inventorySignalPrice)} />
+            <Line label="매물소진속도 8%" value={formatEok(latestEstimate?.inventorySignalPrice)} />
             <Line
-              label={`대장아파트 앵커 15%${leaderApartment ? ` (${leaderApartment.shortName ?? leaderApartment.name})` : " (미설정)"}`}
+              label={`대장아파트 앵커 5%${leaderApartment ? ` (${leaderApartment.shortName ?? leaderApartment.name})` : " (미설정)"}`}
               value={formatEok(latestEstimate?.leaderApartmentAnchorPrice)}
               highlight={!!leaderApartment}
             />
             <Line label="분양가 대비 프리미엄 5%" value={formatEok(latestEstimate?.presalePremiumPrice)} />
-            <Line label="거시환경 5%" value={formatEok(latestEstimate?.macroSignalPrice) || "미입력"} />
+            <Line label="거시환경 3%" value={formatEok(latestEstimate?.macroSignalPrice) || "미입력"} />
+            <Line label={`대상 입지 보정 2% (${Math.round(locationPremiumRate * 100)}%)`} value={formatEok(latestEstimate?.locationPremiumPrice)} />
+            <Line label={`비교단지 상·하급지 압력 2% (${Math.round((latestEstimate?.comparableLocationAdjustmentRate ?? comparableGradeAnalysis.marketPressureRate) * 100)}%)`} value={formatEok(latestEstimate?.comparableMarketPressurePrice)} />
           </div>
           {leaderApartment && rule?.targetToLeaderRatio && (
             <p className="mt-3 rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">
@@ -234,7 +265,9 @@ export default function TargetDetailPage() {
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} />
-        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상아파트 전세/분양권과 비교단지 매매 실거래를 사용합니다." />
+        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다." />
+        <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} />
+        <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} />
         <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "저가매물 소진율 30% 이상 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
       </div>
 
@@ -275,4 +308,64 @@ function Line({ label, value, highlight }: { label: string; value: string; highl
       <span className={`font-bold ${highlight ? "text-blue-800" : "text-slate-950"}`}>{value}</span>
     </div>
   );
+}
+
+
+function calculateComparableGradeAnalysis(
+  target: import("@/types/apartment").Apartment | undefined,
+  comparables: import("@/types/apartment").Apartment[]
+) {
+  if (!target || comparables.length === 0) {
+    return { adjustments: {} as Record<string, number>, marketPressureRate: 0, summary: "선택된 비교단지가 없어 상·하급지 보정을 적용하지 않습니다." };
+  }
+  const targetScore = locationQualityScore(target);
+  const entries = comparables.map((apt) => {
+    const diff = locationQualityScore(apt) - targetScore;
+    // 약 10점 차이를 1% 가격 차이로 보고, 개별 비교단지 보정은 ±12%로 제한합니다.
+    const adjustmentRate = Math.min(0.12, Math.max(-0.12, diff / 1000));
+    return { apt, adjustmentRate };
+  });
+  const averageAdjustmentRate = entries.reduce((sum, item) => sum + item.adjustmentRate, 0) / entries.length;
+  // 가격압력은 비교가격 환산 보정보다 약하게 둡니다. 상급 비교지는 키 맞추기/전이 기대, 하급 비교지는 눈높이 제약으로 해석합니다.
+  const marketPressureRate = Math.min(0.05, Math.max(-0.05, averageAdjustmentRate / 2));
+  const superiorCount = entries.filter((item) => item.adjustmentRate > 0.015).length;
+  const inferiorCount = entries.filter((item) => item.adjustmentRate < -0.015).length;
+  const summary = superiorCount > inferiorCount
+    ? `상급지 비교단지 ${superiorCount}개가 많아 상승압력을 제한적으로 반영합니다.`
+    : inferiorCount > superiorCount
+      ? `하급지 비교단지 ${inferiorCount}개가 많아 가격압력을 낮춰 반영합니다.`
+      : "비교단지 입지 등급이 대상과 유사해 중립 보정합니다.";
+
+  return {
+    adjustments: Object.fromEntries(entries.map((item) => [item.apt.id, item.adjustmentRate])),
+    marketPressureRate,
+    summary,
+  };
+}
+
+function locationQualityScore(apartment: import("@/types/apartment").Apartment) {
+  const text = `${apartment.address} ${apartment.region} ${apartment.name} ${apartment.brand ?? ""}`;
+  let score = 50;
+  if (/강남|서초|송파|용산|성수|한남|여의도|판교|과천|분당|송도/i.test(text)) score += 16;
+  if (/역|station|초역세권/i.test(text)) score += 10;
+  if (/초등|초품아|학교/i.test(text)) score += 5;
+  if (/공원|몰|백화점|병원|호수|공세권/i.test(text)) score += 5;
+  if ((apartment.households ?? 0) >= 1500) score += 8;
+  else if ((apartment.households ?? 0) >= 1000) score += 5;
+  if ((apartment.builtYear ?? 0) >= new Date().getFullYear() - 5) score += 5;
+  else if ((apartment.builtYear ?? 0) && (apartment.builtYear ?? 0) < new Date().getFullYear() - 20) score -= 5;
+  if (/래미안|자이|디에이치|아크로|힐스테이트|푸르지오|아이파크|롯데캐슬/i.test(text)) score += 4;
+  return Math.min(100, Math.max(0, score));
+}
+
+function calculateLocationPremium(apartment: import("@/types/apartment").Apartment | undefined) {
+  if (!apartment) return 0;
+  const text = `${apartment.address} ${apartment.region} ${apartment.brand ?? ""}`;
+  let score = 0;
+  if (/역|station|초역세권/i.test(text)) score += 0.02;
+  if (/초등|초품아|학교/i.test(text)) score += 0.01;
+  if (/공원|몰|백화점|병원|호수|공세권/i.test(text)) score += 0.01;
+  if ((apartment.households ?? 0) >= 1000) score += 0.005;
+  if ((apartment.builtYear ?? 0) >= new Date().getFullYear() - 5) score += 0.005;
+  return Math.min(0.05, score);
 }
