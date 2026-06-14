@@ -57,7 +57,8 @@ export async function GET(req: NextRequest) {
       : Array.from({ length: Math.ceil(kwNoSpace.length / 2) }, (_, i) => kwNoSpace.slice(i * 2, i * 2 + 4)).filter((t) => t.length >= 2);
 
     // 가장 긴 토큰 + 전체 키워드로 검색 (중복 제거)
-    const searchTokens = [...new Set([kw, tokens.reduce((a, b) => a.length >= b.length ? a : b, kw)])];
+    const longestToken = tokens.reduce((a, b) => a.length >= b.length ? a : b, kw);
+    const searchTokens = longestToken === kw ? [kw] : [kw, longestToken];
 
     const seenPk = new Set<string>();
     const allRaw: Record<string, unknown>[] = [];
