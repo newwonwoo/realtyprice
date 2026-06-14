@@ -57,11 +57,10 @@ export function TransactionFetcher({ apartment, existingTransactions, onImport }
 
   async function fetch() {
     const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
-    const serviceKey = keys.find((k) => k.provider === "molit")?.value
-      ?? keys.find((k) => k.provider === "data_go_kr")?.value;
+    const serviceKey = keys.find((k) => k.provider === "data_go_kr")?.value;
 
     if (!serviceKey) {
-      setError("API 키가 없습니다. 설정 > API 키 설정에서 국토부 또는 공공데이터포털 키를 등록하세요.");
+      setError("공공데이터포털 API 키가 없습니다. 설정 > API 키 설정에서 등록하세요.");
       return;
     }
 
