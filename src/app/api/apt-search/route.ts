@@ -58,12 +58,12 @@ export async function GET(req: NextRequest) {
     const seenPk = new Set<string>();
     const allRaw: Record<string, unknown>[] = [];
 
-    function merge(batch: Record<string, unknown>[]) {
+    const merge = (batch: Record<string, unknown>[]) => {
       for (const item of batch) {
         const pk = String(item["COMPLEX_PK"] ?? "");
         if (pk && !seenPk.has(pk)) { seenPk.add(pk); allRaw.push(item); }
       }
-    }
+    };
 
     let strategies: Promise<Record<string, unknown>[]>[];
 
