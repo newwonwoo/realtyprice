@@ -5,19 +5,29 @@ import { NextRequest, NextResponse } from "next/server";
 const API_BASE = "https://api.odcloud.kr/api/AptIdInfoSvc/v1/getAptInfo";
 
 export type AptSearchResult = {
-  complexPk: string;   // 단지고유번호 (14자리)
-  name: string;        // 단지명 (COMPLEX_NM1)
-  address: string;     // 주소 (ADRES)
-  households: number;  // 세대수 (UNIT_CNT)
-  builtDate: string;   // 사용승인일 (USEAPR_DT, YYYYMMDD)
-  dongCount: number;   // 동수 (DONG_CNT)
+  complexPk: string;
+  name: string;
+  address: string;
+  households: number;
+  builtDate: string;
+  dongCount: number;
 };
 
-// URLSearchParams encodes [] which breaks odcloud cond[] filters — build raw query string
 function buildUrl(field: string, value: string, serviceKey: string): string {
   const encoded = encodeURIComponent(value);
   const keyEncoded = encodeURIComponent(serviceKey);
-  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=30&cond[${field}::LIKE]=%25${encoded}%25&cond[COMPLEX_GB_CD::EQ]=1`;
+  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=50&cond[${field}::LIKE]=%25${encoded}%25&cond[COMPLEX_GB_CD::EQ]=1`;
+}
+
+function toAptResult(item: Record<string, unknown>): AptSearchResult {
+  return {
+    complexPk: String(item["COMPLEX_PK"] ?? ""),
+    name: String(item["COMPLEX_NM1"] ?? ""),
+    address: String(item["ADRES"] ?? ""),
+    households: Number(item["UNIT_CNT"] ?? 0),
+    builtDate: String(item["USEAPR_DT"] ?? ""),
+    dongCount: Number(item["DONG_CNT"] ?? 0),
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -40,32 +50,36 @@ export async function GET(req: NextRequest) {
     const kw = keyword.trim();
     const kwNoSpace = kw.replace(/\s+/g, "");
 
-    // 공백 제거한 키워드로 각 토큰별 검색 (가장 긴 토큰으로 API 쿼리)
-    const tokens = kw.split(/\s+/).filter(Boolean);
-    const mainToken = tokens.reduce((a, b) => a.length >= b.length ? a : b, kw);
+    // 공백이 없는 키워드는 DB에 "성동 자이 리버뷰" 처럼 공백 포함 저장될 수 있으므로
+    // 가능한 분할 지점(2글자씩)으로 여러 토큰 생성해 병렬 검색
+    const tokens = kw.includes(" ")
+      ? kw.split(/\s+/).filter((t) => t.length >= 2)
+      : Array.from({ length: Math.ceil(kwNoSpace.length / 2) }, (_, i) => kwNoSpace.slice(i * 2, i * 2 + 4)).filter((t) => t.length >= 2);
 
-    // 단지명으로 먼저 시도, 결과 없으면 주소로 재시도
-    let raw = await fetchByField("COMPLEX_NM1", mainToken);
-    if (!raw.length) {
-      raw = await fetchByField("ADRES", mainToken);
+    // 가장 긴 토큰 + 전체 키워드로 검색 (중복 제거)
+    const searchTokens = [...new Set([kw, tokens.reduce((a, b) => a.length >= b.length ? a : b, kw)])];
+
+    const seenPk = new Set<string>();
+    const allRaw: Record<string, unknown>[] = [];
+
+    for (const token of searchTokens) {
+      let raw = await fetchByField("COMPLEX_NM1", token);
+      if (!raw.length) raw = await fetchByField("ADRES", token);
+      for (const item of raw) {
+        const pk = String(item["COMPLEX_PK"] ?? "");
+        if (pk && !seenPk.has(pk)) { seenPk.add(pk); allRaw.push(item); }
+      }
     }
 
-    // 공백 무시 후처리 필터 (DB 단지명과 입력값 모두 공백 제거 후 비교)
-    const mapped: AptSearchResult[] = raw.map((item) => ({
-      complexPk: String(item["COMPLEX_PK"] ?? ""),
-      name: String(item["COMPLEX_NM1"] ?? ""),
-      address: String(item["ADRES"] ?? ""),
-      households: Number(item["UNIT_CNT"] ?? 0),
-      builtDate: String(item["USEAPR_DT"] ?? ""),
-      dongCount: Number(item["DONG_CNT"] ?? 0),
-    }));
-
-    const items = mapped.filter((item) => {
-      if (!item.complexPk || !item.name) return false;
-      const nameNoSpace = item.name.replace(/\s+/g, "");
-      const addrNoSpace = item.address.replace(/\s+/g, "");
-      return nameNoSpace.includes(kwNoSpace) || addrNoSpace.includes(kwNoSpace);
-    });
+    // 공백 무시 후처리 필터
+    const items = allRaw
+      .map(toAptResult)
+      .filter((item) => {
+        if (!item.complexPk || !item.name) return false;
+        const nameNoSpace = item.name.replace(/\s+/g, "");
+        const addrNoSpace = item.address.replace(/\s+/g, "");
+        return nameNoSpace.includes(kwNoSpace) || addrNoSpace.includes(kwNoSpace);
+      });
 
     return NextResponse.json({ items, total: items.length });
   } catch (err) {
