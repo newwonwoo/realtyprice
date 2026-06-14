@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
+import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
 import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultModelWeights } from "@/lib/seed";
@@ -61,6 +62,10 @@ export default function TargetDetailPage() {
       targetToLeaderRatio: rule?.targetToLeaderRatio
     });
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
+  }
+
+  function importTransactions(newTxs: import("@/types/transaction").Transaction[]) {
+    if (newTxs.length > 0) store.setTransactions([...store.transactions, ...newTxs]);
   }
 
   return (
@@ -128,6 +133,14 @@ export default function TargetDetailPage() {
         <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} />
         <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상아파트 전세/분양권과 비교단지 매매 실거래를 사용합니다." />
         <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "저가매물 소진율 30% 이상 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
+      </div>
+
+      <div className="mt-6">
+        <TransactionFetcher
+          apartment={apartment}
+          existingTransactions={[...targetTransactions, ...comparableTransactions]}
+          onImport={importTransactions}
+        />
       </div>
     </AppShell>
   );
