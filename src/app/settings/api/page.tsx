@@ -46,7 +46,7 @@ export default function ApiSettingsPage() {
           {providers.map(([provider, label]) => {
             const saved = apiKeys.find((x) => x.provider === provider);
             return (
-              <div key={provider} className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-[1fr_1.2fr_auto_auto] md:items-center">
+              <div key={provider} className="grid gap-3 rounded-lg border border-slate-200 p-4 md:grid-cols-[1fr_1.2fr_auto_auto] md:items-center">
                 <div><p className="font-bold">{label}</p><p className="text-xs text-slate-500">{saved ? `저장됨: ${new Date(saved.storedAt).toLocaleString()}` : "미저장"}</p></div>
                 <input className="input" type="password" value={draft[provider] ?? ""} onChange={(e) => setDraft({ ...draft, [provider]: e.target.value })} placeholder={saved ? "********" : "키 입력"} />
                 <button className="btn-primary" onClick={() => save(provider)}>저장</button>
@@ -55,7 +55,7 @@ export default function ApiSettingsPage() {
             );
           })}
         </div>
-        <p className="mt-6 rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">프론트 저장 방식은 공개 서비스용 보안 저장소가 아닙니다. 공개 서비스 전환 시 백엔드 암호화 저장 또는 프록시 방식으로 전환하세요.</p>
+        <p className="mt-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-800">프론트 저장 방식은 공개 서비스용 보안 저장소가 아닙니다. 공개 서비스 전환 시 백엔드 암호화 저장 또는 프록시 방식으로 전환하세요.</p>
       </div>
     </AppShell>
   );

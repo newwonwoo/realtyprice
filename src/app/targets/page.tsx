@@ -1,94 +1,80 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
-import { ExternalLinks } from "@/components/targets/ExternalLinks";
-import { formatEok } from "@/lib/format";
+import { TargetApartmentSearch } from "@/components/targets/TargetApartmentSearch";
+import { defaultComparableRule } from "@/lib/seed";
+import { nowIso } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
-import { defaultModelWeights } from "@/lib/seed";
-import { estimatePrice } from "@/lib/priceModel";
-import { readStorage, STORAGE_KEYS } from "@/lib/storage";
-import type { ModelWeights } from "@/types/model";
+import type { Apartment } from "@/types/apartment";
 
-const conclusionLabel = {
-  strong_up: "강한 상승예상",
-  up: "상승예상",
-  neutral: "보합",
-  weak: "약세주의",
-  price_cut_needed: "매각가 조정 필요"
-} as const;
-
-export default function TargetDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export default function TargetsPage() {
   const store = useRealtyStore();
-  const apartment = store.apartments.find((x) => x.id === id);
-  const latestEstimate = store.priceEstimates.find((x) => x.targetApartmentId === id);
 
-  if (!apartment) {
-    return <AppShell><div className="card p-6">대상아파트를 찾을 수 없습니다.</div></AppShell>;
+  function addTarget(apartment: Apartment) {
+    const now = nowIso();
+    const target: Apartment = {
+      ...apartment,
+      id: apartment.id.startsWith("target_") ? apartment.id : `target_${Date.now()}`,
+      role: "target",
+      createdAt: apartment.createdAt ?? now,
+      updatedAt: now
+    };
+    store.setApartments([target, ...store.apartments]);
+    if (!store.comparableRules.some((rule) => rule.targetApartmentId === target.id)) {
+      store.setComparableRules([...store.comparableRules, defaultComparableRule(target.id)]);
+    }
   }
 
-  function runEstimate() {
-    const selectedComparableIds = store.comparableApartments.filter((x) => x.targetApartmentId === id && x.selected).map((x) => x.apartmentId);
-    const txs = store.transactions.filter((x) => selectedComparableIds.includes(x.apartmentId));
-    const listings = store.listings.filter((x) => selectedComparableIds.includes(x.apartmentId));
-    const weights = readStorage<ModelWeights>(STORAGE_KEYS.modelSettings, defaultModelWeights);
-    const result = estimatePrice({
-      targetApartmentId: id,
-      saleTransactions: txs.filter((x) => x.transactionType === "sale" || x.transactionType === "presale"),
-      jeonseTransactions: txs.filter((x) => x.transactionType === "jeonse"),
-      saleListings: listings.filter((x) => x.listingType === "sale"),
-      jeonseListings: listings.filter((x) => x.listingType === "jeonse"),
-      weights,
-      lowPriceAbsorptionRate: 0.2
-    });
-    store.setPriceEstimates([result, ...store.priceEstimates.filter((x) => x.targetApartmentId !== id)]);
+  function deleteTarget(apartmentId: string) {
+    store.setApartments(store.apartments.filter((apartment) => apartment.id !== apartmentId));
+    store.setComparableRules(store.comparableRules.filter((rule) => rule.targetApartmentId !== apartmentId));
+    store.setComparableApartments(store.comparableApartments.filter((item) => item.targetApartmentId !== apartmentId));
+    store.setTransactions(store.transactions.filter((item) => item.apartmentId !== apartmentId));
+    store.setListings(store.listings.filter((item) => item.apartmentId !== apartmentId));
+    store.setInventorySignals(store.inventorySignals.filter((item) => item.apartmentId !== apartmentId));
+    store.setPriceEstimates(store.priceEstimates.filter((item) => item.targetApartmentId !== apartmentId));
   }
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-        <div>
-          <p className="text-sm font-semibold text-blue-600">Target detail</p>
-          <h1 className="text-3xl font-black">{apartment.name}</h1>
-          <p className="mt-2 text-slate-600">{apartment.address}</p>
-        </div>
-        <ExternalLinks apartmentName={apartment.name} />
+      <div className="mb-8">
+        <p className="text-sm font-semibold text-blue-600">Targets</p>
+        <h1 className="text-3xl font-black">대상아파트 관리</h1>
+        <p className="mt-2 text-slate-600">사용자가 추가하는 모든 아파트는 대상아파트로 저장됩니다.</p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-4">
-        <Summary label="결론" value={latestEstimate ? conclusionLabel[latestEstimate.conclusion] : "계산 필요"} />
-        <Summary label="예상 매매가" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"} />
-        <Summary label="권장 매각호가" value={latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"} />
-        <Summary label="상승가능성" value={latestEstimate ? `${latestEstimate.upsideScore}점` : "-"} />
-      </div>
+      <TargetApartmentSearch apartments={store.apartments} onAdd={addTarget} />
 
-      <div className="card mt-6 p-6">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <h2 className="text-xl font-black">가격요약</h2>
-            <p className="mt-1 text-sm text-slate-500">선택된 비교단지의 입력 데이터를 기준으로 계산합니다.</p>
-          </div>
-          <button className="btn-primary" onClick={runEstimate}>가격추정 실행</button>
+      <div className="card mt-6 overflow-hidden">
+        <div className="border-b border-slate-200 p-5">
+          <h2 className="text-lg font-black">등록된 대상아파트</h2>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <Summary label="예상 체결가 하단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMin) : "-"} />
-          <Summary label="예상 체결가 상단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMax) : "-"} />
-          <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} />
-          <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
-          <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} />
-          <Summary label="계산일" value={latestEstimate?.estimateDate ?? "-"} />
-        </div>
+        <table className="table w-full">
+          <thead>
+            <tr><th>단지명</th><th>지역</th><th>주소</th><th>브랜드</th><th>관리</th></tr>
+          </thead>
+          <tbody>
+            {store.targets.map((apartment) => (
+              <tr key={apartment.id}>
+                <td className="font-semibold">{apartment.name}</td>
+                <td>{apartment.region}</td>
+                <td>{apartment.address}</td>
+                <td>{apartment.brand ?? "-"}</td>
+                <td>
+                  <div className="flex flex-wrap gap-2">
+                    <Link className="btn-secondary" href={`/targets/${apartment.id}`}>상세</Link>
+                    <button className="btn-danger" onClick={() => deleteTarget(apartment.id)}>삭제</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!store.targets.length && (
+              <tr><td colSpan={5} className="text-center text-slate-500">등록된 대상아파트가 없습니다.</td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </AppShell>
-  );
-}
-
-function Summary({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
-    </div>
   );
 }

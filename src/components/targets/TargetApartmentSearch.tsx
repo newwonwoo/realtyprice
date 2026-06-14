@@ -12,7 +12,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
   const [manualRegion, setManualRegion] = useState("");
   const [manualAddress, setManualAddress] = useState("");
 
-  const results = useMemo(() => searchApartments(apartments, { regionKeyword, nameKeyword }), [apartments, regionKeyword, nameKeyword]);
+  const results = useMemo(() => searchApartments(apartments, { regionKeyword, nameKeyword }).filter((apartment) => apartment.role !== "target"), [apartments, regionKeyword, nameKeyword]);
 
   function addManual() {
     if (!manualName.trim()) return;
@@ -39,7 +39,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
           <input className="input" value={regionKeyword} onChange={(e) => setRegionKeyword(e.target.value)} placeholder="지역 contains 예: 오산, 송도" />
           <input className="input" value={nameKeyword} onChange={(e) => setNameKeyword(e.target.value)} placeholder="아파트명 contains 예: 금강, 힐스테이트" />
         </div>
-        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+        <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
           <table className="table w-full">
             <thead><tr><th>지역</th><th>아파트명</th><th>주소</th><th>추가</th></tr></thead>
             <tbody>
@@ -51,6 +51,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
                   <td><button className="btn-secondary" onClick={() => onAdd({ ...apt, id: `target_${Date.now()}`, role: "target", updatedAt: nowIso() })}>추가</button></td>
                 </tr>
               ))}
+              {!results.length && <tr><td colSpan={4} className="text-center text-slate-500">검색 가능한 후보가 없습니다.</td></tr>}
             </tbody>
           </table>
         </div>

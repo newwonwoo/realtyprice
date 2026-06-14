@@ -3,10 +3,11 @@
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
-import { formatEok } from "@/lib/format";
+import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultModelWeights } from "@/lib/seed";
 import { estimatePrice } from "@/lib/priceModel";
+import { median } from "@/lib/inventory";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import type { ModelWeights } from "@/types/model";
 
@@ -21,28 +22,38 @@ const conclusionLabel = {
 export default function TargetDetailPage() {
   const { id } = useParams<{ id: string }>();
   const store = useRealtyStore();
-  const apartment = store.apartments.find((x) => x.id === id);
-  const latestEstimate = store.priceEstimates.find((x) => x.targetApartmentId === id);
+  const apartment = store.targets.find((item) => item.id === id);
+  const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
+  const selectedLinks = store.comparableApartments.filter((item) => item.targetApartmentId === id && item.selected);
+  const selectedComparableIds = selectedLinks.map((item) => item.apartmentId);
+  const selectedComparables = store.apartments.filter((item) => selectedComparableIds.includes(item.id));
+  const targetListings = store.listings.filter((item) => item.apartmentId === id);
+  const targetTransactions = store.transactions.filter((item) => item.apartmentId === id);
+  const comparableTransactions = store.transactions.filter((item) => selectedComparableIds.includes(item.apartmentId));
+  const comparableWeights = Object.fromEntries(selectedLinks.map((item) => [item.apartmentId, item.compareWeight || 1]));
+  const inventorySignal = store.inventorySignals.find((item) => item.apartmentId === id);
 
   if (!apartment) {
     return <AppShell><div className="card p-6">대상아파트를 찾을 수 없습니다.</div></AppShell>;
   }
 
   function runEstimate() {
-    const selectedComparableIds = store.comparableApartments.filter((x) => x.targetApartmentId === id && x.selected).map((x) => x.apartmentId);
-    const txs = store.transactions.filter((x) => selectedComparableIds.includes(x.apartmentId));
-    const listings = store.listings.filter((x) => selectedComparableIds.includes(x.apartmentId));
     const weights = readStorage<ModelWeights>(STORAGE_KEYS.modelSettings, defaultModelWeights);
+    const targetSaleListings = targetListings.filter((item) => item.listingType === "sale");
+    const targetJeonseListings = targetListings.filter((item) => item.listingType === "jeonse");
+    const presalePrice = median(targetTransactions.filter((item) => item.transactionType === "presale").map((item) => item.price));
     const result = estimatePrice({
       targetApartmentId: id,
-      saleTransactions: txs.filter((x) => x.transactionType === "sale" || x.transactionType === "presale"),
-      jeonseTransactions: txs.filter((x) => x.transactionType === "jeonse"),
-      saleListings: listings.filter((x) => x.listingType === "sale"),
-      jeonseListings: listings.filter((x) => x.listingType === "jeonse"),
+      saleTransactions: comparableTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
+      jeonseTransactions: [...comparableTransactions, ...targetTransactions].filter((item) => item.transactionType === "jeonse"),
+      saleListings: targetSaleListings,
+      jeonseListings: targetJeonseListings,
       weights,
-      lowPriceAbsorptionRate: 0.2
+      lowPriceAbsorptionRate: inventorySignal?.lowPriceAbsorptionRate ?? 0,
+      comparableWeights,
+      presalePrice
     });
-    store.setPriceEstimates([result, ...store.priceEstimates.filter((x) => x.targetApartmentId !== id)]);
+    store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
   }
 
   return (
@@ -63,22 +74,42 @@ export default function TargetDetailPage() {
         <Summary label="상승가능성" value={latestEstimate ? `${latestEstimate.upsideScore}점` : "-"} />
       </div>
 
-      <div className="card mt-6 p-6">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-          <div>
-            <h2 className="text-xl font-black">가격요약</h2>
-            <p className="mt-1 text-sm text-slate-500">선택된 비교단지의 입력 데이터를 기준으로 계산합니다.</p>
+      <div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="card p-6">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div>
+              <h2 className="text-xl font-black">가격추정</h2>
+              <p className="mt-1 text-sm text-slate-500">선택 비교단지 실거래와 대상아파트 호가/전세/매물소진 신호를 반영합니다.</p>
+            </div>
+            <button className="btn-primary" onClick={runEstimate}>가격추정 실행</button>
           </div>
-          <button className="btn-primary" onClick={runEstimate}>가격추정 실행</button>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <Summary label="예상 하단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMin) : "-"} />
+            <Summary label="예상 상단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMax) : "-"} />
+            <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} />
+            <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
+            <Summary label="저가소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} />
+            <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} />
+          </div>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <Summary label="예상 체결가 하단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMin) : "-"} />
-          <Summary label="예상 체결가 상단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMax) : "-"} />
-          <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} />
-          <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
-          <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} />
-          <Summary label="계산일" value={latestEstimate?.estimateDate ?? "-"} />
+
+        <div className="card p-6">
+          <h2 className="text-xl font-black">산식 구성값</h2>
+          <div className="mt-4 space-y-3">
+            <Line label="비교단지 보정 실거래가 40%" value={formatEok(latestEstimate?.adjustedComparableSalePrice)} />
+            <Line label="현재 매매호가 20%" value={formatEok(latestEstimate?.saleAskingPrice)} />
+            <Line label="전세기반 하방가 15%" value={formatEok(latestEstimate?.jeonseFloorPrice)} />
+            <Line label="매물소진속도 15%" value={formatEok(latestEstimate?.inventorySignalPrice)} />
+            <Line label="분양가 대비 프리미엄 5%" value={formatEok(latestEstimate?.presalePremiumPrice)} />
+            <Line label="거시환경 5%" value={formatEok(latestEstimate?.macroSignalPrice)} />
+          </div>
         </div>
+      </div>
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} />
+        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상아파트 전세/분양권과 비교단지 매매 실거래를 사용합니다." />
+        <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "저가매물 소진율 30% 이상 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
       </div>
     </AppShell>
   );
@@ -86,9 +117,28 @@ export default function TargetDetailPage() {
 
 function Summary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function DataCard({ title, value, description }: { title: string; value: string; description: string }) {
+  return (
+    <div className="card p-5">
+      <p className="text-sm font-semibold text-slate-500">{title}</p>
+      <p className="mt-2 text-2xl font-black">{value}</p>
+      <p className="mt-2 text-sm text-slate-600">{description}</p>
+    </div>
+  );
+}
+
+function Line({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2 text-sm">
+      <span className="text-slate-600">{label}</span>
+      <span className="font-bold text-slate-950">{value}</span>
     </div>
   );
 }
