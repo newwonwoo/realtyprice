@@ -53,22 +53,29 @@ export function regionProfileFromAddress(address?: string): RegionProfile {
 }
 
 // 기존 가격 앵커 가중치에 곱하는 배수. 1.0=변화없음.
+// 백테스트 리서치(2013~2024 실거래 다중회귀) 방향성 반영:
+//  - 서울: '상급지 동조화/시차 갭'이 지배적 선행요인 → 비교단지 압력·대장 리딩 大↑,
+//          호가 리딩 ↑. '전세가율 착시'로 전세 비중 ↓, 역세권/입지는 방어지표라 ↓.
+//  - 경기: '서울 최인접지 격차(풍선효과)'가 최대 동력 → 비교단지 압력 ↑. 분양권·소진율 유지.
+// ⚠️ 제시된 정확한 %(45/40 등)는 독립 검증 불가한 prior라 방향만 반영하고 극단값은 회피함.
+//    불장/하락기 구분(전세 착시·입지 방어 법칙)과 경기 미분양 게이트는 데이터 확보 후 적용 예정.
 const REGION_WEIGHT_MULTIPLIERS: Record<RegionProfile, Partial<Record<keyof ModelWeights, number>>> = {
-  // 서울: 대장 신고가·상급지 압력·호가 리딩 강조, 분양권 비중↓
   seoul: {
-    leaderApartmentAnchor: 1.4,
-    comparableMarketPressure: 1.4,
-    askingPrice: 1.2,
-    comparableAskingPrice: 1.2,
+    comparableMarketPressure: 1.7, // 상급지 동조화/시차 갭 — 백테스트상 압도적 선행요인
+    leaderApartmentAnchor: 1.6,    // 상급지 랜드마크 신고가 리딩
+    askingPrice: 1.3,              // 상급지/당해지 호가 선행 반영
+    comparableAskingPrice: 1.3,
+    jeonseFloorPrice: 0.75,        // 전세가율 착시 — 상승장에선 매매가 단독 슈팅
+    locationPremium: 0.8,          // 역세권/학군은 상승동인 아닌 하락 방어지표
     presalePremium: 0.7,
   },
-  // 경기: 분양권 프리미엄·전세갭·소진율 강조 (풍선효과·실수요 전환)
   gyeonggi: {
-    presalePremium: 1.4,
-    jeonseFloorPrice: 1.3,
-    inventorySignal: 1.3,
+    comparableMarketPressure: 1.5, // 서울 최인접지 격차/풍선효과가 최대 동력
+    presalePremium: 1.4,           // 분양권 프리미엄(낙수효과 시작점)
+    inventorySignal: 1.3,          // 미분양/거래 소진 (하방저항선 해소)
     adjustedComparableSale: 1.15,
-    leaderApartmentAnchor: 0.85,
+    jeonseFloorPrice: 1.0,         // 소액 갭 — 동력이나 백테스트상 기여도 하향
+    locationPremium: 0.85,
   },
   default: {},
 };
