@@ -89,6 +89,30 @@ export function applyRegionProfile(weights: ModelWeights, profile: RegionProfile
   return out;
 }
 
+// ── 공급절벽 모드 (Supply Cliff Override) ────────────────────────────────
+// 향후 2년 공급량 < 정상 수요의 50% 수준일 때 사용자가 수동 활성화하는 선택요소.
+// 구조적 공급절벽에서는 입지/교통이 상승동인이 아니라 하락 방어지표로 약화되고,
+// 전세 소진·호가 lock-in·분양권 희소성이 가격을 지배한다는 가설을 반영.
+// ⚠️ 배수는 리서치 기반 prior — 실증 계수가 아니며 데이터 확보 후 보정 대상.
+const SUPPLY_CLIFF_MULTIPLIERS: Partial<Record<keyof ModelWeights, number>> = {
+  locationPremium: 0.35,          // 입지/교통 = 방어지표로 축소
+  comparableMarketPressure: 0.6,  // 비교단지 압력 약화 (시장 기준점 희박)
+  adjustedComparableSale: 0.75,   // 공급절벽 이전 과거 거래 신뢰도 하락
+  jeonseFloorPrice: 1.6,          // 전세 소진/갭 — 주도 신호
+  inventorySignal: 1.7,           // 저가매물 소진 — 주도 신호
+  askingPrice: 1.5,               // 호가 lock-in
+  comparableAskingPrice: 1.4,
+  presalePremium: 1.3,            // 분양권 프리미엄 강화 (신규 공급 희소)
+};
+
+export function applySupplyCliff(weights: ModelWeights): ModelWeights {
+  const out = { ...weights };
+  (Object.keys(SUPPLY_CLIFF_MULTIPLIERS) as (keyof ModelWeights)[]).forEach((k) => {
+    out[k] = (out[k] ?? 0) * (SUPPLY_CLIFF_MULTIPLIERS[k] ?? 1);
+  });
+  return out;
+}
+
 export function calculateJeonseFloorPrice(expectedJeonsePrice: number, jeonseRatio: number) {
   if (!jeonseRatio) return 0;
   return expectedJeonsePrice / jeonseRatio;
@@ -131,11 +155,15 @@ export function estimatePrice(params: {
   leaderTransactions?: Transaction[];
   targetToLeaderRatio?: number;
   regionProfile?: RegionProfile;
+  supplyCliffMode?: boolean;
 }) {
   const targetArea = params.targetArea > 0 ? params.targetArea : 84;
   // 지역 레짐에 맞춰 가격 앵커 가중치 재조정 (서울/경기 상승 동인 차이 반영)
   const regionProfile = params.regionProfile ?? "default";
-  const weights = applyRegionProfile(params.weights, regionProfile);
+  const supplyCliffMode = params.supplyCliffMode ?? false;
+  let weights = applyRegionProfile(params.weights, regionProfile);
+  // 공급절벽 모드(선택): 입지 약화·전세소진/호가 lock-in 강화로 가중치 재편
+  if (supplyCliffMode) weights = applySupplyCliff(weights);
   const toTargetAreaPrice = (price: number, area?: number) => {
     if (!price || !area || area <= 0) return price;
     return Math.round((price / area) * targetArea);
@@ -333,6 +361,7 @@ export function estimatePrice(params: {
     comparableMarketPressurePrice > 0 && comparableMarketPressureRate !== 0 ? `비교단지 상·하급지 압력 ${Math.round(comparableMarketPressureRate * 100)}%를 반영했습니다.` : null,
     regionProfile === "seoul" ? "서울 레짐: 대장 신고가·상급지 압력·호가 리딩 가중을 강조했습니다." : null,
     regionProfile === "gyeonggi" ? "경기·수도권 레짐: 분양권 프리미엄·전세갭·저가매물 소진 가중을 강조했습니다." : null,
+    supplyCliffMode ? "공급절벽 모드 ON: 입지 비중을 낮추고 전세 소진·호가 lock-in 중심으로 가중치를 재편했습니다." : null,
   ].filter(Boolean) as string[];
 
   const warnings = [

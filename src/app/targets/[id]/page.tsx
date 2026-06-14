@@ -37,6 +37,7 @@ export default function TargetDetailPage() {
   const [estimating, setEstimating] = useState(false);
   const [justDone, setJustDone] = useState(false);
   const [selectedArea, setSelectedArea] = useState<number | null>(null);
+  const [supplyCliffMode, setSupplyCliffMode] = useState(false);
 
   const apartment = store.targets.find((item) => item.id === id);
   const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
@@ -110,6 +111,7 @@ export default function TargetDetailPage() {
       leaderTransactions,
       targetToLeaderRatio: rule?.targetToLeaderRatio,
       regionProfile: regionProfileFromAddress(apartment?.address),
+      supplyCliffMode,
     });
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
     setEstimating(false);
@@ -180,6 +182,16 @@ export default function TargetDetailPage() {
                 <select className="input ml-2 w-32" value={effectiveArea} onChange={(event) => setSelectedArea(Number(event.target.value))}>
                   {areaOptions.length ? areaOptions.map((area) => <option key={area} value={area}>{area}㎡</option>) : <option value={effectiveArea}>{effectiveArea}㎡</option>}
                 </select>
+              </label>
+              <label
+                title="향후 2년 공급량이 정상 수요의 절반 미만인 구조적 공급절벽 지역에 적용. 입지 비중을 낮추고 전세 소진·호가 lock-in 가중을 강화합니다."
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${supplyCliffMode ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-500"}`}
+              >
+                <input type="checkbox" className="sr-only" checked={supplyCliffMode} onChange={(e) => setSupplyCliffMode(e.target.checked)} />
+                <span className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${supplyCliffMode ? "bg-orange-400" : "bg-slate-200"}`}>
+                  <span className={`block h-3 w-3 rounded-full bg-white shadow transition-transform ${supplyCliffMode ? "translate-x-3" : "translate-x-0"}`} />
+                </span>
+                공급절벽 모드
               </label>
             <button
               className={`btn-primary relative min-w-[120px] ${!allReady ? "opacity-70" : ""}`}

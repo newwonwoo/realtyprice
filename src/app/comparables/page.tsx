@@ -69,7 +69,7 @@ export default function ComparablesPage() {
         <p className="mt-2 text-slate-600">비교단지는 대상아파트별로 선택/제외하고 가중치를 따로 저장합니다.</p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-2">
         <div className="card p-5">
           <label className="text-sm font-bold text-slate-700" htmlFor="target">대상아파트</label>
           <select id="target" className="input mt-2" value={activeTargetId} onChange={(event) => setTargetId(event.target.value)}>
