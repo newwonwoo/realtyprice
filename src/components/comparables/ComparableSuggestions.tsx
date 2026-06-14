@@ -141,7 +141,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
     return districtMap[item.name] ?? null;
   }
 
-  function handleAdd(item: AptSearchResult) {
+  async function handleAdd(item: AptSearchResult) {
     const apt: Apartment = {
       id: `cpk_${item.complexPk}`,
       name: item.name,
@@ -154,6 +154,25 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
+
+    // 학교 좌표를 아파트 좌표 근사값으로 사용 (카카오 키 없는 경우 fallback)
+    const district = districtMap[item.name];
+    if (district?.schoolLat && district?.schoolLng) {
+      apt.latitude = district.schoolLat;
+      apt.longitude = district.schoolLng;
+    }
+
+    // 카카오 키 있으면 정확한 좌표로 덮어쓰기
+    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
+    const kakaoKey = keys.find((k) => k.provider === "kakao_rest_api")?.value;
+    if (kakaoKey && item.address) {
+      try {
+        const res = await fetch(`/api/geocode?address=${encodeURIComponent(item.address)}&kakaoKey=${encodeURIComponent(kakaoKey)}`);
+        const geo = await res.json();
+        if (!geo.error) { apt.latitude = geo.lat; apt.longitude = geo.lng; }
+      } catch { /* fallback 유지 */ }
+    }
+
     onAddComparable(apt);
     setAdded((prev) => { const next = new Set(prev); next.add(item.complexPk); return next; });
   }
