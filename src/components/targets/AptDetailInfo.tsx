@@ -58,12 +58,18 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
 
-    // 학구 정보 조회 (학구도 로컬 데이터)
-    fetch(`/api/school-district?aptName=${encodeURIComponent(apartment.name)}&address=${encodeURIComponent(apartment.address ?? apartment.region ?? "")}`)
+    // 학구 정보 조회 (학구도 로컬 데이터, 좌표 있으면 거리 계산)
+    const distParams = new URLSearchParams({
+      aptName: apartment.name,
+      address: apartment.address ?? apartment.region ?? "",
+    });
+    if (apartment.latitude) distParams.set("aptLat", String(apartment.latitude));
+    if (apartment.longitude) distParams.set("aptLng", String(apartment.longitude));
+    fetch(`/api/school-district?${distParams}`)
       .then((r) => r.json())
       .then((json) => { if (!json.error) setDistrict(json); })
       .catch(() => {});
-  }, [kaptCode, apartment.name, apartment.address, apartment.region]);
+  }, [kaptCode, apartment.name, apartment.address, apartment.region, apartment.latitude, apartment.longitude]);
 
   if (!kaptCode) return null; // 수동 추가 아파트는 단지코드 없음
   if (loading) return <p className="text-xs text-slate-400">단지 정보 로딩 중…</p>;
@@ -93,11 +99,16 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
           {district && (
             <div className="border-b border-slate-100 py-1.5 text-sm">
               <span className="text-slate-500 shrink-0">배정초등학교</span>
-              <div className="mt-0.5 font-semibold">
+              <div className="mt-0.5 font-semibold flex flex-wrap gap-1 items-center">
                 {district.schoolName}
                 {district.newStudents > 0 && (
-                  <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${district.newStudents >= 100 ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${district.newStudents >= 100 ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
                     신입생 {district.newStudents}명
+                  </span>
+                )}
+                {district.distanceM !== undefined && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${district.distanceM <= 400 ? "bg-emerald-100 text-emerald-700" : district.distanceM <= 800 ? "bg-yellow-100 text-yellow-700" : "bg-slate-100 text-slate-500"}`}>
+                    {district.distanceM >= 1000 ? `${(district.distanceM / 1000).toFixed(1)}km` : `${district.distanceM}m`}
                   </span>
                 )}
               </div>

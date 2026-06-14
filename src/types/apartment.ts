@@ -12,6 +12,8 @@ export type Apartment = {
   households?: number;
   brand?: string;
   defaultArea?: number;
+  latitude?: number;
+  longitude?: number;
   createdAt: string;
   updatedAt: string;
 };

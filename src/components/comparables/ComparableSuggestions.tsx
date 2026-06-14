@@ -109,6 +109,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
           if (item.name in newMap) return;
           try {
             const r = await fetch(`/api/school-district?aptName=${encodeURIComponent(item.name)}&address=${encodeURIComponent(item.address.split(" ").slice(0, 3).join(" "))}`);
+            // 비교단지는 좌표 없음 → 거리 계산 불가, 학교명+신입생 수만 표시
             const d = await r.json();
             newMap[item.name] = d.error ? null : (d as SchoolDistrictResult);
             districtCache[item.name] = newMap[item.name];
@@ -196,19 +197,18 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
                         <td className="font-semibold text-sm">{item.name}</td>
                         <td className="text-right text-sm">{item.households ? item.households.toLocaleString() : "-"}</td>
                         <td className="text-sm">{item.builtDate ? item.builtDate.slice(0, 4) : "-"}</td>
-                        <td className="text-sm">
+                        <td className="text-sm max-w-[120px]">
                           {district
-                            ? <span className="text-slate-700">{district.schoolName.replace(/^서울|^경기|^부산/, "")}</span>
+                            ? <span className="text-slate-700 truncate block">{district.schoolName.replace(/^서울|^경기|^부산|^인천|^대구|^대전|^광주|^울산/, "")}</span>
                             : <span className="text-slate-300">-</span>
                           }
                         </td>
-                        <td className="text-sm">
-                          {district
-                            ? <span className={`font-bold ${district.newStudents >= 100 ? "text-blue-600" : district.newStudents >= 50 ? "text-slate-700" : "text-slate-400"}`}>
-                                {district.newStudents}명
-                              </span>
-                            : <span className="text-slate-300">-</span>
-                          }
+                        <td className="text-sm whitespace-nowrap">
+                          {district ? (
+                            <span className={`font-bold ${district.newStudents >= 100 ? "text-blue-600" : district.newStudents >= 50 ? "text-slate-700" : "text-slate-400"}`}>
+                              {district.newStudents}명
+                            </span>
+                          ) : <span className="text-slate-300">-</span>}
                         </td>
                         <td>
                           {alreadyAdded
