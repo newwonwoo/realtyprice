@@ -100,19 +100,11 @@ export async function GET(req: NextRequest) {
       const nameNoSpace = item.name.replace(/\s+/g, "");
       const addrNoSpace = item.address.replace(/\s+/g, "");
 
-      if (kw.includes(" ")) {
-        // 지역 검색: 모든 단어가 이름 또는 주소에 하나씩 포함되어 있으면 통과
-        return words.every((w) =>
-          nameNoSpace.includes(w) || item.name.includes(w) ||
-          addrNoSpace.includes(w) || item.address.includes(w)
-        );
-      } else {
-        // 이름 검색: 공백제거 후 양방향 포함 (DB에 공백 있어도 매칭)
-        // "힐스테이트레이크" ↔ "힐스테이트레이크송도" (nameNoSpace)
-        return nameNoSpace.includes(kwNoSpace)
-          || kwNoSpace.includes(nameNoSpace)
-          || addrNoSpace.includes(kwNoSpace);
-      }
+      // 단어 중 하나라도 이름 또는 주소에 포함되면 통과 (OR 매칭)
+      return words.some((w) =>
+        nameNoSpace.includes(w) || item.name.includes(w) ||
+        addrNoSpace.includes(w) || item.address.includes(w)
+      ) || nameNoSpace.includes(kwNoSpace) || kwNoSpace.includes(nameNoSpace);
     });
 
     return NextResponse.json({ items, total: items.length });

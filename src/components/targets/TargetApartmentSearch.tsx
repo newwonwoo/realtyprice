@@ -66,28 +66,39 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       const kw = keyword.trim();
       const hasRegion = kw.includes(" ");
 
-      // 청약홈(분양단지) 먼저 조회
-      const presaleRes = await fetch(`/api/apt-presale?${new URLSearchParams({ serviceKey, houseName: kw })}`).then((r) => r.json());
-      const presaleItems: PresaleInfo[] = presaleRes.items ?? [];
+      let completedRes: { items?: AptSearchResult[] };
+      let presaleRes: { items?: PresaleInfo[] };
 
-      // 공백 없는 순수 단지명인 경우: 청약홈 주소에서 지역 추출해 odcloud 재검색
-      let aptSearchKeyword = kw;
-      if (!hasRegion && presaleItems.length > 0) {
-        const loc = presaleItems[0].supplyLocation; // 예: "인천광역시 연수구 송도동 123"
-        const regionParts = loc.split(" ").slice(0, 2).join(" "); // "인천광역시 연수구"
-        aptSearchKeyword = `${regionParts} ${kw}`; // "인천광역시 연수구 힐스테이트레이크"
+      if (hasRegion) {
+        // 지역+단지명 입력: 부동산원·청약홈 동시 조회
+        [completedRes, presaleRes] = await Promise.all([
+          fetch(`/api/apt-search?${new URLSearchParams({ serviceKey, keyword: kw })}`).then((r) => r.json()),
+          fetch(`/api/apt-presale?${new URLSearchParams({ serviceKey, houseName: kw })}`).then((r) => r.json()),
+        ]);
+      } else {
+        // 단지명만 입력: 청약홈에서 주소 먼저 확보 후 odcloud 재검색
+        presaleRes = await fetch(`/api/apt-presale?${new URLSearchParams({ serviceKey, houseName: kw })}`).then((r) => r.json());
+        const presaleItems: PresaleInfo[] = presaleRes.items ?? [];
+        let aptSearchKeyword = kw;
+        if (presaleItems.length > 0) {
+          const loc = presaleItems[0].supplyLocation;
+          const regionParts = loc.split(" ").slice(0, 2).join(" ");
+          aptSearchKeyword = `${regionParts} ${kw}`;
+        }
+        completedRes = await fetch(`/api/apt-search?${new URLSearchParams({ serviceKey, keyword: aptSearchKeyword })}`).then((r) => r.json());
       }
-
-      const completedRes = await fetch(`/api/apt-search?${new URLSearchParams({ serviceKey, keyword: aptSearchKeyword })}`).then((r) => r.json());
 
       const combined: CombinedResult[] = [
         ...((completedRes.items ?? []) as AptSearchResult[]).map((d): CombinedResult => ({ source: "completed", data: d })),
-        ...presaleItems.map((d): CombinedResult => ({ source: "presale", data: d })),
+        ...((presaleRes.items ?? []) as PresaleInfo[]).map((d): CombinedResult => ({ source: "presale", data: d })),
       ];
 
       if (!combined.length) {
-        const hint = completedRes.hint ?? presaleRes.hint;
-        setApiError(hint ?? "검색 결과가 없습니다. 지역명을 포함해서 검색해보세요. 예: \"인천 힐스테이트레이크\"");
+        setApiError(
+          hasRegion
+            ? "검색 결과가 없습니다. 단지명을 더 짧게 입력하거나 지역명을 바꿔보세요. (예: 오산역 → 화성 오산역)"
+            : "검색 결과가 없습니다. 지역명을 포함해서 검색해보세요. 예: \"인천 힐스테이트레이크\""
+        );
         return;
       }
       setApiResults(combined);
