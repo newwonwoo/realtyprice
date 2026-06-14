@@ -143,28 +143,50 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
         .slice(0, 40)
         .map(({ item }) => item);
 
-      // 2차: 1km 인접 필터 (대상 좌표 + 카카오 키 있을 때만 적용)
-      const keys2 = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
-      const kakaoKey = keys2.find((k) => k.provider === "kakao_rest_api")?.value;
-      let filtered = ranked;
+      // 단지별 학군(배정초교) 일괄 조회 — 학구도 공공데이터(data.go.kr). 카카오 불필요.
+      // 학교 좌표(schoolLat/schoolLng)를 단지 위치 proxy로 활용해 1km 인접을 측정한다.
+      const newMap: Record<string, SchoolDistrictResult | null> = { ...districtCache };
+      await Promise.all(
+        ranked.map(async (item) => {
+          if (item.name in newMap) return;
+          try {
+            const r = await fetch(`/api/school-district?aptName=${encodeURIComponent(item.name)}&address=${encodeURIComponent(item.address.split(" ").slice(0, 3).join(" "))}`);
+            const d = await r.json();
+            newMap[item.name] = d.error ? null : (d as SchoolDistrictResult);
+            districtCache[item.name] = newMap[item.name];
+          } catch {
+            newMap[item.name] = null;
+          }
+        })
+      );
+      setDistrictMap(newMap);
+
+      // 대상 기준 좌표: 대상 좌표 우선, 없으면 대상의 배정초교 좌표
+      let refLat = target.latitude;
+      let refLng = target.longitude;
+      if ((!refLat || !refLng)) {
+        try {
+          const tr = await fetch(`/api/school-district?aptName=${encodeURIComponent(target.name)}&address=${encodeURIComponent((target.address ?? target.region ?? "").split(" ").slice(0, 3).join(" "))}`);
+          const td = await tr.json();
+          if (!td.error && td.schoolLat && td.schoolLng) { refLat = td.schoolLat; refLng = td.schoolLng; }
+        } catch { /* 좌표 미상 */ }
+      }
+
+      // 1km 인접 필터 — 배정초교 좌표 proxy 기반 (카카오 키 불필요)
       const newDistMap: Record<string, number> = {};
-      const canDistance = !!(target.latitude && target.longitude && kakaoKey);
+      const canDistance = !!(refLat && refLng);
+      let filtered = ranked;
       if (canDistance) {
-        await Promise.all(
-          ranked.map(async (item) => {
-            try {
-              const r = await fetch(`/api/geocode?address=${encodeURIComponent(item.address)}&kakaoKey=${encodeURIComponent(kakaoKey!)}`);
-              const geo = await r.json();
-              if (!geo.error && geo.lat && geo.lng) {
-                newDistMap[item.complexPk] = haversineM(target.latitude!, target.longitude!, geo.lat, geo.lng);
-              }
-            } catch { /* 좌표 실패 시 거리 미상 */ }
-          })
-        );
-        // 거리가 측정된 단지는 1km 이내만, 좌표 실패 단지는 보수적으로 유지
+        for (const item of ranked) {
+          const d = newMap[item.name];
+          if (d?.schoolLat && d?.schoolLng) {
+            newDistMap[item.complexPk] = haversineM(refLat!, refLng!, d.schoolLat, d.schoolLng);
+          }
+        }
+        // 거리가 측정된 단지는 1km 이내만, 학교좌표 미상 단지는 보수적으로 유지
         filtered = ranked.filter((item) => {
-          const d = newDistMap[item.complexPk];
-          return d === undefined || d <= ADJACENCY_M;
+          const dist = newDistMap[item.complexPk];
+          return dist === undefined || dist <= ADJACENCY_M;
         });
       }
       filtered = filtered.slice(0, 25);
@@ -176,24 +198,6 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
         return;
       }
       setSuggestions(filtered);
-
-      // 단지별 학군 일괄 조회 (학구도 로컬 데이터)
-      const newMap: Record<string, SchoolDistrictResult | null> = { ...districtCache };
-      await Promise.all(
-        filtered.map(async (item) => {
-          if (item.name in newMap) return;
-          try {
-            const r = await fetch(`/api/school-district?aptName=${encodeURIComponent(item.name)}&address=${encodeURIComponent(item.address.split(" ").slice(0, 3).join(" "))}`);
-            // 비교단지는 좌표 없음 → 거리 계산 불가, 학교명+신입생 수만 표시
-            const d = await r.json();
-            newMap[item.name] = d.error ? null : (d as SchoolDistrictResult);
-            districtCache[item.name] = newMap[item.name];
-          } catch {
-            newMap[item.name] = null;
-          }
-        })
-      );
-      setDistrictMap(newMap);
 
       // 재정렬: 동급지(입지등급 유사) 우선 → 학군 신입생 → 입지 유사도
       setSuggestions((prev) =>
@@ -233,22 +237,11 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       updatedAt: nowIso(),
     };
 
-    // 학교 좌표를 아파트 좌표 근사값으로 사용 (카카오 키 없는 경우 fallback)
+    // 배정초교 좌표를 단지 위치 proxy로 저장 (인접거리 계산용 — 카카오 불필요)
     const district = districtMap[item.name];
     if (district?.schoolLat && district?.schoolLng) {
       apt.latitude = district.schoolLat;
       apt.longitude = district.schoolLng;
-    }
-
-    // 카카오 키 있으면 정확한 좌표로 덮어쓰기
-    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
-    const kakaoKey = keys.find((k) => k.provider === "kakao_rest_api")?.value;
-    if (kakaoKey && item.address) {
-      try {
-        const res = await fetch(`/api/geocode?address=${encodeURIComponent(item.address)}&kakaoKey=${encodeURIComponent(kakaoKey)}`);
-        const geo = await res.json();
-        if (!geo.error) { apt.latitude = geo.lat; apt.longitude = geo.lng; }
-      } catch { /* fallback 유지 */ }
     }
 
     onAddComparable(apt);
@@ -268,7 +261,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
               <p className="font-bold text-sm">자동추천 비교단지</p>
               <p className="text-xs text-slate-500">
                 {target.region} · 입지등급(상/동/하급지) 분류 · 세대수 −20% 이상만
-                {distApplied ? " · 반경 1km 이내" : " · 1km 필터엔 대상 좌표+카카오키 필요"}
+                {distApplied ? " · 반경 1km 이내(배정초교 좌표 기준)" : " · 거리기준 미적용(배정초교 좌표 없음)"}
               </p>
             </div>
             <button className="text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>✕</button>
