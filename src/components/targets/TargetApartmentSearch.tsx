@@ -6,8 +6,14 @@ import { searchApartments } from "@/lib/searchApartments";
 import { nowIso } from "@/lib/format";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
+import type { PresaleInfo } from "@/app/api/apt-presale/route";
 
 type Tab = "api" | "local" | "manual";
+
+// 통합 검색 결과 타입
+type CombinedResult =
+  | { source: "completed"; data: AptSearchResult }
+  | { source: "presale"; data: PresaleInfo };
 
 function builtYear(date: string): number | undefined {
   const y = parseInt(date?.slice(0, 4), 10);
@@ -24,7 +30,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
 
   // API 검색
   const [keyword, setKeyword] = useState("");
-  const [apiResults, setApiResults] = useState<AptSearchResult[]>([]);
+  const [apiResults, setApiResults] = useState<CombinedResult[]>([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState("");
 
@@ -46,7 +52,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     msgTimer.current = setTimeout(() => setMessage(""), 3000);
   }
 
-  // ── 공공데이터 검색 ──────────────────────────────────────
+  // ── 공공데이터 + 청약홈 동시 검색 ────────────────────────
   async function searchByApi() {
     if (!keyword.trim()) { setApiError("검색어를 입력하세요."); return; }
     const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
@@ -57,12 +63,20 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     setApiError("");
     setApiResults([]);
     try {
-      const params = new URLSearchParams({ serviceKey, keyword: keyword.trim() });
-      const res = await fetch(`/api/apt-search?${params.toString()}`);
-      const json = await res.json();
-      if (!res.ok) { setApiError(json.error ?? "오류가 발생했습니다."); return; }
-      if (!json.items?.length) { setApiError("검색 결과가 없습니다."); return; }
-      setApiResults(json.items);
+      const kw = keyword.trim();
+      // 완공단지(부동산원)와 분양단지(청약홈) 동시 조회
+      const [completedRes, presaleRes] = await Promise.all([
+        fetch(`/api/apt-search?${new URLSearchParams({ serviceKey, keyword: kw })}`).then((r) => r.json()),
+        fetch(`/api/apt-presale?${new URLSearchParams({ serviceKey, houseName: kw })}`).then((r) => r.json()),
+      ]);
+
+      const combined: CombinedResult[] = [
+        ...((completedRes.items ?? []) as AptSearchResult[]).map((d): CombinedResult => ({ source: "completed", data: d })),
+        ...((presaleRes.items ?? []) as PresaleInfo[]).map((d): CombinedResult => ({ source: "presale", data: d })),
+      ];
+
+      if (!combined.length) { setApiError("검색 결과가 없습니다."); return; }
+      setApiResults(combined);
     } catch (e) {
       setApiError(`요청 실패: ${String(e)}`);
     } finally {
@@ -70,7 +84,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     }
   }
 
-  async function addFromApi(item: AptSearchResult) {
+  async function addFromCompleted(item: AptSearchResult) {
     const apt: import("@/types/apartment").Apartment = {
       id: `cpk_${item.complexPk}`,
       name: item.name,
@@ -83,26 +97,43 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
-
-    // 카카오 API 키가 있으면 좌표 자동 조회
     const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
     const kakaoKey = keys.find((k) => k.provider === "kakao_rest_api")?.value;
     if (kakaoKey && item.address) {
       try {
         const res = await fetch(`/api/geocode?address=${encodeURIComponent(item.address)}&kakaoKey=${encodeURIComponent(kakaoKey)}`);
         const geo = await res.json();
-        if (!geo.error) {
-          apt.latitude = geo.lat;
-          apt.longitude = geo.lng;
-        }
+        if (!geo.error) { apt.latitude = geo.lat; apt.longitude = geo.lng; }
       } catch { /* 좌표 없이 추가 */ }
     }
-
     const added = onAdd(apt);
-    showMessage(added
-      ? `"${item.name}" 추가됨${apt.latitude ? " (좌표 포함)" : " (좌표 없음 — 카카오 API 키 설정 시 자동 조회)"}`
-      : "이미 등록된 대상아파트입니다."
-    );
+    showMessage(added ? `"${item.name}" 추가됨${apt.latitude ? " (좌표 포함)" : ""}` : "이미 등록된 대상아파트입니다.");
+  }
+
+  async function addFromPresale(item: PresaleInfo) {
+    const apt: import("@/types/apartment").Apartment = {
+      id: `presale_${item.houseManageNo}`,
+      name: item.houseName,
+      region: item.supplyLocation.split(" ").slice(0, 2).join(" "),
+      address: item.supplyLocation,
+      role: "target",
+      group: "presale",
+      households: item.totalSupplyHouseholds || undefined,
+      originalPresalePrice: item.lowestPrice,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    };
+    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
+    const kakaoKey = keys.find((k) => k.provider === "kakao_rest_api")?.value;
+    if (kakaoKey && item.supplyLocation) {
+      try {
+        const res = await fetch(`/api/geocode?address=${encodeURIComponent(item.supplyLocation)}&kakaoKey=${encodeURIComponent(kakaoKey)}`);
+        const geo = await res.json();
+        if (!geo.error) { apt.latitude = geo.lat; apt.longitude = geo.lng; }
+      } catch { /* 좌표 없이 추가 */ }
+    }
+    const added = onAdd(apt);
+    showMessage(added ? `"${item.houseName}" 추가됨 (분양단지)` : "이미 등록된 대상아파트입니다.");
   }
 
   // ── 로컬 검색 ──────────────────────────────────────────
@@ -153,7 +184,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       {tab === "api" && (
         <div className="mt-4">
           <p className="mb-3 text-xs text-slate-500">
-            한국부동산원 단지 식별정보 API로 주소 또는 단지명을 검색합니다.
+            완공단지(한국부동산원)와 분양단지(청약홈)를 동시에 검색합니다.
             <a href="/settings/api" className="ml-1 text-blue-600 underline">API 키 설정</a> 필요.
           </p>
           <div className="flex gap-2">
@@ -172,15 +203,23 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
           {apiResults.length > 0 && (
             <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
               <table className="table w-full">
-                <thead><tr><th>단지명</th><th>주소</th><th>세대</th><th>사용승인</th><th>추가</th></tr></thead>
+                <thead><tr><th>단지명</th><th>주소</th><th>세대</th><th>구분</th><th>추가</th></tr></thead>
                 <tbody>
-                  {apiResults.map((item) => (
-                    <tr key={item.complexPk}>
-                      <td className="font-semibold">{item.name}</td>
-                      <td className="text-xs">{item.address}</td>
-                      <td className="text-right">{item.households ? `${item.households.toLocaleString()}세대` : "-"}</td>
-                      <td>{builtLabel(item.builtDate)}</td>
-                      <td><button className="btn-secondary" onClick={() => addFromApi(item)}>추가</button></td>
+                  {apiResults.map((r, i) => r.source === "completed" ? (
+                    <tr key={`c_${r.data.complexPk}`}>
+                      <td className="font-semibold">{r.data.name}</td>
+                      <td className="text-xs">{r.data.address}</td>
+                      <td className="text-right text-xs">{r.data.households ? `${r.data.households.toLocaleString()}세대` : "-"}</td>
+                      <td><span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">완공 {builtLabel(r.data.builtDate)}</span></td>
+                      <td><button className="btn-secondary" onClick={() => addFromCompleted(r.data)}>추가</button></td>
+                    </tr>
+                  ) : (
+                    <tr key={`p_${r.data.houseManageNo}_${i}`}>
+                      <td className="font-semibold">{r.data.houseName}</td>
+                      <td className="text-xs">{r.data.supplyLocation}</td>
+                      <td className="text-right text-xs">{r.data.totalSupplyHouseholds ? `${r.data.totalSupplyHouseholds.toLocaleString()}세대` : "-"}</td>
+                      <td><span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">분양 {r.data.recruitPublicNoticeDate?.slice(0, 7) ?? ""}</span></td>
+                      <td><button className="btn-secondary" onClick={() => addFromPresale(r.data)}>추가</button></td>
                     </tr>
                   ))}
                 </tbody>
