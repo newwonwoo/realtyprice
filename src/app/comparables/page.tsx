@@ -5,7 +5,8 @@ import { AppShell } from "@/components/AppShell";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultComparableRule } from "@/lib/seed";
 import { nowIso } from "@/lib/format";
-import type { ComparableRule } from "@/types/apartment";
+import type { Apartment, ComparableRule } from "@/types/apartment";
+import { ComparableSuggestions } from "@/components/comparables/ComparableSuggestions";
 
 export default function ComparablesPage() {
   const store = useRealtyStore();
@@ -49,6 +50,15 @@ export default function ComparablesPage() {
     ]);
   }
 
+  // 자동추천에서 새 비교단지(공공데이터) 추가: store에 저장 + 선택 링크 생성
+  function addSuggestedComparable(apt: Apartment) {
+    if (!store.apartments.some((a) => a.id === apt.id)) {
+      store.setApartments([...store.apartments, apt]);
+    }
+    upsertComparable(apt.id, true);
+  }
+
+  const existingComparableIds = new Set(store.apartments.map((a) => a.id));
   const selectedCount = store.comparableApartments.filter((item) => item.targetApartmentId === activeTargetId && item.selected).length;
 
   return (
@@ -69,6 +79,17 @@ export default function ComparablesPage() {
             <Metric label="선택 단지" value={`${selectedCount}개`} />
             <Metric label="후보 단지" value={`${store.comparables.length}개`} />
           </div>
+          {/* 비교단지 자동추천 */}
+          {activeTarget && (
+            <div className="mt-5">
+              <ComparableSuggestions
+                target={activeTarget}
+                existingComparableIds={existingComparableIds}
+                onAddComparable={addSuggestedComparable}
+              />
+            </div>
+          )}
+
           {/* 대장아파트 설정 */}
           <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
             <p className="text-sm font-black text-blue-800">대장아파트 설정</p>

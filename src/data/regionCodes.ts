@@ -357,6 +357,20 @@ export const REGION_CODES: SidoInfo[] = [
   },
 ];
 
+// 아파트 region 문자열("경기 오산시", "인천 연수구" 등)에서 sgg_code 추출
+export function findSggCode(region: string): string | null {
+  const normalized = region.replace(/특별시|광역시|특별자치시|특별자치도|도$/, "").trim();
+  for (const sido of REGION_CODES) {
+    for (const sgg of sido.sgg) {
+      const sggName = sgg.name.split(" ")[0]; // "고양시 덕양구" → "고양시"도 매칭
+      if (normalized.includes(sgg.name) || normalized.includes(sggName)) {
+        return sgg.code;
+      }
+    }
+  }
+  return null;
+}
+
 export function searchRegions(keyword: string): { sido: string; name: string; code: string }[] {
   const kw = keyword.trim().toLowerCase();
   if (!kw) return [];
