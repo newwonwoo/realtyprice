@@ -75,7 +75,11 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
         ...((presaleRes.items ?? []) as PresaleInfo[]).map((d): CombinedResult => ({ source: "presale", data: d })),
       ];
 
-      if (!combined.length) { setApiError("검색 결과가 없습니다."); return; }
+      if (!combined.length) {
+        const hint = completedRes.hint ?? presaleRes.hint;
+        setApiError(hint ?? "검색 결과가 없습니다.");
+        return;
+      }
       setApiResults(combined);
     } catch (e) {
       setApiError(`요청 실패: ${String(e)}`);
@@ -187,13 +191,17 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
             완공단지(한국부동산원)와 분양단지(청약홈)를 동시에 검색합니다.
             <a href="/settings/api" className="ml-1 text-blue-600 underline">API 키 설정</a> 필요.
           </p>
+          <p className="mb-2 text-xs font-semibold text-amber-600">
+            💡 <strong>지역명 + 단지명</strong> 조합으로 입력하면 정확합니다.
+            예: <em>인천 힐스테이트레이크</em>, <em>송도 더샵</em>, <em>오산 금강</em>
+          </p>
           <div className="flex gap-2">
             <input
               className="input flex-1"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && searchByApi()}
-              placeholder="단지명 또는 주소 입력 (예: 오산역 금강, 인천 연수구 송도)"
+              placeholder="지역 + 단지명 입력 (예: 인천 힐스테이트레이크, 송도 더샵)"
             />
             <button className="btn-primary whitespace-nowrap" onClick={searchByApi} disabled={apiLoading}>
               {apiLoading ? "검색 중…" : "검색"}
