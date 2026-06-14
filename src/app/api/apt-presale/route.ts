@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 // 한국부동산원_청약홈 분양정보 조회 서비스
 // https://www.data.go.kr/data/15098547/openapi.do
-const API_BASE = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancList";
+// ⚠️ 공식 매뉴얼 기준 정확한 오퍼레이션명은 getAPTLttotPblancDetail (APT 분양정보 상세조회).
+//    잘못된 이름(getAPTLttotPblancList)을 호출하면 HTTP 400이 반환됩니다.
+const API_BASE = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail";
 
-// ⚠️ 이 청약홈 데이터셋은 cond[FIELD::LIKE] 텍스트 필터를 허용하지 않습니다(HTTP 400).
-// 완공단지(AptIdInfoSvc)는 LIKE를 허용하지만, 청약홈은 셋별 허용 연산자가 달라서
-// 텍스트 LIKE가 비활성화되어 있습니다. 따라서 필터 없이 목록을 받아 서버에서 직접 거릅니다.
-const PER_PAGE = 100;  // odcloud 검증된 페이지 크기 (완공 API와 동일)
-const MAX_PAGES = 20;  // 최대 2,000행까지 조회
+// ⚠️ 이 데이터셋의 검색(cond) 가능 필드는 HOUSE_MANAGE_NO, PBLANC_NO,
+//    SUBSCRPT_AREA_CODE_NM(지역), RCRIT_PBLANC_DE(공고일)뿐입니다.
+//    HOUSE_NM(단지명)은 응답에만 존재하고 검색 필터로는 쓸 수 없으므로(→ 400),
+//    필터 없이 목록을 받아 서버에서 직접 부분일치로 거릅니다. (전체 약 1,900건)
+const PER_PAGE = 1000; // 전체(약 1,900건)를 2페이지로 커버
+const MAX_PAGES = 5;
 
 export type PresaleInfo = {
   houseName: string;
