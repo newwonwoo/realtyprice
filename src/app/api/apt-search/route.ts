@@ -46,7 +46,8 @@ async function fetchField(
     const url = buildUrl(field, value, serviceKey);
     const res = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 0 } });
     if (!res.ok) {
-      diag?.push({ field, value, httpStatus: res.status, rawCount: 0 });
+      const body = await res.text().catch(() => "");
+      diag?.push({ field, value, httpStatus: res.status, rawCount: 0, error: body.slice(0, 300) });
       return [];
     }
     const data = await res.json();

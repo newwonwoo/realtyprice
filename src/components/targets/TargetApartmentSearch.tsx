@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import type { Apartment } from "@/types/apartment";
 import { searchApartments } from "@/lib/searchApartments";
 import { nowIso } from "@/lib/format";
@@ -353,12 +353,19 @@ function DiagTable({ diag }: { diag?: StrategyDiag[] }) {
         {diag.map((d, i) => {
           const st = statusLabel(d.httpStatus);
           return (
-            <tr key={i} className="border-t border-slate-100">
-              <td className="py-0.5 font-mono">{d.field}</td>
-              <td className="py-0.5 font-mono text-slate-600">{d.value}</td>
-              <td className="py-0.5"><span className={`rounded px-1 py-0.5 ${st.cls}`}>{st.text}</span></td>
-              <td className="py-0.5 text-right font-mono">{d.rawCount}{d.error ? ` ⚠️` : ""}</td>
-            </tr>
+            <Fragment key={i}>
+              <tr className="border-t border-slate-100">
+                <td className="py-0.5 font-mono">{d.field}</td>
+                <td className="py-0.5 font-mono text-slate-600">{d.value}</td>
+                <td className="py-0.5"><span className={`rounded px-1 py-0.5 ${st.cls}`}>{st.text}</span></td>
+                <td className="py-0.5 text-right font-mono">{d.rawCount}{d.error ? " ⚠️" : ""}</td>
+              </tr>
+              {d.error && (
+                <tr>
+                  <td colSpan={4} className="pb-1 font-mono text-[10px] leading-tight text-red-500 break-all">↳ {d.error}</td>
+                </tr>
+              )}
+            </Fragment>
           );
         })}
       </tbody>

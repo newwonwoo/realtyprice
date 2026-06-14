@@ -7,8 +7,8 @@ const API_BASE = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLtt
 // ⚠️ 이 청약홈 데이터셋은 cond[FIELD::LIKE] 텍스트 필터를 허용하지 않습니다(HTTP 400).
 // 완공단지(AptIdInfoSvc)는 LIKE를 허용하지만, 청약홈은 셋별 허용 연산자가 달라서
 // 텍스트 LIKE가 비활성화되어 있습니다. 따라서 필터 없이 목록을 받아 서버에서 직접 거릅니다.
-const PER_PAGE = 1000; // odcloud 한 페이지 최대 행수
-const MAX_PAGES = 5;   // 최대 5,000행까지 조회 (전국 최근 분양 공고 충분 커버)
+const PER_PAGE = 100;  // odcloud 검증된 페이지 크기 (완공 API와 동일)
+const MAX_PAGES = 20;  // 최대 2,000행까지 조회
 
 export type PresaleInfo = {
   houseName: string;
@@ -69,7 +69,8 @@ export async function GET(req: NextRequest) {
       try {
         const res = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 0 } });
         if (!res.ok) {
-          diag.push({ field: `page ${page}`, value: "(no filter)", httpStatus: res.status, rawCount: 0 });
+          const body = await res.text().catch(() => "");
+          diag.push({ field: `page ${page}`, value: "(no filter)", httpStatus: res.status, rawCount: 0, error: body.slice(0, 300) });
           break;
         }
         const data = await res.json();
