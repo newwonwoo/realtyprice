@@ -15,6 +15,15 @@ type CombinedResult =
   | { source: "completed"; data: AptSearchResult }
   | { source: "presale"; data: PresaleInfo };
 
+// 진단 정보 타입
+type StrategyDiag = { field: string; value: string; httpStatus: number; rawCount: number; error?: string };
+type DiagInfo = {
+  completedKeyword: string;
+  presaleKeyword: string;
+  completed?: { diag?: StrategyDiag[]; rawTotal?: number; total?: number; error?: string };
+  presale?: { diag?: StrategyDiag[]; total?: number; error?: string };
+};
+
 function builtYear(date: string): number | undefined {
   const y = parseInt(date?.slice(0, 4), 10);
   return isNaN(y) ? undefined : y;
@@ -33,6 +42,8 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
   const [apiResults, setApiResults] = useState<CombinedResult[]>([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState("");
+  const [debugMode, setDebugMode] = useState(false);
+  const [diagInfo, setDiagInfo] = useState<DiagInfo | null>(null);
 
   // 로컬 검색
   const [localRegion, setLocalRegion] = useState("");
@@ -62,30 +73,43 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     setApiLoading(true);
     setApiError("");
     setApiResults([]);
+    setDiagInfo(null);
+    const dbg = debugMode ? "1" : "";
     try {
       const kw = keyword.trim();
       const hasRegion = kw.includes(" ");
 
-      let completedRes: { items?: AptSearchResult[] };
-      let presaleRes: { items?: PresaleInfo[] };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let completedRes: any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let presaleRes: any;
+      let completedKeyword = kw;
 
       if (hasRegion) {
         // 지역+단지명 입력: 부동산원·청약홈 동시 조회
         [completedRes, presaleRes] = await Promise.all([
-          fetch(`/api/apt-search?${new URLSearchParams({ serviceKey, keyword: kw })}`).then((r) => r.json()),
-          fetch(`/api/apt-presale?${new URLSearchParams({ serviceKey, houseName: kw })}`).then((r) => r.json()),
+          fetch(`/api/apt-search?${new URLSearchParams({ serviceKey, keyword: kw, debug: dbg })}`).then((r) => r.json()),
+          fetch(`/api/apt-presale?${new URLSearchParams({ serviceKey, houseName: kw, debug: dbg })}`).then((r) => r.json()),
         ]);
       } else {
         // 단지명만 입력: 청약홈에서 주소 먼저 확보 후 odcloud 재검색
-        presaleRes = await fetch(`/api/apt-presale?${new URLSearchParams({ serviceKey, houseName: kw })}`).then((r) => r.json());
+        presaleRes = await fetch(`/api/apt-presale?${new URLSearchParams({ serviceKey, houseName: kw, debug: dbg })}`).then((r) => r.json());
         const presaleItems: PresaleInfo[] = presaleRes.items ?? [];
-        let aptSearchKeyword = kw;
         if (presaleItems.length > 0) {
           const loc = presaleItems[0].supplyLocation;
           const regionParts = loc.split(" ").slice(0, 2).join(" ");
-          aptSearchKeyword = `${regionParts} ${kw}`;
+          completedKeyword = `${regionParts} ${kw}`;
         }
-        completedRes = await fetch(`/api/apt-search?${new URLSearchParams({ serviceKey, keyword: aptSearchKeyword })}`).then((r) => r.json());
+        completedRes = await fetch(`/api/apt-search?${new URLSearchParams({ serviceKey, keyword: completedKeyword, debug: dbg })}`).then((r) => r.json());
+      }
+
+      if (debugMode) {
+        setDiagInfo({
+          completedKeyword,
+          presaleKeyword: kw,
+          completed: { diag: completedRes.diag, rawTotal: completedRes.rawTotal, total: completedRes.total, error: completedRes.error },
+          presale: { diag: presaleRes.diag, total: presaleRes.total, error: presaleRes.error },
+        });
       }
 
       const combined: CombinedResult[] = [
@@ -228,7 +252,12 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
               {apiLoading ? "검색 중…" : "검색"}
             </button>
           </div>
+          <label className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none">
+            <input type="checkbox" checked={debugMode} onChange={(e) => setDebugMode(e.target.checked)} />
+            진단 모드 (API 응답 상세 보기)
+          </label>
           {apiError && <p className="mt-2 text-sm text-red-600">{apiError}</p>}
+          {diagInfo && <DiagPanel info={diagInfo} resultCount={apiResults.length} />}
           {apiResults.length > 0 && (
             <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
               <table className="table w-full">
@@ -295,6 +324,78 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       )}
 
       {message && <p className="mt-3 text-sm font-semibold text-blue-700">{message}</p>}
+    </div>
+  );
+}
+
+// ── 진단 패널 ──────────────────────────────────────────────
+function statusLabel(s: number): { text: string; cls: string } {
+  if (s === 200) return { text: "200 OK", cls: "bg-emerald-100 text-emerald-700" };
+  if (s === 0) return { text: "네트워크 오류", cls: "bg-red-100 text-red-700" };
+  if (s === 401 || s === 403) return { text: `${s} 인증실패(키확인)`, cls: "bg-red-100 text-red-700" };
+  if (s === 404) return { text: "404 없음", cls: "bg-amber-100 text-amber-700" };
+  return { text: String(s), cls: "bg-slate-100 text-slate-600" };
+}
+
+function DiagTable({ diag }: { diag?: StrategyDiag[] }) {
+  if (!diag || !diag.length) return <p className="text-xs text-slate-400">호출 기록 없음</p>;
+  return (
+    <table className="w-full text-xs">
+      <thead>
+        <tr className="text-slate-400">
+          <th className="text-left font-medium">필드</th>
+          <th className="text-left font-medium">검색값</th>
+          <th className="text-left font-medium">HTTP</th>
+          <th className="text-right font-medium">받은 건수</th>
+        </tr>
+      </thead>
+      <tbody>
+        {diag.map((d, i) => {
+          const st = statusLabel(d.httpStatus);
+          return (
+            <tr key={i} className="border-t border-slate-100">
+              <td className="py-0.5 font-mono">{d.field}</td>
+              <td className="py-0.5 font-mono text-slate-600">{d.value}</td>
+              <td className="py-0.5"><span className={`rounded px-1 py-0.5 ${st.cls}`}>{st.text}</span></td>
+              <td className="py-0.5 text-right font-mono">{d.rawCount}{d.error ? ` ⚠️` : ""}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function DiagPanel({ info, resultCount }: { info: DiagInfo; resultCount: number }) {
+  return (
+    <div className="mt-3 rounded-lg border border-slate-300 bg-slate-50 p-3 text-xs">
+      <p className="mb-2 font-bold text-slate-700">🔬 검색 진단</p>
+
+      <div className="mb-3">
+        <p className="font-semibold text-slate-600">① 완공단지 (부동산원 / odcloud AptIdInfoSvc)</p>
+        <p className="text-slate-400">실제 검색어: <span className="font-mono text-slate-600">{info.completedKeyword}</span></p>
+        {info.completed?.error && <p className="text-red-600">오류: {info.completed.error}</p>}
+        <DiagTable diag={info.completed?.diag} />
+        <p className="mt-1 text-slate-500">
+          원본 합계 <b>{info.completed?.rawTotal ?? 0}</b>건 → 필터 후 <b>{info.completed?.total ?? 0}</b>건
+        </p>
+      </div>
+
+      <div className="mb-2">
+        <p className="font-semibold text-slate-600">② 분양단지 (청약홈 / ApplyhomeInfoDetailSvc)</p>
+        <p className="text-slate-400">검색어: <span className="font-mono text-slate-600">{info.presaleKeyword}</span></p>
+        {info.presale?.error && <p className="text-amber-600">{info.presale.error}</p>}
+        <DiagTable diag={info.presale?.diag} />
+        <p className="mt-1 text-slate-500">결과 <b>{info.presale?.total ?? 0}</b>건</p>
+      </div>
+
+      <p className="border-t border-slate-200 pt-2 font-semibold text-slate-700">
+        최종 표시 결과: {resultCount}건
+      </p>
+      <p className="mt-1 text-slate-400">
+        ※ 모든 HTTP가 200인데 건수가 0이면 → 필터는 작동, 해당 데이터셋에 단지 없음.
+        401/403이면 → API 키 문제. 네트워크 오류면 → 서버 연결 문제.
+      </p>
     </div>
   );
 }

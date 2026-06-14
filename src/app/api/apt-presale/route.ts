@@ -22,14 +22,27 @@ function buildUrl(field: string, value: string, serviceKey: string): string {
   return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=10&cond[${field}::LIKE]=${valueEncoded}`;
 }
 
-async function fetchField(field: string, value: string, serviceKey: string): Promise<Record<string, unknown>[]> {
+type StrategyDiag = { field: string; value: string; httpStatus: number; rawCount: number; error?: string };
+
+async function fetchField(
+  field: string,
+  value: string,
+  serviceKey: string,
+  diag?: StrategyDiag[],
+): Promise<Record<string, unknown>[]> {
   try {
     const url = buildUrl(field, value, serviceKey);
     const res = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 0 } });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      diag?.push({ field, value, httpStatus: res.status, rawCount: 0 });
+      return [];
+    }
     const data = await res.json();
-    return (data?.data ?? []) as Record<string, unknown>[];
-  } catch {
+    const rows = (data?.data ?? []) as Record<string, unknown>[];
+    diag?.push({ field, value, httpStatus: res.status, rawCount: rows.length });
+    return rows;
+  } catch (e) {
+    diag?.push({ field, value, httpStatus: 0, rawCount: 0, error: String(e) });
     return [];
   }
 }
@@ -38,6 +51,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const serviceKey = searchParams.get("serviceKey");
   const houseName = searchParams.get("houseName");
+  const debug = searchParams.get("debug") === "1";
+  const diag: StrategyDiag[] = [];
 
   if (!serviceKey) return NextResponse.json({ error: "API 키가 없습니다." }, { status: 400 });
   if (!houseName) return NextResponse.json({ error: "단지명(houseName)이 필요합니다." }, { status: 400 });
@@ -45,11 +60,11 @@ export async function GET(req: NextRequest) {
   try {
     const kw = houseName.trim();
     // 단지명으로 먼저 시도, 없으면 공급위치(주소)로 재시도
-    let raw = await fetchField("HOUSE_NM", kw, serviceKey);
-    if (!raw.length) raw = await fetchField("HSSPLY_ADRES", kw, serviceKey);
+    let raw = await fetchField("HOUSE_NM", kw, serviceKey, diag);
+    if (!raw.length) raw = await fetchField("HSSPLY_ADRES", kw, serviceKey, diag);
 
     if (!raw.length) {
-      return NextResponse.json({ error: "분양정보를 찾을 수 없습니다. (청약홈에 등록되지 않은 단지일 수 있습니다.)" }, { status: 404 });
+      return NextResponse.json({ error: "분양정보를 찾을 수 없습니다. (청약홈에 등록되지 않은 단지일 수 있습니다.)", ...(debug ? { diag } : {}) }, { status: 404 });
     }
 
     const items: PresaleInfo[] = raw.map((item) => {
@@ -66,8 +81,8 @@ export async function GET(req: NextRequest) {
       };
     }).filter((item) => item.houseName);
 
-    return NextResponse.json({ items, total: items.length });
+    return NextResponse.json({ items, total: items.length, ...(debug ? { diag } : {}) });
   } catch (err) {
-    return NextResponse.json({ error: `요청 실패: ${String(err)}` }, { status: 500 });
+    return NextResponse.json({ error: `요청 실패: ${String(err)}`, ...(debug ? { diag } : {}) }, { status: 500 });
   }
 }
