@@ -9,6 +9,8 @@ export type ModelWeights = {
   inventorySignal: number;
   presalePremium: number;
   macroSignal: number;
+  // 대장아파트 앵커 (Giacoletti & Parsons 2023: γ=0.25~0.50 spillover)
+  leaderApartmentAnchor: number;
 };
 
 export type PriceEstimate = {
@@ -21,6 +23,7 @@ export type PriceEstimate = {
   inventorySignalPrice: number;
   presalePremiumPrice: number;
   macroSignalPrice: number;
+  leaderApartmentAnchorPrice: number;
   lowPriceAbsorptionRate: number;
   expectedSaleMin: number;
   expectedSaleMid: number;

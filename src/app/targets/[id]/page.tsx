@@ -3,6 +3,8 @@
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
+import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
+import { AptDetailInfo } from "@/components/targets/AptDetailInfo";
 import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultModelWeights } from "@/lib/seed";
@@ -32,6 +34,11 @@ export default function TargetDetailPage() {
   const comparableTransactions = store.transactions.filter((item) => selectedComparableIds.includes(item.apartmentId));
   const comparableWeights = Object.fromEntries(selectedLinks.map((item) => [item.apartmentId, item.compareWeight || 1]));
   const inventorySignal = store.inventorySignals.find((item) => item.apartmentId === id);
+  const rule = store.comparableRules.find((item) => item.targetApartmentId === id);
+  const leaderApartment = rule?.leaderApartmentId ? store.apartments.find((a) => a.id === rule.leaderApartmentId) : undefined;
+  const leaderTransactions = rule?.leaderApartmentId
+    ? store.transactions.filter((tx) => tx.apartmentId === rule.leaderApartmentId && (tx.transactionType === "sale" || tx.transactionType === "presale"))
+    : [];
 
   if (!apartment) {
     return <AppShell><div className="card p-6">대상아파트를 찾을 수 없습니다.</div></AppShell>;
@@ -51,9 +58,15 @@ export default function TargetDetailPage() {
       weights,
       lowPriceAbsorptionRate: inventorySignal?.lowPriceAbsorptionRate ?? 0,
       comparableWeights,
-      presalePrice
+      presalePrice,
+      leaderTransactions,
+      targetToLeaderRatio: rule?.targetToLeaderRatio
     });
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
+  }
+
+  function importTransactions(newTxs: import("@/types/transaction").Transaction[]) {
+    if (newTxs.length > 0) store.setTransactions([...store.transactions, ...newTxs]);
   }
 
   return (
@@ -67,7 +80,9 @@ export default function TargetDetailPage() {
         <ExternalLinks apartmentName={apartment.name} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-4">
+      <AptDetailInfo apartment={apartment} />
+
+      <div className="grid gap-5 lg:grid-cols-4 mt-6">
         <Summary label="결론" value={latestEstimate ? conclusionLabel[latestEstimate.conclusion] : "계산 필요"} />
         <Summary label="예상 매매가" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"} />
         <Summary label="권장 매각호가" value={latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"} />
@@ -96,13 +111,24 @@ export default function TargetDetailPage() {
         <div className="card p-6">
           <h2 className="text-xl font-black">산식 구성값</h2>
           <div className="mt-4 space-y-3">
-            <Line label="비교단지 보정 실거래가 40%" value={formatEok(latestEstimate?.adjustedComparableSalePrice)} />
-            <Line label="현재 매매호가 20%" value={formatEok(latestEstimate?.saleAskingPrice)} />
+            <Line label="비교단지 보정 실거래가 30%" value={formatEok(latestEstimate?.adjustedComparableSalePrice)} />
+            <Line label="현재 매매호가 15%" value={formatEok(latestEstimate?.saleAskingPrice)} />
             <Line label="전세기반 하방가 15%" value={formatEok(latestEstimate?.jeonseFloorPrice)} />
             <Line label="매물소진속도 15%" value={formatEok(latestEstimate?.inventorySignalPrice)} />
+            <Line
+              label={`대장아파트 앵커 15%${leaderApartment ? ` (${leaderApartment.shortName ?? leaderApartment.name})` : " (미설정)"}`}
+              value={formatEok(latestEstimate?.leaderApartmentAnchorPrice)}
+              highlight={!!leaderApartment}
+            />
             <Line label="분양가 대비 프리미엄 5%" value={formatEok(latestEstimate?.presalePremiumPrice)} />
             <Line label="거시환경 5%" value={formatEok(latestEstimate?.macroSignalPrice)} />
           </div>
+          {leaderApartment && rule?.targetToLeaderRatio && (
+            <p className="mt-3 rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">
+              대장아파트 비율: {Math.round(rule.targetToLeaderRatio * 100)}%
+              {leaderTransactions.length > 0 ? ` | 대장 실거래 ${leaderTransactions.length}건 반영` : " | 대장 실거래 데이터 없음"}
+            </p>
+          )}
         </div>
       </div>
 
@@ -110,6 +136,14 @@ export default function TargetDetailPage() {
         <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} />
         <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상아파트 전세/분양권과 비교단지 매매 실거래를 사용합니다." />
         <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "저가매물 소진율 30% 이상 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
+      </div>
+
+      <div className="mt-6">
+        <TransactionFetcher
+          apartment={apartment}
+          existingTransactions={[...targetTransactions, ...comparableTransactions]}
+          onImport={importTransactions}
+        />
       </div>
     </AppShell>
   );
@@ -134,11 +168,11 @@ function DataCard({ title, value, description }: { title: string; value: string;
   );
 }
 
-function Line({ label, value }: { label: string; value: string }) {
+function Line({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2 text-sm">
-      <span className="text-slate-600">{label}</span>
-      <span className="font-bold text-slate-950">{value}</span>
+    <div className={`flex items-center justify-between gap-3 border-b pb-2 text-sm ${highlight ? "border-blue-100" : "border-slate-100"}`}>
+      <span className={highlight ? "font-semibold text-blue-700" : "text-slate-600"}>{label}</span>
+      <span className={`font-bold ${highlight ? "text-blue-800" : "text-slate-950"}`}>{value}</span>
     </div>
   );
 }

@@ -5,7 +5,8 @@ import { AppShell } from "@/components/AppShell";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultComparableRule } from "@/lib/seed";
 import { nowIso } from "@/lib/format";
-import type { ComparableRule } from "@/types/apartment";
+import type { Apartment, ComparableRule } from "@/types/apartment";
+import { ComparableSuggestions } from "@/components/comparables/ComparableSuggestions";
 
 export default function ComparablesPage() {
   const store = useRealtyStore();
@@ -49,6 +50,15 @@ export default function ComparablesPage() {
     ]);
   }
 
+  // 자동추천에서 새 비교단지(공공데이터) 추가: store에 저장 + 선택 링크 생성
+  function addSuggestedComparable(apt: Apartment) {
+    if (!store.apartments.some((a) => a.id === apt.id)) {
+      store.setApartments([...store.apartments, apt]);
+    }
+    upsertComparable(apt.id, true);
+  }
+
+  const existingComparableIds = new Set(store.apartments.map((a) => a.id));
   const selectedCount = store.comparableApartments.filter((item) => item.targetApartmentId === activeTargetId && item.selected).length;
 
   return (
@@ -69,6 +79,50 @@ export default function ComparablesPage() {
             <Metric label="선택 단지" value={`${selectedCount}개`} />
             <Metric label="후보 단지" value={`${store.comparables.length}개`} />
           </div>
+          {/* 비교단지 자동추천 */}
+          {activeTarget && (
+            <div className="mt-5">
+              <ComparableSuggestions
+                target={activeTarget}
+                existingComparableIds={existingComparableIds}
+                onAddComparable={addSuggestedComparable}
+              />
+            </div>
+          )}
+
+          {/* 대장아파트 설정 */}
+          <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <p className="text-sm font-black text-blue-800">대장아파트 설정</p>
+            <p className="mt-1 text-xs text-blue-600">인근 지하철역 1~2개 거리 내 역 최근접 + 거래량 최다 단지. 가격 추정 시 spillover 앵커로 사용됩니다.</p>
+            <label className="mt-3 block">
+              <span className="text-xs font-semibold text-slate-700">대장아파트 선택</span>
+              <select
+                className="input mt-1"
+                value={rule.leaderApartmentId ?? ""}
+                onChange={(e) => saveRule({ ...rule, leaderApartmentId: e.target.value || undefined, targetApartmentId: activeTargetId })}
+              >
+                <option value="">-- 미설정 --</option>
+                {store.apartments.filter((a) => a.id !== activeTargetId).map((a) => (
+                  <option key={a.id} value={a.id}>{a.shortName ?? a.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block">
+              <span className="text-xs font-semibold text-slate-700">대상/대장 가격 비율 (%)</span>
+              <input
+                className="input mt-1"
+                type="number"
+                min="50"
+                max="130"
+                step="1"
+                placeholder="예: 88 (대상이 대장의 88%)"
+                value={rule.targetToLeaderRatio !== undefined ? Math.round(rule.targetToLeaderRatio * 100) : ""}
+                onChange={(e) => saveRule({ ...rule, targetToLeaderRatio: e.target.value ? Number(e.target.value) / 100 : undefined, targetApartmentId: activeTargetId })}
+              />
+              <p className="mt-1 text-xs text-slate-400">미입력 시 기본값 90% 적용</p>
+            </label>
+          </div>
+
           <div className="mt-5 space-y-3">
             <NumberField label="최대 거리(km)" value={rule.maxDistanceKm} onChange={(value) => updateRule("maxDistanceKm", value)} />
             <NumberField label="최소 입주연도" value={rule.minBuiltYear ?? ""} onChange={(value) => updateRule("minBuiltYear", value)} />
