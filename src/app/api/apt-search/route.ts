@@ -14,11 +14,13 @@ export type AptSearchResult = {
 };
 
 // URLSearchParams encodes [] as %5B%5D which breaks odcloud cond[] filter syntax.
-// Build the URL manually so brackets stay literal, and pre-encode % as %25.
+// Build the URL manually so brackets stay literal.
+// NOTE: odcloud ::LIKE already does substring matching — do NOT wrap value in % wildcards.
+// Wrapping in % searches for the literal "%value%" string and returns zero rows.
 function buildUrl(field: string, value: string, serviceKey: string, perPage = 100): string {
   const keyEncoded = encodeURIComponent(serviceKey);
   const valueEncoded = encodeURIComponent(value);
-  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=${perPage}&cond[${field}::LIKE]=%25${valueEncoded}%25&cond[COMPLEX_GB_CD::EQ]=1`;
+  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=${perPage}&cond[${field}::LIKE]=${valueEncoded}&cond[COMPLEX_GB_CD::EQ]=1`;
 }
 
 function toAptResult(item: Record<string, unknown>): AptSearchResult {

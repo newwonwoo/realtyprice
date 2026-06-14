@@ -14,11 +14,12 @@ export type PresaleInfo = {
   highestPrice?: number;
 };
 
-// URLSearchParams encodes [] as %5B%5D — must build URL manually
+// URLSearchParams encodes [] as %5B%5D — must build URL manually.
+// odcloud ::LIKE does substring matching; do NOT wrap value in % wildcards.
 function buildUrl(field: string, value: string, serviceKey: string): string {
   const keyEncoded = encodeURIComponent(serviceKey);
   const valueEncoded = encodeURIComponent(value);
-  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=10&cond[${field}::LIKE]=%25${valueEncoded}%25`;
+  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=10&cond[${field}::LIKE]=${valueEncoded}`;
 }
 
 async function fetchField(field: string, value: string, serviceKey: string): Promise<Record<string, unknown>[]> {
