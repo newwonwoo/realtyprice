@@ -12,23 +12,41 @@ type Props = {
   onAddComparable: (apt: Apartment) => void;
 };
 
+// 입지(주소 일치) 중심 유사도 스코어링
+// 학군·생활인프라 proxy = 행정구역 일치 수준
+// 연식은 극히 약한 보조 지표
 function similarityScore(target: Apartment, item: AptSearchResult): number {
-  let score = 100;
-  const itemYear = item.builtDate ? parseInt(item.builtDate.slice(0, 4), 10) : 0;
+  let score = 30; // base — 같은 시 이상 일치해야 임계값(50) 통과
 
-  if (target.builtYear && itemYear) {
-    const diff = Math.abs(target.builtYear - itemYear);
-    if (diff > 10) score -= 40;
-    else if (diff > 7) score -= 25;
-    else if (diff > 5) score -= 15;
-    else if (diff > 3) score -= 5;
+  // ── 입지: 주소 행정구역 일치 (최대 50점) ─────────────────────────
+  const targetParts = (target.address ?? target.region ?? "").split(" ").filter(Boolean);
+  const itemParts = item.address.split(" ").filter(Boolean);
+
+  // 법정동(3번째 토큰) 일치: 같은 생활권
+  if (targetParts[2] && itemParts[2] && targetParts[2] === itemParts[2]) {
+    score += 50;
+  } else if (targetParts[1] && itemParts[1] && targetParts[1] === itemParts[1]) {
+    // 같은 구/군: 학군·인프라 상당 부분 겹침
+    score += 30;
+  } else if (targetParts[0] && itemParts[0] && targetParts[0] === itemParts[0]) {
+    // 같은 시: 최소 입지 유사성
+    score += 10;
   }
 
+  // ── 세대수: 인프라 규모 proxy (최대 10점) ─────────────────────────
   if (target.households && item.households) {
-    const ratio = item.households / target.households;
-    if (ratio < 0.4 || ratio > 2.5) score -= 30;
-    else if (ratio < 0.6 || ratio > 2.0) score -= 15;
-    else if (ratio < 0.8 || ratio > 1.5) score -= 5;
+    const ratio = Math.min(target.households, item.households) / Math.max(target.households, item.households);
+    if (ratio >= 0.6) score += 10;
+    else if (ratio >= 0.4) score += 5;
+  }
+
+  // ── 연식: 아주 약한 페널티만 (최대 -10점) ────────────────────────
+  const itemYear = item.builtDate ? parseInt(item.builtDate.slice(0, 4), 10) : 0;
+  if (target.builtYear && itemYear) {
+    const diff = Math.abs(target.builtYear - itemYear);
+    if (diff > 20) score -= 10;
+    else if (diff > 15) score -= 5;
+    // 15년 이내 차이는 패널티 없음
   }
 
   return Math.max(0, score);
@@ -68,7 +86,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       const filtered = items
         .filter((item) => item.name !== target.name && item.name !== target.shortName)
         .map((item) => ({ item, score: similarityScore(target, item) }))
-        .filter(({ score }) => score >= 50)
+        .filter(({ score }) => score >= 55)
         .sort((a, b) => b.score - a.score)
         .slice(0, 20)
         .map(({ item }) => item);
@@ -113,7 +131,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
             <div>
               <p className="font-bold text-sm">자동추천 비교단지</p>
-              <p className="text-xs text-slate-500">{target.region} 내 준공연도·세대수 유사 단지 (유사도 순)</p>
+              <p className="text-xs text-slate-500">{target.region} 내 입지(생활권·학군) 유사 단지 (입지 우선 정렬)</p>
             </div>
             <button className="text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>✕</button>
           </div>
