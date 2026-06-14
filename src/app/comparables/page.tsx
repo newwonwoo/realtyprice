@@ -144,7 +144,7 @@ export default function ComparablesPage() {
             <h2 className="text-lg font-black">{activeTarget ? activeTarget.name : "대상아파트 없음"}</h2>
           </div>
           <table className="table w-full">
-            <thead><tr><th>선택</th><th>단지명</th><th>지역</th><th>입주</th><th>세대수</th><th>가중치</th></tr></thead>
+            <thead><tr><th>선택</th><th>단지명</th><th>지역</th><th>입주</th><th>세대수</th><th>가중치</th><th>삭제</th></tr></thead>
             <tbody>
               {store.comparables.map((apartment) => {
                 const link = store.comparableApartments.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartment.id);
@@ -158,9 +158,21 @@ export default function ComparablesPage() {
                     <td>
                       <input className="input max-w-24" type="number" min="0" max="100" value={link?.compareWeight ?? 20} onChange={(event) => upsertComparable(apartment.id, link?.selected ?? false, Number(event.target.value))} />
                     </td>
+                    <td>
+                      <button
+                        className="btn-danger text-xs"
+                        onClick={() => {
+                          store.setApartments(store.apartments.filter((a) => a.id !== apartment.id));
+                          store.setComparableApartments(store.comparableApartments.filter((item) => item.apartmentId !== apartment.id));
+                        }}
+                      >삭제</button>
+                    </td>
                   </tr>
                 );
               })}
+              {!store.comparables.length && (
+                <tr><td colSpan={7} className="text-center text-slate-500">비교단지가 없습니다. 자동추천 또는 대상아파트 검색으로 추가하세요.</td></tr>
+              )}
             </tbody>
           </table>
         </div>

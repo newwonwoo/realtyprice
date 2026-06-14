@@ -35,7 +35,7 @@ export type PriceEstimate = {
   defensePrice: number;
   upsideScore: number;
   confidenceScore: number;
-  conclusion: "strong_up" | "up" | "neutral" | "weak" | "price_cut_needed";
+  conclusion: "strong_up" | "up" | "neutral" | "weak" | "price_cut_needed" | "insufficient_data";
   reasonSummary: string[];
   warnings: string[];
   createdAt: string;

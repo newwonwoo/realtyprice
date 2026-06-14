@@ -9,6 +9,7 @@ import { calculateInventorySignal, getLowPriceListings } from "@/lib/inventory";
 import { formatEok, formatPercent } from "@/lib/format";
 import type { Listing, ListingType } from "@/types/listing";
 import type { UnitGrade } from "@/types/transaction";
+import { NaverListingFetcher } from "@/components/listings/NaverListingFetcher";
 
 const grades: UnitGrade[] = ["S", "A", "B", "C", "D", "UNKNOWN"];
 
@@ -113,6 +114,13 @@ export default function ListingsPage() {
         <h1 className="text-3xl font-black">호가/매물 입력</h1>
         <p className="mt-2 text-slate-600">날짜별 매물 스냅샷으로 매물소진추정과 저가매물 소진율을 계산합니다.</p>
       </div>
+
+      {/* Naver Auto Fetch */}
+      {store.apartments.length > 0 && (
+        <div className="mb-5">
+          <NaverListingFetcher apartment={store.apartments.find((a) => a.id === activeApartmentId) ?? store.apartments[0]} />
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
         <div className="card p-5">

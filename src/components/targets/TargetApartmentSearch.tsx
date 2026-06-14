@@ -70,8 +70,8 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     }
   }
 
-  function addFromApi(item: AptSearchResult) {
-    const added = onAdd({
+  async function addFromApi(item: AptSearchResult) {
+    const apt: import("@/types/apartment").Apartment = {
       id: `cpk_${item.complexPk}`,
       name: item.name,
       region: item.address.split(" ").slice(0, 2).join(" "),
@@ -82,8 +82,27 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
       households: item.households || undefined,
       createdAt: nowIso(),
       updatedAt: nowIso(),
-    });
-    showMessage(added ? `"${item.name}" 대상아파트로 추가했습니다.` : "이미 등록된 대상아파트입니다.");
+    };
+
+    // 카카오 API 키가 있으면 좌표 자동 조회
+    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
+    const kakaoKey = keys.find((k) => k.provider === "kakao_rest_api")?.value;
+    if (kakaoKey && item.address) {
+      try {
+        const res = await fetch(`/api/geocode?address=${encodeURIComponent(item.address)}&kakaoKey=${encodeURIComponent(kakaoKey)}`);
+        const geo = await res.json();
+        if (!geo.error) {
+          apt.latitude = geo.lat;
+          apt.longitude = geo.lng;
+        }
+      } catch { /* 좌표 없이 추가 */ }
+    }
+
+    const added = onAdd(apt);
+    showMessage(added
+      ? `"${item.name}" 추가됨${apt.latitude ? " (좌표 포함)" : " (좌표 없음 — 카카오 API 키 설정 시 자동 조회)"}`
+      : "이미 등록된 대상아파트입니다."
+    );
   }
 
   // ── 로컬 검색 ──────────────────────────────────────────
