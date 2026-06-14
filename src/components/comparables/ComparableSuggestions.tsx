@@ -53,6 +53,42 @@ function similarityScore(target: Apartment, item: AptSearchResult): number {
   return Math.max(0, score);
 }
 
+// 두 좌표 간 거리(m) — Haversine
+function haversineM(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+// 입지 등급 절대 점수 (주소 tier 키워드 + 브랜드 + 세대수 + 연식)
+function locationGradeScore(addr: string, name: string, households?: number, builtYear?: number): number {
+  const text = `${addr} ${name}`;
+  let s = 50;
+  if (/강남|서초|송파|용산|성수|한남|여의도|판교|과천|분당|광교|송도/i.test(text)) s += 16;
+  if (/역|초역세권/i.test(text)) s += 6;
+  if (/래미안|자이|디에이치|아크로|힐스테이트|푸르지오|아이파크|롯데캐슬|센트럴|더샵|포레나/i.test(text)) s += 4;
+  if ((households ?? 0) >= 1500) s += 8;
+  else if ((households ?? 0) >= 1000) s += 5;
+  const yr = builtYear ?? 0;
+  const now = new Date().getFullYear();
+  if (yr >= now - 5) s += 6;
+  else if (yr && yr < now - 20) s -= 6;
+  return Math.min(100, Math.max(0, s));
+}
+
+// 대상 대비 상대 입지등급 (diff = 비교단지 - 대상)
+function tierFromDiff(diff: number): { label: string; cls: string } {
+  if (diff >= 8) return { label: "상급지", cls: "bg-purple-100 text-purple-700" };
+  if (diff <= -8) return { label: "하급지", cls: "bg-slate-100 text-slate-500" };
+  return { label: "동급지", cls: "bg-emerald-100 text-emerald-700" };
+}
+
+const ADJACENCY_M = 1000; // 인접 기준: 반경 1km
+const HOUSEHOLD_FLOOR = 0.8; // 세대수 하한: 대상의 80% (−20% 초과 축소 시 제외, +는 허용)
+
 // 단지명 → 학군 캐시
 const districtCache: Record<string, SchoolDistrictResult | null> = {};
 
@@ -60,10 +96,14 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
   const [suggestions, setSuggestions] = useState<AptSearchResult[]>([]);
   // 단지명 → 학군 정보
   const [districtMap, setDistrictMap] = useState<Record<string, SchoolDistrictResult | null>>({});
+  const [distMap, setDistMap] = useState<Record<string, number>>({}); // complexPk → 거리(m)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
+  const [distApplied, setDistApplied] = useState(false); // 1km 필터 적용 여부
+
+  const targetGrade = locationGradeScore(target.address ?? target.region ?? "", target.name, target.households, target.builtYear);
 
   async function fetchSuggestions() {
     const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
@@ -88,16 +128,51 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       if (!res.ok) { setError(json.error ?? "오류가 발생했습니다."); return; }
 
       const items: AptSearchResult[] = json.items ?? [];
-      const filtered = items
+      // 1차: 입지 유사도 + 세대수 −20% 하한 필터 (비교단지가 대상의 80% 미만이면 제외, +는 허용)
+      const ranked = items
         .filter((item) => item.name !== target.name && item.name !== target.shortName)
+        .filter((item) => {
+          if (target.households && item.households) {
+            return item.households >= target.households * HOUSEHOLD_FLOOR;
+          }
+          return true; // 세대수 미상이면 통과
+        })
         .map((item) => ({ item, score: similarityScore(target, item) }))
         .filter(({ score }) => score >= 55)
         .sort((a, b) => b.score - a.score)
-        .slice(0, 25)
+        .slice(0, 40)
         .map(({ item }) => item);
 
+      // 2차: 1km 인접 필터 (대상 좌표 + 카카오 키 있을 때만 적용)
+      const keys2 = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
+      const kakaoKey = keys2.find((k) => k.provider === "kakao_rest_api")?.value;
+      let filtered = ranked;
+      const newDistMap: Record<string, number> = {};
+      const canDistance = !!(target.latitude && target.longitude && kakaoKey);
+      if (canDistance) {
+        await Promise.all(
+          ranked.map(async (item) => {
+            try {
+              const r = await fetch(`/api/geocode?address=${encodeURIComponent(item.address)}&kakaoKey=${encodeURIComponent(kakaoKey!)}`);
+              const geo = await r.json();
+              if (!geo.error && geo.lat && geo.lng) {
+                newDistMap[item.complexPk] = haversineM(target.latitude!, target.longitude!, geo.lat, geo.lng);
+              }
+            } catch { /* 좌표 실패 시 거리 미상 */ }
+          })
+        );
+        // 거리가 측정된 단지는 1km 이내만, 좌표 실패 단지는 보수적으로 유지
+        filtered = ranked.filter((item) => {
+          const d = newDistMap[item.complexPk];
+          return d === undefined || d <= ADJACENCY_M;
+        });
+      }
+      filtered = filtered.slice(0, 25);
+      setDistMap(newDistMap);
+      setDistApplied(canDistance);
+
       if (!filtered.length) {
-        setError("유사한 비교단지 후보를 찾지 못했습니다.");
+        setError(canDistance ? "반경 1km 이내 유사 비교단지 후보를 찾지 못했습니다." : "유사한 비교단지 후보를 찾지 못했습니다.");
         return;
       }
       setSuggestions(filtered);
@@ -120,13 +195,16 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       );
       setDistrictMap(newMap);
 
-      // 학군 신입생 수 반영 재정렬
+      // 재정렬: 동급지(입지등급 유사) 우선 → 학군 신입생 → 입지 유사도
       setSuggestions((prev) =>
         [...prev].sort((a, b) => {
+          const gradeDiffA = Math.abs(locationGradeScore(a.address, a.name, a.households, a.builtDate ? parseInt(a.builtDate.slice(0, 4), 10) : undefined) - targetGrade);
+          const gradeDiffB = Math.abs(locationGradeScore(b.address, b.name, b.households, b.builtDate ? parseInt(b.builtDate.slice(0, 4), 10) : undefined) - targetGrade);
           const na = newMap[a.name]?.newStudents ?? 0;
           const nb = newMap[b.name]?.newStudents ?? 0;
-          const sa = similarityScore(target, a) + (na >= 100 ? 8 : na >= 50 ? 4 : na >= 30 ? 2 : 0);
-          const sb = similarityScore(target, b) + (nb >= 100 ? 8 : nb >= 50 ? 4 : nb >= 30 ? 2 : 0);
+          // 동급지 가중치를 크게 — |등급차|가 작을수록 상위
+          const sa = similarityScore(target, a) - gradeDiffA * 3 + (na >= 100 ? 8 : na >= 50 ? 4 : na >= 30 ? 2 : 0);
+          const sb = similarityScore(target, b) - gradeDiffB * 3 + (nb >= 100 ? 8 : nb >= 50 ? 4 : nb >= 30 ? 2 : 0);
           return sb - sa;
         })
       );
@@ -188,7 +266,10 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
             <div>
               <p className="font-bold text-sm">자동추천 비교단지</p>
-              <p className="text-xs text-slate-500">{target.region} 내 입지(생활권·학군) 유사 단지 (입지 우선 정렬)</p>
+              <p className="text-xs text-slate-500">
+                {target.region} · 입지등급(상/동/하급지) 분류 · 세대수 −20% 이상만
+                {distApplied ? " · 반경 1km 이내" : " · 1km 필터엔 대상 좌표+카카오키 필요"}
+              </p>
             </div>
             <button className="text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>✕</button>
           </div>
@@ -205,15 +286,20 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
               </div>
               <table className="table w-full">
                 <thead>
-                  <tr><th>단지명</th><th>세대</th><th>준공</th><th>배정초교</th><th>신입생</th><th></th></tr>
+                  <tr><th>단지명</th><th>등급</th><th>거리</th><th>세대</th><th>준공</th><th>배정초교</th><th>신입생</th><th></th></tr>
                 </thead>
                 <tbody>
                   {suggestions.map((item) => {
                     const alreadyAdded = added.has(item.complexPk) || existingComparableIds.has(`cpk_${item.complexPk}`);
                     const district = getDistrict(item);
+                    const itemYear = item.builtDate ? parseInt(item.builtDate.slice(0, 4), 10) : undefined;
+                    const tier = tierFromDiff(locationGradeScore(item.address, item.name, item.households, itemYear) - targetGrade);
+                    const dist = distMap[item.complexPk];
                     return (
                       <tr key={item.complexPk}>
                         <td className="font-semibold text-sm">{item.name}</td>
+                        <td><span className={`rounded px-1.5 py-0.5 text-xs font-bold ${tier.cls}`}>{tier.label}</span></td>
+                        <td className="text-sm whitespace-nowrap text-slate-500">{dist !== undefined ? (dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`) : "-"}</td>
                         <td className="text-right text-sm">{item.households ? item.households.toLocaleString() : "-"}</td>
                         <td className="text-sm">{item.builtDate ? item.builtDate.slice(0, 4) : "-"}</td>
                         <td className="text-sm max-w-[120px]">
