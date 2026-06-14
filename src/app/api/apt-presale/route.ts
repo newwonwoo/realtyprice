@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       serviceKey: key,
       page: "1",
       perPage: "10",
-      [`cond[${field}::LIKE]`]: value,
+      [`cond[${field}::LIKE]`]: `%${value}%`,
     });
     const res = await fetch(`${API_BASE}?${params.toString()}`, {
       headers: { Accept: "application/json" },

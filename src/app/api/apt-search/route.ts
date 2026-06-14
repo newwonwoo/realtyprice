@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       serviceKey: key,
       page: "1",
       perPage: "30",
-      [`cond[${field}::LIKE]`]: value,
+      [`cond[${field}::LIKE]`]: `%${value}%`,
       "cond[COMPLEX_GB_CD::EQ]": "1",
     });
     const res = await fetch(`${API_BASE}?${params.toString()}`, {
