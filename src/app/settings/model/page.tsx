@@ -7,12 +7,13 @@ import { readStorage, STORAGE_KEYS, writeStorage } from "@/lib/storage";
 import type { ModelWeights } from "@/types/model";
 
 const labels: Record<keyof ModelWeights, string> = {
-  adjustedComparableSale: "비교단지 보정 실거래가",
+  adjustedComparableSale: "비교단지 보정 실거래가 (시간감쇠 적용)",
   askingPrice: "현재 매매호가",
   jeonseFloorPrice: "전세기반 하방가",
   inventorySignal: "매물소진속도",
   presalePremium: "분양가 대비 프리미엄",
-  macroSignal: "거시환경"
+  macroSignal: "거시환경",
+  leaderApartmentAnchor: "대장아파트 앵커 (인근 지하철 1~2역 최다거래 단지)"
 };
 
 export default function ModelSettingsPage() {
