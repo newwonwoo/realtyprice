@@ -13,28 +13,24 @@ export type AptSearchResult = {
   dongCount: number;   // 동수 (DONG_CNT)
 };
 
+// URLSearchParams encodes [] which breaks odcloud cond[] filters — build raw query string
+function buildUrl(field: string, value: string, serviceKey: string): string {
+  const encoded = encodeURIComponent(value);
+  const keyEncoded = encodeURIComponent(serviceKey);
+  return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=30&cond[${field}::LIKE]=%25${encoded}%25&cond[COMPLEX_GB_CD::EQ]=1`;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const serviceKey = searchParams.get("serviceKey");
-  const keyword = searchParams.get("keyword") ?? ""; // 주소/단지명 LIKE 검색
+  const keyword = searchParams.get("keyword") ?? "";
 
   if (!serviceKey) return NextResponse.json({ error: "공공데이터포털 API 키가 없습니다. 설정 > API 키 설정에서 등록하세요." }, { status: 400 });
   if (!keyword.trim()) return NextResponse.json({ error: "검색어를 입력하세요." }, { status: 400 });
 
-  const key = serviceKey;
-
   async function fetchByField(field: string, value: string): Promise<Record<string, unknown>[]> {
-    const params = new URLSearchParams({
-      serviceKey: key,
-      page: "1",
-      perPage: "30",
-      [`cond[${field}::LIKE]`]: `%${value}%`,
-      "cond[COMPLEX_GB_CD::EQ]": "1",
-    });
-    const res = await fetch(`${API_BASE}?${params.toString()}`, {
-      headers: { Accept: "application/json" },
-      next: { revalidate: 0 },
-    });
+    const url = buildUrl(field, value, serviceKey!);
+    const res = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 0 } });
     if (!res.ok) throw new Error(`API 오류: ${res.status}`);
     const data = await res.json();
     return (data?.data ?? []) as Record<string, unknown>[];
