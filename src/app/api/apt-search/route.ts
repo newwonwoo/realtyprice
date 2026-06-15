@@ -62,7 +62,7 @@ async function fetchField(
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const serviceKey = searchParams.get("serviceKey");
+  const serviceKey = searchParams.get("serviceKey") ?? process.env.DATA_GO_KR_API_KEY ?? "";
   const keyword = searchParams.get("keyword") ?? "";
 
   if (!serviceKey) return NextResponse.json({ error: "공공데이터포털 API 키가 없습니다. 설정 > API 키 설정에서 등록하세요." }, { status: 400 });

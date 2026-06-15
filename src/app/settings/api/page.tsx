@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { readStorage, STORAGE_KEYS, writeStorage } from "@/lib/storage";
 
 // 공공데이터포털 키 하나로 단지목록·실거래·전월세 API 모두 사용 가능
 const providers = [
@@ -12,43 +11,65 @@ const providers = [
   ["telegram_chat_id", "Telegram Chat ID", "알림 전송용 (선택)"]
 ] as const;
 
-type ClientApiKey = {
-  provider: string;
-  value: string;
-  storedAt: string;
-  lastTestedAt?: string;
-  lastSuccessAt?: string;
-};
+type SavedKeys = Record<string, boolean>;
 
 export default function ApiSettingsPage() {
-  const [apiKeys, setApiKeys] = useState<ClientApiKey[]>(() => readStorage<ClientApiKey[]>(STORAGE_KEYS.apiKeys, []));
+  const [savedKeys, setSavedKeys] = useState<SavedKeys>({});
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  function save(provider: string) {
+  useEffect(() => {
+    fetch("/api/env-keys")
+      .then((r) => r.json())
+      .then((data) => {
+        setSavedKeys(data as SavedKeys);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  async function save(provider: string) {
     const value = draft[provider];
     if (!value) return;
-    const next = [...apiKeys.filter((x) => x.provider !== provider), { provider, value, storedAt: new Date().toISOString() }];
-    setApiKeys(next);
-    writeStorage(STORAGE_KEYS.apiKeys, next);
-    setDraft({ ...draft, [provider]: "" });
+    const res = await fetch("/api/env-keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, value }),
+    });
+    const data = await res.json();
+    setSavedKeys((prev) => ({ ...prev, [provider]: true }));
+    setDraft((prev) => ({ ...prev, [provider]: "" }));
+    if (data.note) setNotice(data.note);
   }
 
-  function remove(provider: string) {
-    const next = apiKeys.filter((x) => x.provider !== provider);
-    setApiKeys(next);
-    writeStorage(STORAGE_KEYS.apiKeys, next);
+  async function remove(provider: string) {
+    await fetch("/api/env-keys", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider }),
+    });
+    setSavedKeys((prev) => ({ ...prev, [provider]: false }));
   }
+
+  if (loading) return <AppShell><div className="p-8 text-slate-400">로딩 중...</div></AppShell>;
 
   return (
     <AppShell>
-      <div className="mb-8"><p className="text-sm font-semibold text-blue-600">Settings</p><h1 className="text-3xl font-black">API 키 설정</h1><p className="mt-2 text-slate-600">API 키는 현재 브라우저 localStorage에만 저장됩니다.</p></div>
+      <div className="mb-8"><p className="text-sm font-semibold text-blue-600">Settings</p><h1 className="text-3xl font-black">API 키 설정</h1><p className="mt-2 text-slate-600">API 키는 서버의 .env.local 파일에 저장됩니다.</p></div>
+      {notice && (
+        <div className="mb-4 rounded-lg bg-blue-50 p-4 text-sm text-blue-800">
+          {notice}
+          <button className="ml-4 underline" onClick={() => setNotice(null)}>닫기</button>
+        </div>
+      )}
       <div className="card p-5">
         <div className="space-y-5">
           {providers.map(([provider, label, desc]) => {
-            const saved = apiKeys.find((x) => x.provider === provider);
+            const saved = savedKeys[provider];
             return (
               <div key={provider} className="grid gap-3 rounded-lg border border-slate-200 p-4 md:grid-cols-[1fr_1.2fr_auto_auto] md:items-center">
-                <div><p className="font-bold">{label}</p><p className="text-xs text-slate-400">{desc}</p><p className="text-xs text-slate-500">{saved ? `저장됨: ${new Date(saved.storedAt).toLocaleString()}` : "미저장"}</p></div>
+                <div><p className="font-bold">{label}</p><p className="text-xs text-slate-400">{desc}</p><p className="text-xs text-slate-500">{saved ? "저장됨 (환경변수)" : "미저장"}</p></div>
                 <input className="input" type="password" value={draft[provider] ?? ""} onChange={(e) => setDraft({ ...draft, [provider]: e.target.value })} placeholder={saved ? "********" : "키 입력"} />
                 <button className="btn-primary" onClick={() => save(provider)}>저장</button>
                 <button className="btn-secondary" onClick={() => remove(provider)}>삭제</button>
@@ -56,7 +77,7 @@ export default function ApiSettingsPage() {
             );
           })}
         </div>
-        <p className="mt-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-800">프론트 저장 방식은 공개 서비스용 보안 저장소가 아닙니다. 공개 서비스 전환 시 백엔드 암호화 저장 또는 프록시 방식으로 전환하세요.</p>
+        <p className="mt-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-800">API 키는 서버의 .env.local 파일에 저장됩니다. 변경 후 서버를 재시작해야 적용됩니다.</p>
       </div>
     </AppShell>
   );

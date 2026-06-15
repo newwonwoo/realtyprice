@@ -52,7 +52,7 @@ function toPresale(item: Record<string, unknown>): PresaleInfo {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const serviceKey = searchParams.get("serviceKey");
+  const serviceKey = searchParams.get("serviceKey") ?? process.env.DATA_GO_KR_API_KEY ?? "";
   const houseName = searchParams.get("houseName");
   const debug = searchParams.get("debug") === "1";
   const diag: StrategyDiag[] = [];

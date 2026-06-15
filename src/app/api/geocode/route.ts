@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const address = searchParams.get("address");
   // 신규 파라미터명 vworldKey, 하위호환으로 key도 허용
-  const vworldKey = searchParams.get("vworldKey") ?? searchParams.get("key");
+  const vworldKey = searchParams.get("vworldKey") ?? searchParams.get("key") ?? process.env.VWORLD_API_KEY ?? "";
 
   if (!address) return NextResponse.json({ error: "address 필요" }, { status: 400 });
   if (!vworldKey) {
