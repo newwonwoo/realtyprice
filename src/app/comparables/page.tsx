@@ -6,6 +6,7 @@ import { useRealtyStore } from "@/lib/clientStore";
 import { defaultComparableRule } from "@/lib/seed";
 import { nowIso } from "@/lib/format";
 import { autoLeaderRatio } from "@/lib/locationScore";
+import { findLeaderForAddress, LEADER_APARTMENTS } from "@/lib/leaderApartments";
 import type { Apartment, ComparableRule } from "@/types/apartment";
 import { ComparableSuggestions } from "@/components/comparables/ComparableSuggestions";
 
@@ -62,6 +63,13 @@ export default function ComparablesPage() {
   const existingComparableIds = new Set(store.apartments.map((a) => a.id));
   const selectedCount = store.comparableApartments.filter((item) => item.targetApartmentId === activeTargetId && item.selected).length;
 
+  // 대장아파트 자동 제안 (하드코딩 테이블에서 주소 매칭)
+  const suggestedLeader = activeTarget ? findLeaderForAddress(activeTarget.address ?? activeTarget.region ?? "") : undefined;
+  // 현재 설정된 leaderApartmentId가 store.apartments에 없으면 하드코딩 테이블 ID일 수 있으므로 name으로도 검색
+  const currentLeaderName = rule.leaderApartmentId
+    ? (store.apartments.find((a) => a.id === rule.leaderApartmentId)?.name ?? LEADER_APARTMENTS.find((e) => e.region + "_" + e.name === rule.leaderApartmentId)?.name)
+    : undefined;
+
   return (
     <AppShell>
       <div className="mb-8">
@@ -94,7 +102,40 @@ export default function ComparablesPage() {
           {/* 대장아파트 설정 */}
           <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
             <p className="text-sm font-black text-blue-800">대장아파트 설정</p>
-            <p className="mt-1 text-xs text-blue-600">인근 지하철역 1~2개 거리 내 역 최근접 + 거래량 최다 단지. 가격 추정 시 spillover 앵커로 사용됩니다.</p>
+            <p className="mt-1 text-xs text-blue-600">가격 추정 시 spillover 앵커로 사용됩니다. 대장 단지의 실거래도 수집하면 비율이 더 정확해집니다.</p>
+
+            {/* 자동 제안 배너 */}
+            {suggestedLeader && !rule.leaderApartmentId && (
+              <div className="mt-3 flex items-center gap-2 rounded-md bg-blue-100 p-2">
+                <span className="text-xs text-blue-800">추천 대장: <strong>{suggestedLeader.name}</strong> ({suggestedLeader.region})</span>
+                <button
+                  className="ml-auto shrink-0 rounded bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700"
+                  onClick={() => {
+                    const id = `leader_${suggestedLeader.region.replace(/\s/g, "_")}_${suggestedLeader.name.replace(/\s/g, "_")}`;
+                    const existing = store.apartments.find((a) => a.id === id);
+                    const leaderApt: Apartment = existing ?? {
+                      id,
+                      name: suggestedLeader.name,
+                      region: suggestedLeader.region,
+                      address: suggestedLeader.address,
+                      brand: suggestedLeader.brand,
+                      households: suggestedLeader.households,
+                      role: "comparable",
+                      createdAt: nowIso(),
+                      updatedAt: nowIso(),
+                    };
+                    if (!existing) store.setApartments([...store.apartments, leaderApt]);
+                    const ratio = activeTarget
+                      ? autoLeaderRatio(activeTarget, leaderApt, store.transactions, activeTarget.defaultArea)
+                      : undefined;
+                    saveRule({ ...rule, leaderApartmentId: id, targetToLeaderRatio: ratio, targetApartmentId: activeTargetId });
+                  }}
+                >
+                  적용
+                </button>
+              </div>
+            )}
+
             <label className="mt-3 block">
               <span className="text-xs font-semibold text-slate-700">대장아파트 선택</span>
               <select
@@ -127,7 +168,7 @@ export default function ComparablesPage() {
                 value={rule.targetToLeaderRatio !== undefined ? Math.round(rule.targetToLeaderRatio * 100) : ""}
                 onChange={(e) => saveRule({ ...rule, targetToLeaderRatio: e.target.value ? Number(e.target.value) / 100 : undefined, targetApartmentId: activeTargetId })}
               />
-              <p className="mt-1 text-xs text-slate-400">대장 선택 시 자동산출 (실거래→입지점수 순). 직접 수정 가능.</p>
+              <p className="mt-1 text-xs text-slate-400">대장 선택 시 자동산출 (실거래 우선 → 입지점수 근사). 직접 수정 가능.</p>
             </label>
           </div>
 
