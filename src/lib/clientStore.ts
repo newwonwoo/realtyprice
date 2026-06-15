@@ -5,7 +5,7 @@ import type { Apartment, ComparableApartment, ComparableRule } from "@/types/apa
 import type { InventorySignal, Listing } from "@/types/listing";
 import type { PriceEstimate } from "@/types/model";
 import type { Transaction } from "@/types/transaction";
-import { defaultComparableRule, defaultModelWeights, seedApartments } from "./seed";
+import { defaultComparableRule, defaultModelWeights } from "./seed";
 import { readStorage, STORAGE_KEYS, writeStorage } from "./storage";
 
 export function useRealtyStore() {
@@ -20,15 +20,13 @@ export function useRealtyStore() {
 
   useEffect(() => {
     const storedApartments = readStorage<Apartment[]>(STORAGE_KEYS.apartments, []);
-    const initialApartments = storedApartments.length ? storedApartments : seedApartments;
-    setApartments(initialApartments);
-    setComparableRules(readStorage<ComparableRule[]>(STORAGE_KEYS.comparableRules, initialApartments.filter((x) => x.role === "target").map((x) => defaultComparableRule(x.id))));
+    setApartments(storedApartments);
+    setComparableRules(readStorage<ComparableRule[]>(STORAGE_KEYS.comparableRules, storedApartments.filter((x) => x.role === "target").map((x) => defaultComparableRule(x.id))));
     setComparableApartments(readStorage<ComparableApartment[]>(STORAGE_KEYS.comparableApartments, []));
     setTransactions(readStorage<Transaction[]>(STORAGE_KEYS.transactions, []));
     setListings(readStorage<Listing[]>(STORAGE_KEYS.listings, []));
     setInventorySignals(readStorage<InventorySignal[]>(STORAGE_KEYS.inventorySignals, []));
     setPriceEstimates(readStorage<PriceEstimate[]>(STORAGE_KEYS.priceEstimates, []));
-    writeStorage(STORAGE_KEYS.apartments, initialApartments);
     if (!readStorage(STORAGE_KEYS.modelSettings, null)) writeStorage(STORAGE_KEYS.modelSettings, defaultModelWeights);
     setReady(true);
   }, []);
