@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Apartment } from "@/types/apartment";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import { nowIso } from "@/lib/format";
+import { locationGradeScore } from "@/lib/locationScore";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
 import type { SchoolDistrictResult } from "@/app/api/school-district/route";
 
@@ -61,22 +62,6 @@ function haversineM(aLat: number, aLng: number, bLat: number, bLng: number): num
   const dLng = toRad(bLng - aLng);
   const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(s));
-}
-
-// 입지 등급 절대 점수 (주소 tier 키워드 + 브랜드 + 세대수 + 연식)
-function locationGradeScore(addr: string, name: string, households?: number, builtYear?: number): number {
-  const text = `${addr} ${name}`;
-  let s = 50;
-  if (/강남|서초|송파|용산|성수|한남|여의도|판교|과천|분당|광교|송도/i.test(text)) s += 16;
-  if (/역|초역세권/i.test(text)) s += 6;
-  if (/래미안|자이|디에이치|아크로|힐스테이트|푸르지오|아이파크|롯데캐슬|센트럴|더샵|포레나/i.test(text)) s += 4;
-  if ((households ?? 0) >= 1500) s += 8;
-  else if ((households ?? 0) >= 1000) s += 5;
-  const yr = builtYear ?? 0;
-  const now = new Date().getFullYear();
-  if (yr >= now - 5) s += 6;
-  else if (yr && yr < now - 20) s -= 6;
-  return Math.min(100, Math.max(0, s));
 }
 
 // 대상 대비 상대 입지등급 (diff = 비교단지 - 대상)

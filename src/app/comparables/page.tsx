@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultComparableRule } from "@/lib/seed";
 import { nowIso } from "@/lib/format";
+import { autoLeaderRatio } from "@/lib/locationScore";
 import type { Apartment, ComparableRule } from "@/types/apartment";
 import { ComparableSuggestions } from "@/components/comparables/ComparableSuggestions";
 
@@ -99,7 +100,14 @@ export default function ComparablesPage() {
               <select
                 className="input mt-1"
                 value={rule.leaderApartmentId ?? ""}
-                onChange={(e) => saveRule({ ...rule, leaderApartmentId: e.target.value || undefined, targetApartmentId: activeTargetId })}
+                onChange={(e) => {
+                  const leaderId = e.target.value || undefined;
+                  const leader = leaderId ? store.apartments.find((a) => a.id === leaderId) : undefined;
+                  const ratio = activeTarget && leader
+                    ? autoLeaderRatio(activeTarget, leader, store.transactions, activeTarget.defaultArea)
+                    : undefined;
+                  saveRule({ ...rule, leaderApartmentId: leaderId, targetToLeaderRatio: ratio, targetApartmentId: activeTargetId });
+                }}
               >
                 <option value="">-- 미설정 --</option>
                 {store.apartments.filter((a) => a.id !== activeTargetId).map((a) => (
@@ -119,7 +127,7 @@ export default function ComparablesPage() {
                 value={rule.targetToLeaderRatio !== undefined ? Math.round(rule.targetToLeaderRatio * 100) : ""}
                 onChange={(e) => saveRule({ ...rule, targetToLeaderRatio: e.target.value ? Number(e.target.value) / 100 : undefined, targetApartmentId: activeTargetId })}
               />
-              <p className="mt-1 text-xs text-slate-400">미입력 시 기본값 90% 적용</p>
+              <p className="mt-1 text-xs text-slate-400">대장 선택 시 자동산출 (실거래→입지점수 순). 직접 수정 가능.</p>
             </label>
           </div>
 
