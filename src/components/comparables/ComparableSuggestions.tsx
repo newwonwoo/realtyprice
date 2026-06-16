@@ -223,15 +223,16 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       );
 
       // 1km 인접 필터
+      // VWorld 지오코딩이 전부 실패(0%)하면 필터 건너뜀 — 학군 proxy 좌표만으론 부정확
       const newDistMap: Record<string, number> = {};
-      const canDistance = !!(refLat && refLng);
+      const geocodeSuccessRate = d.candidateGeocodeOk / Math.max(ranked.length, 1);
+      const canDistance = !!(refLat && refLng) && geocodeSuccessRate > 0;
       let filtered = ranked;
       if (canDistance) {
         for (const item of ranked) {
           const c = coordMap[item.complexPk];
           if (c) newDistMap[item.complexPk] = haversineM(refLat!, refLng!, c.lat, c.lng);
         }
-        // 거리가 측정된 단지는 1km 이내만, 좌표 미상 단지는 보수적으로 유지
         filtered = ranked.filter((item) => {
           const dist = newDistMap[item.complexPk];
           return dist === undefined || dist <= ADJACENCY_M;
