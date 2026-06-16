@@ -9,6 +9,7 @@ import { autoLeaderRatio } from "@/lib/locationScore";
 import { findLeaderForAddress, LEADER_APARTMENTS } from "@/lib/leaderApartments";
 import type { Apartment, ComparableRule } from "@/types/apartment";
 import { ComparableSuggestions } from "@/components/comparables/ComparableSuggestions";
+import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
 
 export default function ComparablesPage() {
   const store = useRealtyStore();
@@ -164,6 +165,28 @@ export default function ComparablesPage() {
               />
               <p className="mt-1 text-xs text-slate-400">대장 선택 시 자동산출 (실거래 우선 → 입지점수 근사). 직접 수정 가능.</p>
             </label>
+
+            {/* 대장 실거래 수집 */}
+            {rule.leaderApartmentId && rule.leaderApartmentId !== activeTargetId && (() => {
+              const leaderApt = store.apartments.find((a) => a.id === rule.leaderApartmentId);
+              if (!leaderApt) return null;
+              const leaderTxs = store.transactions.filter((tx) => tx.apartmentId === rule.leaderApartmentId);
+              return (
+                <div className="mt-4">
+                  <p className="mb-1 text-xs font-bold text-blue-700">
+                    대장 실거래 수집
+                    {leaderTxs.length > 0 && <span className="ml-1 font-normal text-slate-500">({leaderTxs.length}건 보유)</span>}
+                  </p>
+                  <TransactionFetcher
+                    apartment={leaderApt}
+                    existingTransactions={leaderTxs}
+                    onImport={(newTxs) => {
+                      if (newTxs.length > 0) store.setTransactions([...store.transactions, ...newTxs]);
+                    }}
+                  />
+                </div>
+              );
+            })()}
           </div>
 
           {/* 3열: 필터 조건 */}
