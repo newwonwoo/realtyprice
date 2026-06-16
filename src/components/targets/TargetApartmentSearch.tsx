@@ -8,7 +8,7 @@ import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
 import type { PresaleInfo } from "@/app/api/apt-presale/route";
 
-type Tab = "api" | "local" | "manual";
+type Tab = "api" | "local";
 
 // 통합 검색 결과 타입
 type CombinedResult =
@@ -48,11 +48,6 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
   // 로컬 검색
   const [localRegion, setLocalRegion] = useState("");
   const [localName, setLocalName] = useState("");
-
-  // 직접 입력
-  const [manualName, setManualName] = useState("");
-  const [manualRegion, setManualRegion] = useState("");
-  const [manualAddress, setManualAddress] = useState("");
 
   const [message, setMessage] = useState("");
   const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -200,30 +195,13 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
     showMessage(added ? "대상아파트로 추가했습니다." : "이미 등록된 대상아파트입니다.");
   }
 
-  // ── 직접 입력 ─────────────────────────────────────────
-  function addManual() {
-    if (!manualName.trim()) return;
-    const added = onAdd({
-      id: `target_${Date.now()}`,
-      name: manualName.trim(),
-      region: manualRegion.trim() || "미입력",
-      address: manualAddress.trim() || manualRegion.trim() || "미입력",
-      role: "target",
-      group: "custom",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    });
-    showMessage(added ? "대상아파트로 추가했습니다." : "이미 등록된 대상아파트입니다.");
-    if (added) { setManualName(""); setManualRegion(""); setManualAddress(""); }
-  }
-
   return (
     <div className="card p-5">
       <h2 className="text-lg font-black">대상아파트 추가</h2>
 
       {/* 탭 */}
       <div className="mt-4 flex gap-2 border-b border-slate-200">
-        {([["api", "단지 검색 (공공데이터)"], ["local", "저장된 아파트"], ["manual", "직접 입력"]] as [Tab, string][]).map(([id, label]) => (
+        {([["api", "단지 검색 (공공데이터)"], ["local", "저장된 아파트"]] as [Tab, string][]).map(([id, label]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -315,16 +293,6 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      {/* 직접 입력 */}
-      {tab === "manual" && (
-        <div className="mt-4 space-y-3">
-          <input className="input" value={manualName} onChange={(e) => setManualName(e.target.value)} placeholder="아파트명 *" />
-          <input className="input" value={manualRegion} onChange={(e) => setManualRegion(e.target.value)} placeholder="지역" />
-          <input className="input" value={manualAddress} onChange={(e) => setManualAddress(e.target.value)} placeholder="주소" />
-          <button className="btn-primary w-full" onClick={addManual}>대상아파트로 추가</button>
         </div>
       )}
 
