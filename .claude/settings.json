@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/tmp/fablize/hooks/router.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
