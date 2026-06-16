@@ -18,7 +18,11 @@ export type AptSearchResult = {
 // NOTE: odcloud ::LIKE already does substring matching — do NOT wrap value in % wildcards.
 // Wrapping in % searches for the literal "%value%" string and returns zero rows.
 function buildUrl(field: string, value: string, serviceKey: string, perPage = 100): string {
-  const keyEncoded = encodeURIComponent(serviceKey);
+  // data.go.kr 키는 "URL인코딩" 또는 "URL디코딩" 두 가지 버전이 있음.
+  // 어느 쪽을 붙여넣어도 동작하도록 한 번 디코딩 후 재인코딩.
+  let normalizedKey = serviceKey;
+  try { normalizedKey = decodeURIComponent(serviceKey); } catch { /* 그대로 사용 */ }
+  const keyEncoded = encodeURIComponent(normalizedKey);
   const valueEncoded = encodeURIComponent(value);
   return `${API_BASE}?serviceKey=${keyEncoded}&page=1&perPage=${perPage}&cond[${field}::LIKE]=${valueEncoded}&cond[COMPLEX_GB_CD::EQ]=1`;
 }

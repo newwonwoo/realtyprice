@@ -28,7 +28,9 @@ export type PresaleInfo = {
 type StrategyDiag = { field: string; value: string; httpStatus: number; rawCount: number; error?: string };
 
 function buildListUrl(page: number, serviceKey: string): string {
-  const keyEncoded = encodeURIComponent(serviceKey);
+  let normalizedKey = serviceKey;
+  try { normalizedKey = decodeURIComponent(serviceKey); } catch { /* 그대로 사용 */ }
+  const keyEncoded = encodeURIComponent(normalizedKey);
   return `${API_BASE}?serviceKey=${keyEncoded}&page=${page}&perPage=${PER_PAGE}`;
 }
 

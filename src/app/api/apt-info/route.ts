@@ -37,7 +37,9 @@ export type AptCombinedInfo = {
 };
 
 async function fetchApi(path: string, serviceKey: string, kaptCode: string) {
-  const params = new URLSearchParams({ serviceKey, kaptCode, _type: "json" });
+  let key = serviceKey;
+  try { key = decodeURIComponent(serviceKey); } catch { /* 그대로 */ }
+  const params = new URLSearchParams({ serviceKey: key, kaptCode, _type: "json" });
   const res = await fetch(`${BASE}/${path}?${params}`, {
     headers: { Accept: "application/json" },
     next: { revalidate: 3600 }, // 1시간 캐시

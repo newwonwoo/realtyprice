@@ -50,6 +50,10 @@ export async function GET(req: NextRequest) {
   if (!lawdCd) return NextResponse.json({ error: "지역코드(lawdCd)가 필요합니다." }, { status: 400 });
   if (!aptName) return NextResponse.json({ error: "아파트명(aptName)이 필요합니다." }, { status: 400 });
 
+  // data.go.kr 키 정규화 (URL인코딩 버전 → 디코딩)
+  let normalizedKey = serviceKey;
+  try { normalizedKey = decodeURIComponent(serviceKey); } catch { /* 그대로 */ }
+
   // 조회 기간 계산 (기본: 최근 12개월)
   const months = buildMonthRange(fromYm, toYm);
 
@@ -58,7 +62,7 @@ export async function GET(req: NextRequest) {
   try {
     for (const ym of months) {
       const baseParams = new URLSearchParams({
-        serviceKey,
+        serviceKey: normalizedKey,
         LAWD_CD: lawdCd,
         DEAL_YMD: ym,
         pageNo: "1",
