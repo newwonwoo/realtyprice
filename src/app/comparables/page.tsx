@@ -69,29 +69,32 @@ export default function ComparablesPage() {
         <p className="mt-2 text-slate-600">비교단지는 대상아파트별로 선택/제외하고 가중치를 따로 저장합니다.</p>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div className="card p-5">
-          <label className="text-sm font-bold text-slate-700" htmlFor="target">대상아파트</label>
-          <select id="target" className="input mt-2" value={activeTargetId} onChange={(event) => setTargetId(event.target.value)}>
-            {store.targets.map((target) => <option key={target.id} value={target.id}>{target.shortName ?? target.name}</option>)}
-          </select>
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <Metric label="선택 단지" value={`${selectedCount}개`} />
-            <Metric label="후보 단지" value={`${store.comparables.length}개`} />
-          </div>
-          {/* 비교단지 자동추천 */}
-          {activeTarget && (
-            <div className="mt-5">
-              <ComparableSuggestions
-                target={activeTarget}
-                existingComparableIds={existingComparableIds}
-                onAddComparable={addSuggestedComparable}
-              />
+      <div className="flex flex-col gap-5">
+        {/* 상단: 설정 영역 - 3열 그리드 */}
+        <div className="grid gap-5 lg:grid-cols-3">
+          {/* 1열: 대상아파트 선택 + 자동추천 */}
+          <div className="card p-5">
+            <label className="text-sm font-bold text-slate-700" htmlFor="target">대상아파트</label>
+            <select id="target" className="input mt-2" value={activeTargetId} onChange={(event) => setTargetId(event.target.value)}>
+              {store.targets.map((target) => <option key={target.id} value={target.id}>{target.shortName ?? target.name}</option>)}
+            </select>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Metric label="선택 단지" value={`${selectedCount}개`} />
+              <Metric label="후보 단지" value={`${store.comparables.length}개`} />
             </div>
-          )}
+            {activeTarget && (
+              <div className="mt-4">
+                <ComparableSuggestions
+                  target={activeTarget}
+                  existingComparableIds={existingComparableIds}
+                  onAddComparable={addSuggestedComparable}
+                />
+              </div>
+            )}
+          </div>
 
-          {/* 대장아파트 설정 */}
-          <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+          {/* 2열: 대장아파트 설정 */}
+          <div className="card p-5">
             <p className="text-sm font-black text-blue-800">대장아파트 설정</p>
             <p className="mt-1 text-xs text-blue-600">인근 지하철역 1~2개 거리 내 역 최근접 + 거래량 최다 단지. 가격 추정 시 spillover 앵커로 사용됩니다.</p>
             <label className="mt-3 block">
@@ -123,22 +126,27 @@ export default function ComparablesPage() {
             </label>
           </div>
 
-          <div className="mt-5 space-y-3">
-            <NumberField label="최대 거리(km)" value={rule.maxDistanceKm} onChange={(value) => updateRule("maxDistanceKm", value)} />
-            <NumberField label="최소 입주연도" value={rule.minBuiltYear ?? ""} onChange={(value) => updateRule("minBuiltYear", value)} />
-            <NumberField label="최대 입주연도" value={rule.maxBuiltYear ?? ""} onChange={(value) => updateRule("maxBuiltYear", value)} />
-            <NumberField label="최소 세대수" value={rule.minHouseholds ?? ""} onChange={(value) => updateRule("minHouseholds", value)} />
-            <div className="grid grid-cols-2 gap-2">
-              <NumberField label="면적 하한" value={rule.areaMin} onChange={(value) => updateRule("areaMin", value)} />
-              <NumberField label="면적 상한" value={rule.areaMax} onChange={(value) => updateRule("areaMax", value)} />
+          {/* 3열: 필터 조건 */}
+          <div className="card p-5">
+            <p className="text-sm font-black text-slate-700 mb-3">필터 조건</p>
+            <div className="space-y-3">
+              <NumberField label="최대 거리(km)" value={rule.maxDistanceKm} onChange={(value) => updateRule("maxDistanceKm", value)} />
+              <NumberField label="최소 입주연도" value={rule.minBuiltYear ?? ""} onChange={(value) => updateRule("minBuiltYear", value)} />
+              <NumberField label="최대 입주연도" value={rule.maxBuiltYear ?? ""} onChange={(value) => updateRule("maxBuiltYear", value)} />
+              <NumberField label="최소 세대수" value={rule.minHouseholds ?? ""} onChange={(value) => updateRule("minHouseholds", value)} />
+              <div className="grid grid-cols-2 gap-2">
+                <NumberField label="면적 하한" value={rule.areaMin} onChange={(value) => updateRule("areaMin", value)} />
+                <NumberField label="면적 상한" value={rule.areaMax} onChange={(value) => updateRule("areaMax", value)} />
+              </div>
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">지역 키워드</span>
+                <input className="input mt-1" value={rule.regionKeywords.join(", ")} onChange={(event) => updateRule("regionKeywords", event.target.value)} placeholder="오산, 송도" />
+              </label>
             </div>
-            <label className="block">
-              <span className="text-sm font-semibold text-slate-700">지역 키워드</span>
-              <input className="input mt-1" value={rule.regionKeywords.join(", ")} onChange={(event) => updateRule("regionKeywords", event.target.value)} placeholder="오산, 송도" />
-            </label>
           </div>
         </div>
 
+        {/* 하단: 비교단지 테이블 - 전체 너비 */}
         <div className="card overflow-hidden">
           <div className="border-b border-slate-200 p-5">
             <h2 className="text-lg font-black">{activeTarget ? activeTarget.name : "대상아파트 없음"}</h2>
