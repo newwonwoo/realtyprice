@@ -81,7 +81,7 @@ export default function ComparablesPage() {
       <div className="flex flex-col gap-5">
         {/* 상단: 설정 영역 - 3열 그리드 */}
         <div className="grid gap-5 lg:grid-cols-3">
-          {/* 1열: 대상아파트 선택 + 자동추천 */}
+          {/* 1열: 대상아파트 선택 */}
           <div className="card p-5">
             <label className="text-sm font-bold text-slate-700" htmlFor="target">대상아파트</label>
             <select id="target" className="input mt-2" value={activeTargetId} onChange={(event) => setTargetId(event.target.value)}>
@@ -91,15 +91,6 @@ export default function ComparablesPage() {
               <Metric label="선택 단지" value={`${selectedCount}개`} />
               <Metric label="후보 단지" value={`${store.comparables.length}개`} />
             </div>
-            {activeTarget && (
-              <div className="mt-4">
-                <ComparableSuggestions
-                  target={activeTarget}
-                  existingComparableIds={existingComparableIds}
-                  onAddComparable={addSuggestedComparable}
-                />
-              </div>
-            )}
           </div>
 
           {/* 2열: 대장아파트 설정 */}
@@ -195,7 +186,18 @@ export default function ComparablesPage() {
           </div>
         </div>
 
-        {/* 하단: 비교단지 테이블 - 전체 너비 */}
+        {/* 자동추천 - 전체 너비 */}
+        {activeTarget && (
+          <div className="card p-5">
+            <ComparableSuggestions
+              target={activeTarget}
+              existingComparableIds={existingComparableIds}
+              onAddComparable={addSuggestedComparable}
+            />
+          </div>
+        )}
+
+        {/* 비교단지 테이블 - 전체 너비 */}
         <div className="card overflow-hidden">
           <div className="border-b border-slate-200 p-5">
             <h2 className="text-lg font-black">{activeTarget ? activeTarget.name : "대상아파트 없음"}</h2>
