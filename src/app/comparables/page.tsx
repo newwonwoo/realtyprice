@@ -10,6 +10,7 @@ import { findLeaderForAddress, LEADER_APARTMENTS } from "@/lib/leaderApartments"
 import type { Apartment, ComparableRule } from "@/types/apartment";
 import { ComparableSuggestions } from "@/components/comparables/ComparableSuggestions";
 import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
+import { BulkTransactionFetcher } from "@/components/comparables/BulkTransactionFetcher";
 
 export default function ComparablesPage() {
   const store = useRealtyStore();
@@ -218,6 +219,20 @@ export default function ComparablesPage() {
               onAddComparable={addSuggestedComparable}
             />
           </div>
+        )}
+
+        {/* 비교단지 일괄 실거래 수집 */}
+        {store.comparables.length > 0 && (
+          <BulkTransactionFetcher
+            apartments={store.comparables.filter((a) => {
+              const link = store.comparableApartments.find((l) => l.targetApartmentId === activeTargetId && l.apartmentId === a.id);
+              return !!link?.selected;
+            })}
+            existingTransactions={store.transactions}
+            onImport={(newTxs) => {
+              if (newTxs.length > 0) store.setTransactions([...store.transactions, ...newTxs]);
+            }}
+          />
         )}
 
         {/* 비교단지 테이블 - 전체 너비 */}
