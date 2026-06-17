@@ -241,75 +241,41 @@ export default function TargetDetailPage() {
           </div>
         </div>
 
-        <div className="card p-6">
-          <h2 className="text-xl font-black">산식 구성값</h2>
-          <div className="mt-4 space-y-3">
-            <Line label="대상단지 실거래가 20%" value={formatEok(latestEstimate?.targetSalePrice)} />
-            <Line label="비교단지 보정 실거래가 25%" value={formatEok(latestEstimate?.adjustedComparableSalePrice)} />
-            <Line label="비교단지 현재 호가 10%" value={formatEok(latestEstimate?.comparableAskingPrice)} />
-            <Line label="대상단지 현재 호가 12%" value={formatEok(latestEstimate?.saleAskingPrice)} />
-            <Line label="전세기반 하방가 15%" value={formatEok(latestEstimate?.jeonseFloorPrice)} />
-            <Line label="매물소진속도 8%" value={formatEok(latestEstimate?.inventorySignalPrice)} />
-            <Line
-              label={`대장아파트 앵커 5%${leaderApartment ? ` (${leaderApartment.shortName ?? leaderApartment.name})` : " (미설정)"}`}
-              value={formatEok(latestEstimate?.leaderApartmentAnchorPrice)}
-              highlight={!!leaderApartment}
-            />
-            <Line label="분양가 대비 프리미엄 5%" value={formatEok(latestEstimate?.presalePremiumPrice)} />
-            <Line label="거시환경 3%" value={formatEok(latestEstimate?.macroSignalPrice) || "미입력"} />
-            <Line label={`대상 입지 보정 2% (${Math.round(locationPremiumRate * 100)}%)`} value={formatEok(latestEstimate?.locationPremiumPrice)} />
-            <Line label={`비교단지 상·하급지 압력 2% (${Math.round((latestEstimate?.comparableLocationAdjustmentRate ?? comparableGradeAnalysis.marketPressureRate) * 100)}%)`} value={formatEok(latestEstimate?.comparableMarketPressurePrice)} />
-          </div>
-          {leaderApartment && rule?.targetToLeaderRatio && (
-            <p className="mt-3 rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">
-              대장아파트 비율: {Math.round(rule.targetToLeaderRatio * 100)}%
-              {leaderTransactions.length > 0 ? ` | 대장 실거래 ${leaderTransactions.length}건 반영` : " | 대장 실거래 데이터 없음"}
-            </p>
-          )}
-          {latestEstimate?.reasonSummary && latestEstimate.reasonSummary.length > 0 && (
-            <div className="mt-4 space-y-1">
-              {latestEstimate.reasonSummary.map((r, i) => (
-                <p key={i} className="text-xs text-slate-500">✓ {r}</p>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {latestEstimate && latestEstimate.upsideBreakdown.length > 0 && (
+        {latestEstimate && latestEstimate.modelBreakdown.length > 0 && (
           <div className="card p-6 lg:col-span-2">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-xl font-black">상승가능성 점수 근거</h2>
-              <p className="text-sm font-bold text-slate-500">
-                합계 <span className="text-2xl text-blue-700">{latestEstimate.upsideScore}</span>점
+            <h2 className="text-xl font-black">가격추정 모델 전체</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              평가요소별로 <b>실거래에서 무엇을 보는지</b>, 측정 <b>원점수</b>, 적용 <b>가중치·배점</b>, 최종 <b>결과</b>를 분리해 표시합니다.
+              한국 시장 특수성(추세지속·거래속도 선행) 기반.
+            </p>
+
+            {/* ── 예상가(매매) 앵커 ── */}
+            <div className="mt-5 flex items-baseline justify-between">
+              <h3 className="text-base font-black text-slate-700">① 예상가 앵커 (가중평균 → 예상가)</h3>
+              <p className="text-sm font-bold text-slate-500">예상가 <span className="text-xl text-slate-900">{formatEok(latestEstimate.expectedSaleMid)}</span></p>
+            </div>
+            <ModelTable factors={latestEstimate.modelBreakdown.filter((f) => f.group === "price")} resultHeader="환산가" />
+
+            {/* ── 상승가능성 점수 ── */}
+            <div className="mt-6 flex items-baseline justify-between">
+              <h3 className="text-base font-black text-slate-700">② 상승가능성 점수 (원점수 합산)</h3>
+              <p className="text-sm font-bold text-slate-500">합계 <span className="text-xl text-blue-700">{latestEstimate.upsideScore}</span>점 / 100</p>
+            </div>
+            <ModelTable factors={latestEstimate.modelBreakdown.filter((f) => f.group === "upside")} resultHeader="점수" totalLabel="상승가능성 합계 (최대 100)" totalResult={`${latestEstimate.upsideScore}점`} />
+
+            {leaderApartment && rule?.targetToLeaderRatio && (
+              <p className="mt-3 rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                대장아파트 비율: {Math.round(rule.targetToLeaderRatio * 100)}%
+                {leaderTransactions.length > 0 ? ` | 대장 실거래 ${leaderTransactions.length}건 반영` : " | 대장 실거래 데이터 없음"}
               </p>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">한국 시장 특수성(추세지속·거래속도 선행) 기반. 각 항목의 점수 기여분과 산출 수치입니다.</p>
-            <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-semibold">평가요소</th>
-                    <th className="px-4 py-2 text-left font-semibold">산출 근거</th>
-                    <th className="px-4 py-2 text-right font-semibold">점수</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {latestEstimate.upsideBreakdown.map((c, i) => (
-                    <tr key={i} className="border-t border-slate-100">
-                      <td className="px-4 py-2 font-semibold text-slate-700">{c.label}</td>
-                      <td className="px-4 py-2 text-xs text-slate-500">{c.detail ?? "-"}</td>
-                      <td className={`px-4 py-2 text-right font-bold tabular-nums ${c.points > 0 ? "text-blue-700" : c.points < 0 ? "text-red-600" : "text-slate-400"}`}>
-                        {c.points > 0 ? "+" : ""}{c.points}
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="border-t-2 border-slate-300 bg-slate-50">
-                    <td className="px-4 py-2 font-black" colSpan={2}>합계 (최대 100)</td>
-                    <td className="px-4 py-2 text-right font-black tabular-nums text-blue-800">{latestEstimate.upsideScore}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            )}
+            {latestEstimate.reasonSummary && latestEstimate.reasonSummary.length > 0 && (
+              <div className="mt-4 space-y-1">
+                {latestEstimate.reasonSummary.map((r, i) => (
+                  <p key={i} className="text-xs text-slate-500">✓ {r}</p>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -352,11 +318,44 @@ function DataCard({ title, value, description }: { title: string; value: string;
   );
 }
 
-function Line({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function ModelTable({
+  factors, resultHeader, totalLabel, totalResult,
+}: {
+  factors: import("@/types/model").ModelFactor[];
+  resultHeader: string;
+  totalLabel?: string;
+  totalResult?: string;
+}) {
   return (
-    <div className={`flex items-center justify-between gap-3 border-b pb-2 text-sm ${highlight ? "border-blue-100" : "border-slate-100"}`}>
-      <span className={highlight ? "font-semibold text-blue-700" : "text-slate-600"}>{label}</span>
-      <span className={`font-bold ${highlight ? "text-blue-800" : "text-slate-950"}`}>{value}</span>
+    <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-xs text-slate-500">
+          <tr>
+            <th className="px-3 py-2 text-left font-semibold">평가요소</th>
+            <th className="px-3 py-2 text-left font-semibold">실거래에서 보는 것</th>
+            <th className="px-3 py-2 text-left font-semibold">원점수 (측정값)</th>
+            <th className="px-3 py-2 text-right font-semibold">가중치·배점</th>
+            <th className="px-3 py-2 text-right font-semibold">{resultHeader}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {factors.map((f, i) => (
+            <tr key={i} className={`border-t border-slate-100 ${f.active ? "" : "text-slate-400"}`}>
+              <td className="px-3 py-2 font-semibold text-slate-700">{f.label}</td>
+              <td className="px-3 py-2 text-xs text-slate-500">{f.source}</td>
+              <td className="px-3 py-2 text-xs text-slate-600">{f.rawValue}</td>
+              <td className="px-3 py-2 text-right text-xs tabular-nums text-slate-500">{f.weight}</td>
+              <td className={`px-3 py-2 text-right font-bold tabular-nums ${f.active ? "text-slate-900" : "text-slate-400"}`}>{f.result}</td>
+            </tr>
+          ))}
+          {totalLabel && (
+            <tr className="border-t-2 border-slate-300 bg-slate-50">
+              <td className="px-3 py-2 font-black" colSpan={4}>{totalLabel}</td>
+              <td className="px-3 py-2 text-right font-black tabular-nums text-blue-800">{totalResult}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
