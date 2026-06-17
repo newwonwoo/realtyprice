@@ -359,17 +359,37 @@ export function estimatePrice(params: {
   //  - 거래량이 가격에 선행 (Granger 인과, 특히 강남3구)
   const hasMinData = params.targetSaleTransactions.length > 0 || params.saleTransactions.length > 0 || params.saleListings.length >= 2 || (params.comparableSaleListings ?? []).length >= 2;
 
-  // 거래량 모멘텀 (가격 선행지표)
+  // ── 거래량 속도(velocity) — 소진율 대신 "얼마나 빠르게 계약되나" ──────
+  // 데이터: 국토부 실거래(일 단위 계약일). 신고기한 = 계약일 30일 이내(과소집계 보정).
+  // 3-tier 일평균(rate)으로 정규화 → 창 길이 달라도 비교 가능. 2주가 최고 가중.
+  // "데이터 유무에 따라 최소 2주부터": 단기 창이 비면 더 긴 창으로 적응적 폴백.
   const allSaleTxs = [...params.targetSaleTransactions, ...params.saleTransactions];
-  const recentTxCount = allSaleTxs.filter((tx) => temporalWeight(tx.contractDate ?? "") >= 1.3).length; // ≤1개월
-  const midTermTxCount = allSaleTxs.filter((tx) => temporalWeight(tx.contractDate ?? "") >= 1.0).length; // ≤3개월
-  const volumeMomentumScore =
-    recentTxCount >= 3 ? 15
-    : recentTxCount >= 2 ? 10
-    : recentTxCount >= 1 ? 6
-    : midTermTxCount >= 3 ? 4
-    : midTermTxCount >= 1 ? 2
-    : 0;
+  const daysAgo = (d?: string) => {
+    const t = new Date(d ?? "");
+    if (isNaN(t.getTime())) return Infinity;
+    return (Date.now() - t.getTime()) / (1000 * 60 * 60 * 24);
+  };
+  const txDays = allSaleTxs.map((tx) => daysAgo(tx.contractDate));
+  const n14 = txDays.filter((d) => d <= 14).length;
+  const n30 = txDays.filter((d) => d <= 30).length;
+  const n90 = txDays.filter((d) => d <= 90).length;
+  // 신고지연 보정: 최근 14일은 평균 절반가량만 신고 도착 → ×2로 실제 속도 추정
+  const r14 = (n14 * 2) / 14;   // 일평균(보정)
+  const r30 = n30 / 30;
+  const r90 = Math.max(n90 / 90, 1 / 365); // baseline (0 나눗셈 방지)
+  const accel14 = r14 / r90;    // 2주 속도 / 3개월 기준선 (>1 가속)
+  const accel30 = r30 / r90;    // 1개월 속도 / 기준선
+  let volumeMomentumScore: number;
+  if (n14 > 0 || n30 > 0) {
+    // 단기 데이터 존재 → 가속도 기반 (2주 가중 3 : 1개월 2 : 기준활발 1)
+    volumeMomentumScore =
+        (accel14 >= 1.3 ? 9 : accel14 >= 1.0 ? 6 : accel14 >= 0.5 ? 2 : 0)  // 2주 (최대 9)
+      + (accel30 >= 1.2 ? 4 : accel30 >= 0.9 ? 2 : 0)                        // 1개월 (최대 4)
+      + (n90 >= 5 ? 2 : 0);                                                   // 기준 거래 활발 (최대 2)
+  } else {
+    // 단기 창 비어있음 → 3개월 절대 건수로 폴백(속도 신호 약화)
+    volumeMomentumScore = n90 >= 3 ? 3 : n90 >= 1 ? 1 : 0;
+  }
 
   // 전세가율 수요/공급 신호: 높을수록 수요 우위, 낮을수록 공급 여력 있음
   // 기준: ≥0.70 수요압력(+7), ≥0.60 보통(+3), ≥0.50 중립(0), <0.50 공급여력(-4)
@@ -391,17 +411,17 @@ export function estimatePrice(params: {
     : comparableMarketPressureRate < 0 ? Math.round(comparableMarketPressureRate * 60)
     : 0;
 
-  const listingBonus = params.saleListings.length >= 2 ? 3 : 0;
-
+  // (매물보너스 제거: 매물 수 ≥2면 +3은 가격방향과 무관한 "데이터 있음" 표시일 뿐.
+  //  매물 수는 confidenceScore에 이미 반영. 매물 "수" 자체를 쓰려면 공급압력 신호로
+  //  입주물량과 묶어 별도 설계 예정.)
   const upsideScore = hasMinData
     ? Math.min(100, Math.round(
-        30  // 기저값
-        + volumeMomentumScore      // 거래량 선행지표 (최대 15)
+        35  // 기저값 (매물보너스 +3 제거분 일부 흡수, 중립 출발점 보정)
+        + volumeMomentumScore      // 거래량 속도 (최대 15)
         + jeonseSupplyDemandScore  // 전세 수요/공급 확인 (-4~+7)
         + absorptionScore          // 저가소진율 (최대 ~10.5)
         + leaderBoost              // 대장 앵커 상방압력 (+6)
         + comparablePressureScore  // 비교단지 압력 (최대 6)
-        + listingBonus             // 호가 데이터 확인 (+3)
       ))
     : 0;
 
@@ -430,7 +450,7 @@ export function estimatePrice(params: {
     comparableMarketPressurePrice > 0 && comparableMarketPressureRate !== 0 ? `비교단지 상·하급지 압력 ${Math.round(comparableMarketPressureRate * 100)}%를 반영했습니다.` : null,
     regionProfile === "seoul" ? "서울 레짐: 대장 신고가·상급지 압력·호가 리딩 가중을 강조했습니다." : null,
     regionProfile === "gyeonggi" ? "경기·수도권 레짐: 분양권 프리미엄·전세갭·저가매물 소진 가중을 강조했습니다." : null,
-    volumeMomentumScore >= 6 ? `최근 거래량 모멘텀이 감지됐습니다 (${recentTxCount}건/최근1개월, +${volumeMomentumScore}점).` : null,
+    volumeMomentumScore >= 6 ? `거래 속도가 빠릅니다 (최근2주 ${n14}건·1개월 ${n30}건·3개월 ${n90}건, +${volumeMomentumScore}점).` : null,
     jeonseSupplyDemandScore > 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 수요 우위 신호.` : jeonseSupplyDemandScore < 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 공급 여력 있음.` : null,
     supplyCliffMode ? "공급절벽 모드 ON: 입지 비중을 낮추고 전세 소진·호가 lock-in 중심으로 가중치를 재편했습니다." : null,
   ].filter(Boolean) as string[];
