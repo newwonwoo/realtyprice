@@ -363,16 +363,35 @@ export function estimatePrice(params: {
   // 데이터: 국토부 실거래(일 단위 계약일). 신고기한 = 계약일 30일 이내(과소집계 보정).
   // 3-tier 일평균(rate)으로 정규화 → 창 길이 달라도 비교 가능. 2주가 최고 가중.
   // "데이터 유무에 따라 최소 2주부터": 단기 창이 비면 더 긴 창으로 적응적 폴백.
-  const allSaleTxs = [...params.targetSaleTransactions, ...params.saleTransactions];
+  // 단지별 가중: 대장단지 최고, 대상단지 높음, 같은급 비교단지는 가중평균(comparableWeights).
+  //  → 같은 행정권의 대장이 빠르게 팔리면 속도신호를 더 강하게 끌어올림.
+  const LEADER_VELOCITY_W = 1.8;   // 대장단지 — 최고 가중
+  const TARGET_VELOCITY_W = 1.2;   // 대상단지 본인
+  const COMPARABLE_VELOCITY_CAP = 1.0; // 같은급 비교단지 — 가중평균이되 대장/대상보다 낮게 캡
   const daysAgo = (d?: string) => {
     const t = new Date(d ?? "");
     if (isNaN(t.getTime())) return Infinity;
     return (Date.now() - t.getTime()) / (1000 * 60 * 60 * 24);
   };
-  const txDays = allSaleTxs.map((tx) => daysAgo(tx.contractDate));
-  const n14 = txDays.filter((d) => d <= 14).length;
-  const n30 = txDays.filter((d) => d <= 30).length;
-  const n90 = txDays.filter((d) => d <= 90).length;
+  // id로 중복 제거(자기-대장 등) → 여러 그룹에 걸치면 최고 가중 적용
+  const velMap = new Map<string, { d: number; w: number }>();
+  const addVel = (tx: Transaction, w: number) => {
+    const d = daysAgo(tx.contractDate);
+    if (!isFinite(d)) return;
+    const prev = velMap.get(tx.id);
+    if (!prev || w > prev.w) velMap.set(tx.id, { d, w });
+  };
+  params.targetSaleTransactions.forEach((tx) => addVel(tx, TARGET_VELOCITY_W));
+  params.saleTransactions.forEach((tx) =>
+    addVel(tx, Math.min(COMPARABLE_VELOCITY_CAP, Math.max(0, params.comparableWeights?.[tx.apartmentId] ?? 1)))
+  );
+  (params.leaderTransactions ?? []).forEach((tx) => addVel(tx, LEADER_VELOCITY_W));
+  const velTxs = Array.from(velMap.values());
+  // 가중 거래량(점수용) — 단지 가중 합. 표시용 raw 건수는 별도.
+  const wsum = (maxDays: number) => velTxs.filter((x) => x.d <= maxDays).reduce((s, x) => s + x.w, 0);
+  const rawCount = (maxDays: number) => velTxs.filter((x) => x.d <= maxDays).length;
+  const n14 = wsum(14), n30 = wsum(30), n90 = wsum(90);
+  const raw14 = rawCount(14), raw30 = rawCount(30), raw90 = rawCount(90);
   // 신고지연 보정: 최근 14일은 평균 절반가량만 신고 도착 → ×2로 실제 속도 추정
   const r14 = (n14 * 2) / 14;   // 일평균(보정)
   const r30 = n30 / 30;
@@ -450,7 +469,7 @@ export function estimatePrice(params: {
     comparableMarketPressurePrice > 0 && comparableMarketPressureRate !== 0 ? `비교단지 상·하급지 압력 ${Math.round(comparableMarketPressureRate * 100)}%를 반영했습니다.` : null,
     regionProfile === "seoul" ? "서울 레짐: 대장 신고가·상급지 압력·호가 리딩 가중을 강조했습니다." : null,
     regionProfile === "gyeonggi" ? "경기·수도권 레짐: 분양권 프리미엄·전세갭·저가매물 소진 가중을 강조했습니다." : null,
-    volumeMomentumScore >= 6 ? `거래 속도가 빠릅니다 (최근2주 ${n14}건·1개월 ${n30}건·3개월 ${n90}건, +${volumeMomentumScore}점).` : null,
+    volumeMomentumScore >= 6 ? `거래 속도가 빠릅니다 (최근2주 ${raw14}건·1개월 ${raw30}건·3개월 ${raw90}건, 대장 가중반영, +${volumeMomentumScore}점).` : null,
     jeonseSupplyDemandScore > 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 수요 우위 신호.` : jeonseSupplyDemandScore < 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 공급 여력 있음.` : null,
     supplyCliffMode ? "공급절벽 모드 ON: 입지 비중을 낮추고 전세 소진·호가 lock-in 중심으로 가중치를 재편했습니다." : null,
   ].filter(Boolean) as string[];
