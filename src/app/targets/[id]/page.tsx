@@ -245,7 +245,7 @@ export default function TargetDetailPage() {
           <div className="card p-6 lg:col-span-2">
             <h2 className="text-xl font-black">가격추정 모델 전체</h2>
             <p className="mt-1 text-xs text-slate-500">
-              평가요소별로 <b>실거래에서 무엇을 보는지</b>, 측정 <b>원점수</b>, 적용 <b>가중치·배점</b>, 최종 <b>결과</b>를 분리해 표시합니다.
+              평가요소별로 <b>참조값(가격·거래량 등)</b>, 측정 <b>원점수</b>, 적용 <b>가중치·배점</b>, 최종 <b>결과</b>를 분리해 표시합니다.
               한국 시장 특수성(추세지속·거래속도 선행) 기반.
             </p>
 
@@ -332,7 +332,7 @@ function ModelTable({
         <thead className="bg-slate-50 text-xs text-slate-500">
           <tr>
             <th className="px-3 py-2 text-left font-semibold">평가요소</th>
-            <th className="px-3 py-2 text-left font-semibold">실거래에서 보는 것</th>
+            <th className="px-3 py-2 text-left font-semibold">참조값 (가격·거래량 등)</th>
             <th className="px-3 py-2 text-left font-semibold">원점수 (측정값)</th>
             <th className="px-3 py-2 text-right font-semibold">가중치·배점</th>
             <th className="px-3 py-2 text-right font-semibold">{resultHeader}</th>
