@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
 import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
@@ -63,6 +63,34 @@ export default function TargetDetailPage() {
   }, [apartment?.defaultArea, targetListings, targetTransactions]);
   const effectiveArea = selectedArea ?? apartment?.defaultArea ?? areaOptions[0] ?? 84;
   const matchingComparableListingCount = comparableListings.filter((listing) => Math.abs(listing.exclusiveArea - effectiveArea) / effectiveArea <= 0.03).length;
+  const locationFetchRef = useRef<Set<string>>(new Set());
+
+  // 위경도 있는 아파트(대상+비교단지) 중 locationFeatures 없거나 24시간 초과 시 자동 조회
+  useEffect(() => {
+    const toFetch = [apartment, ...selectedComparables].filter((apt): apt is NonNullable<typeof apt> => {
+      if (!apt?.latitude || !apt?.longitude) return false;
+      if (locationFetchRef.current.has(apt.id)) return false;
+      const fetched = apt.locationFeatures?.fetchedAt;
+      if (fetched && Date.now() - new Date(fetched).getTime() < 24 * 60 * 60 * 1000) return false;
+      return true;
+    });
+    if (toFetch.length === 0) return;
+
+    toFetch.forEach((apt) => {
+      locationFetchRef.current.add(apt.id);
+      fetch(`/api/location-score?lat=${apt.latitude}&lng=${apt.longitude}`)
+        .then((r) => r.json())
+        .then((features) => {
+          if (features.error) return;
+          const updated = store.apartments.map((a) =>
+            a.id === apt.id ? { ...a, locationFeatures: features } : a
+          );
+          store.setApartments(updated);
+        })
+        .catch(() => { /* 조용히 실패 */ });
+    });
+  }, [apartment?.id, selectedComparableIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const locationPremiumRate = calculateLocationPremium(apartment);
   const comparableGradeAnalysis = calculateComparableGradeAnalysis(apartment, selectedComparables);
 
@@ -286,6 +314,7 @@ export default function TargetDetailPage() {
         <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} />
         <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} />
         <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "저가매물 소진율 30% 이상 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
+        <LocationFeaturesCard apartment={apartment} />
       </div>
 
       <div className="mt-6">
@@ -393,13 +422,62 @@ function calculateComparableGradeAnalysis(
   };
 }
 
+function LocationFeaturesCard({ apartment }: { apartment: import("@/types/apartment").Apartment }) {
+  const lf = apartment.locationFeatures;
+  const hasCoords = apartment.latitude && apartment.longitude;
+  const fmt = (m?: number) => m != null ? (m < 1000 ? `${m}m` : `${(m / 1000).toFixed(1)}km`) : "-";
+  return (
+    <div className="card p-5">
+      <p className="text-sm font-semibold text-slate-500">입지 자동분석
+        {lf?.fetchedAt && <span className="ml-2 text-xs font-normal text-slate-400">(OSM · {new Date(lf.fetchedAt).toLocaleDateString("ko-KR")})</span>}
+        {!hasCoords && <span className="ml-2 text-xs font-normal text-amber-500">위경도 미설정</span>}
+        {hasCoords && !lf && <span className="ml-2 text-xs font-normal text-slate-400">조회 중…</span>}
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div><span className="text-slate-400">지하철역</span><br /><span className="font-bold">{fmt(lf?.nearestSubwayM)}</span>{lf?.nearestSubwayName ? ` ${lf.nearestSubwayName}` : ""}</div>
+        <div><span className="text-slate-400">대형마트</span><br /><span className="font-bold">{fmt(lf?.nearestMartM)}</span>{lf?.nearestMartName ? ` ${lf.nearestMartName}` : ""}</div>
+        <div><span className="text-slate-400">공원</span><br /><span className="font-bold">{fmt(lf?.nearestParkM)}</span>{lf?.nearestParkName ? ` ${lf.nearestParkName}` : ""}</div>
+        <div><span className="text-slate-400">수변/산림</span><br /><span className="font-bold">{lf ? [lf.hasWaterfront && "수변", lf.hasForestPark && "산림"].filter(Boolean).join("·") || "없음" : "-"}</span></div>
+      </div>
+    </div>
+  );
+}
+
 function locationQualityScore(apartment: import("@/types/apartment").Apartment) {
   const text = `${apartment.address} ${apartment.region} ${apartment.name} ${apartment.brand ?? ""}`;
   let score = 50;
+
+  const lf = apartment.locationFeatures;
+  if (lf) {
+    // 실거리 기반 역세권 점수
+    const sm = lf.nearestSubwayM ?? Infinity;
+    if (sm <= 300) score += 22;
+    else if (sm <= 500) score += 17;
+    else if (sm <= 800) score += 12;
+    else if (sm <= 1200) score += 6;
+    else if (sm <= 1500) score += 2;
+    // 대형마트
+    const mm = lf.nearestMartM ?? Infinity;
+    if (mm <= 500) score += 7;
+    else if (mm <= 1000) score += 4;
+    else if (mm <= 2000) score += 1;
+    // 공원
+    const pm = lf.nearestParkM ?? Infinity;
+    if (pm <= 300) score += 8;
+    else if (pm <= 800) score += 5;
+    else if (pm <= 1500) score += 2;
+    // 수변/산림
+    if (lf.hasWaterfront) score += 5;
+    if (lf.hasForestPark) score += 3;
+  } else {
+    // locationFeatures 없으면 주소 텍스트 fallback
+    if (/역|station|초역세권/i.test(text)) score += 10;
+    if (/공원|호수|공세권/i.test(text)) score += 5;
+  }
+
+  // 지역 프리미엄 (실거리와 독립)
   if (/강남|서초|송파|용산|성수|한남|여의도|판교|과천|분당|송도/i.test(text)) score += 16;
-  if (/역|station|초역세권/i.test(text)) score += 10;
   if (/초등|초품아|학교/i.test(text)) score += 5;
-  if (/공원|몰|백화점|병원|호수|공세권/i.test(text)) score += 5;
   if ((apartment.households ?? 0) >= 1500) score += 8;
   else if ((apartment.households ?? 0) >= 1000) score += 5;
   if ((apartment.builtYear ?? 0) >= new Date().getFullYear() - 5) score += 5;
@@ -412,10 +490,24 @@ function calculateLocationPremium(apartment: import("@/types/apartment").Apartme
   if (!apartment) return 0;
   const text = `${apartment.address} ${apartment.region} ${apartment.brand ?? ""}`;
   let score = 0;
-  if (/역|station|초역세권/i.test(text)) score += 0.02;
+
+  const lf = apartment.locationFeatures;
+  if (lf) {
+    const sm = lf.nearestSubwayM ?? Infinity;
+    if (sm <= 300) score += 0.04;
+    else if (sm <= 500) score += 0.03;
+    else if (sm <= 800) score += 0.02;
+    else if (sm <= 1200) score += 0.01;
+    if ((lf.nearestMartM ?? Infinity) <= 500) score += 0.01;
+    if ((lf.nearestParkM ?? Infinity) <= 500) score += 0.01;
+    if (lf.hasWaterfront) score += 0.01;
+  } else {
+    if (/역|station|초역세권/i.test(text)) score += 0.02;
+    if (/공원|몰|백화점|병원|호수|공세권/i.test(text)) score += 0.01;
+  }
+
   if (/초등|초품아|학교/i.test(text)) score += 0.01;
-  if (/공원|몰|백화점|병원|호수|공세권/i.test(text)) score += 0.01;
   if ((apartment.households ?? 0) >= 1000) score += 0.005;
   if ((apartment.builtYear ?? 0) >= new Date().getFullYear() - 5) score += 0.005;
-  return Math.min(0.05, score);
+  return Math.min(0.08, score);
 }
