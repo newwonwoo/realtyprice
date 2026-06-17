@@ -12,7 +12,9 @@ import { defaultModelWeights } from "@/lib/seed";
 import { estimatePrice, regionProfileFromAddress } from "@/lib/priceModel";
 import { median } from "@/lib/inventory";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
+import { findSggCode } from "@/data/regionCodes";
 import type { ModelWeights } from "@/types/model";
+import type { SupplyVolumeResult } from "@/app/api/supply-volume/route";
 
 const conclusionLabel: Record<string, string> = {
   strong_up: "강한 상승예상",
@@ -38,6 +40,8 @@ export default function TargetDetailPage() {
   const [justDone, setJustDone] = useState(false);
   const [selectedArea, setSelectedArea] = useState<number | null>(null);
   const [supplyCliffMode, setSupplyCliffMode] = useState(false);
+  const [supplyVolume, setSupplyVolume] = useState<SupplyVolumeResult | null>(null);
+  const [supplyLoading, setSupplyLoading] = useState(false);
 
   const apartment = store.targets.find((item) => item.id === id);
   const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
@@ -64,6 +68,28 @@ export default function TargetDetailPage() {
   const effectiveArea = selectedArea ?? apartment?.defaultArea ?? areaOptions[0] ?? 84;
   const matchingComparableListingCount = comparableListings.filter((listing) => Math.abs(listing.exclusiveArea - effectiveArea) / effectiveArea <= 0.03).length;
   const locationFetchRef = useRef<Set<string>>(new Set());
+
+  // 입주물량 자동조회 (단지 변경 시 또는 수동 새로고침)
+  async function fetchSupplyVolume() {
+    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
+    const serviceKey = keys.find((k) => k.provider === "data_go_kr")?.value;
+    if (!serviceKey || !apartment) return;
+    const lawdCd = findSggCode(apartment.region);
+    if (!lawdCd) return;
+    setSupplyLoading(true);
+    const params = new URLSearchParams({ serviceKey, lawdCd, regionName: apartment.region });
+    if (apartment.expectedMoveInYm) params.set("targetMoveInYm", apartment.expectedMoveInYm);
+    try {
+      const res = await fetch(`/api/supply-volume?${params.toString()}`);
+      if (res.ok) setSupplyVolume(await res.json());
+    } finally {
+      setSupplyLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchSupplyVolume();
+  }, [apartment?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 위경도 있는 아파트(대상+비교단지) 중 locationFeatures 없거나 24시간 초과 시 자동 조회
   useEffect(() => {
@@ -315,6 +341,7 @@ export default function TargetDetailPage() {
         <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} />
         <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "저가매물 소진율 30% 이상 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
         <LocationFeaturesCard apartment={apartment} />
+        <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
       </div>
 
       <div className="mt-6">
@@ -420,6 +447,112 @@ function calculateComparableGradeAnalysis(
     marketPressureRate,
     summary,
   };
+}
+
+function SupplyVolumeCard({
+  apartment, data, loading, onRefresh, latestEstimate,
+}: {
+  apartment: import("@/types/apartment").Apartment;
+  data: SupplyVolumeResult | null;
+  loading: boolean;
+  onRefresh: () => void;
+  latestEstimate: import("@/types/model").PriceEstimate | undefined;
+}) {
+  const fmt = (n: number) => n.toLocaleString("ko-KR");
+  const fmtYm = (ym: string) => ym ? `${ym.slice(0, 4)}년 ${parseInt(ym.slice(4, 6))}월` : "";
+  const impactColor = (pct: number) => pct > 0 ? "text-emerald-700" : pct < 0 ? "text-red-700" : "text-slate-600";
+  const impactLabel = (pct: number) => pct > 0 ? `공급 희소 +${pct}%` : pct < 0 ? `공급 과다 ${pct}%` : "공급 보통";
+
+  // 입주시점 가격 시뮬레이션: 현재 예상가 × (1 + 입주시점 공급 영향 % - 현재 공급 영향 %)
+  const simulatedMoveInPrice = latestEstimate && data?.targetMoveInPriceImpactPct != null
+    ? Math.round(latestEstimate.expectedSaleMid * (1 + (data.targetMoveInPriceImpactPct - data.priceImpactPct) / 100))
+    : null;
+
+  return (
+    <div className="card p-5 lg:col-span-2">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-slate-500">입주물량 분석 (국토부 · 2시점)</p>
+        <button
+          className="text-xs text-blue-600 underline disabled:text-slate-400"
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          {loading ? "조회 중…" : "새로고침"}
+        </button>
+      </div>
+
+      {!data && !loading && (
+        <p className="mt-3 text-xs text-amber-600">
+          API 키(공공데이터포털) 등록 후 자동 조회됩니다.
+          {!apartment.expectedMoveInYm && " 입주예정년월을 단지 정보에 입력하면 미래 시점도 조회합니다."}
+        </p>
+      )}
+
+      {data && (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {/* 현재시점 */}
+          <div className="rounded-lg border border-slate-200 p-4">
+            <p className="text-xs font-bold text-slate-500">현재시점 ({fmtYm(data.current.yyyymm)} 기준 3개월)</p>
+            <p className="mt-1 text-2xl font-black">{fmt(data.current.units)}<span className="ml-1 text-sm font-normal text-slate-500">세대</span></p>
+            <p className="text-xs text-slate-400">{data.current.complexCount}개 단지 입주</p>
+            <p className={`mt-2 text-sm font-bold ${impactColor(data.priceImpactPct)}`}>{impactLabel(data.priceImpactPct)}</p>
+          </div>
+
+          {/* 입주시점 */}
+          <div className={`rounded-lg border p-4 ${data.targetMoveIn ? "border-blue-200 bg-blue-50/40" : "border-slate-100 bg-slate-50"}`}>
+            <p className="text-xs font-bold text-slate-500">
+              {apartment.expectedMoveInYm
+                ? `입주시점 (${fmtYm(apartment.expectedMoveInYm)} 기준 3개월)`
+                : "입주시점 — 미설정"}
+            </p>
+            {data.targetMoveIn ? (
+              <>
+                <p className="mt-1 text-2xl font-black">{fmt(data.targetMoveIn.units)}<span className="ml-1 text-sm font-normal text-slate-500">세대</span></p>
+                <p className="text-xs text-slate-400">{data.targetMoveIn.complexCount}개 단지 입주</p>
+                <p className={`mt-2 text-sm font-bold ${impactColor(data.targetMoveInPriceImpactPct ?? 0)}`}>{impactLabel(data.targetMoveInPriceImpactPct ?? 0)}</p>
+                {simulatedMoveInPrice !== null && (
+                  <p className="mt-2 text-xs text-blue-700">
+                    입주시점 시뮬레이션가: <strong>{formatEok(simulatedMoveInPrice)}</strong>
+                    <span className="ml-1 text-slate-400">(다른 요소 고정 · 공급만 조정)</span>
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="mt-2 text-xs text-slate-400">단지 정보 &gt; 입주예정년월(YYYYMM) 입력 후 새로고침</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 월별 데이터 바 차트 */}
+      {data && data.monthlyData.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs text-slate-400 mb-2">월별 입주물량 (세대)</p>
+          <div className="flex items-end gap-1 h-16">
+            {data.monthlyData.map((m) => {
+              const maxU = Math.max(...data.monthlyData.map((x) => x.units), 1);
+              const h = Math.max(4, Math.round((m.units / maxU) * 56));
+              const isCurrent = m.yyyymm === data.current.yyyymm;
+              const isMoveIn = m.yyyymm === apartment.expectedMoveInYm;
+              return (
+                <div key={m.yyyymm} className="flex flex-col items-center gap-0.5 flex-1 min-w-0" title={`${fmtYm(m.yyyymm)}: ${fmt(m.units)}세대`}>
+                  <div
+                    className={`w-full rounded-t ${isMoveIn ? "bg-blue-500" : isCurrent ? "bg-emerald-500" : "bg-slate-200"}`}
+                    style={{ height: `${h}px` }}
+                  />
+                  <span className="text-[9px] text-slate-400 truncate w-full text-center">{m.yyyymm.slice(4)}/{m.yyyymm.slice(2, 4)}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-1 flex gap-3 text-[10px] text-slate-400">
+            <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded bg-emerald-500" />현재</span>
+            {apartment.expectedMoveInYm && <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded bg-blue-500" />입주시점</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function LocationFeaturesCard({ apartment }: { apartment: import("@/types/apartment").Apartment }) {
