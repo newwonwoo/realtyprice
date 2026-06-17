@@ -274,6 +274,44 @@ export default function TargetDetailPage() {
             </div>
           )}
         </div>
+
+        {latestEstimate && latestEstimate.upsideBreakdown.length > 0 && (
+          <div className="card p-6 lg:col-span-2">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-xl font-black">상승가능성 점수 근거</h2>
+              <p className="text-sm font-bold text-slate-500">
+                합계 <span className="text-2xl text-blue-700">{latestEstimate.upsideScore}</span>점
+              </p>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">한국 시장 특수성(추세지속·거래속도 선행) 기반. 각 항목의 점수 기여분과 산출 수치입니다.</p>
+            <div className="mt-4 overflow-hidden rounded-lg border border-slate-200">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-semibold">평가요소</th>
+                    <th className="px-4 py-2 text-left font-semibold">산출 근거</th>
+                    <th className="px-4 py-2 text-right font-semibold">점수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latestEstimate.upsideBreakdown.map((c, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-4 py-2 font-semibold text-slate-700">{c.label}</td>
+                      <td className="px-4 py-2 text-xs text-slate-500">{c.detail ?? "-"}</td>
+                      <td className={`px-4 py-2 text-right font-bold tabular-nums ${c.points > 0 ? "text-blue-700" : c.points < 0 ? "text-red-600" : "text-slate-400"}`}>
+                        {c.points > 0 ? "+" : ""}{c.points}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-slate-300 bg-slate-50">
+                    <td className="px-4 py-2 font-black" colSpan={2}>합계 (최대 100)</td>
+                    <td className="px-4 py-2 text-right font-black tabular-nums text-blue-800">{latestEstimate.upsideScore}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">

@@ -1,5 +1,5 @@
 import type { Listing } from "@/types/listing";
-import type { ModelWeights, PriceEstimate } from "@/types/model";
+import type { ModelWeights, PriceEstimate, ScoreComponent } from "@/types/model";
 import type { Transaction } from "@/types/transaction";
 import { normalizeToBGrade } from "./grade";
 import { median, getLowPriceListings } from "./inventory";
@@ -433,9 +433,10 @@ export function estimatePrice(params: {
   // (매물보너스 제거: 매물 수 ≥2면 +3은 가격방향과 무관한 "데이터 있음" 표시일 뿐.
   //  매물 수는 confidenceScore에 이미 반영. 매물 "수" 자체를 쓰려면 공급압력 신호로
   //  입주물량과 묶어 별도 설계 예정.)
+  const UPSIDE_BASE = 35; // 기저값 (데이터 존재 시 중립 출발점)
   const upsideScore = hasMinData
     ? Math.min(100, Math.round(
-        35  // 기저값 (매물보너스 +3 제거분 일부 흡수, 중립 출발점 보정)
+        UPSIDE_BASE
         + volumeMomentumScore      // 거래량 속도 (최대 15)
         + jeonseSupplyDemandScore  // 전세 수요/공급 확인 (-4~+7)
         + absorptionScore          // 저가소진율 (최대 ~10.5)
@@ -443,6 +444,38 @@ export function estimatePrice(params: {
         + comparablePressureScore  // 비교단지 압력 (최대 6)
       ))
     : 0;
+
+  // ── upsideScore 점수 분해 (UI 근거 표시용) ─────────────────────────
+  const upsideBreakdown: ScoreComponent[] = hasMinData
+    ? [
+        { label: "기저값", points: UPSIDE_BASE, detail: "데이터 존재 시 중립 출발점" },
+        {
+          label: "거래 속도 (대장>대상>비교 가중)",
+          points: volumeMomentumScore,
+          detail: `최근 2주 ${raw14}건·1개월 ${raw30}건·3개월 ${raw90}건 (신고지연 보정)`,
+        },
+        {
+          label: "전세 수요/공급",
+          points: jeonseSupplyDemandScore,
+          detail: `전세가율 ${Math.round(jeonseRatio * 100)}%`,
+        },
+        {
+          label: "저가매물 소진율",
+          points: absorptionScore,
+          detail: `${Math.round(lowPriceAbsorptionRate * 100)}% 소진`,
+        },
+        {
+          label: "대장아파트 앵커 상방압력",
+          points: leaderBoost,
+          detail: leaderApartmentAnchorPrice > 0 ? "대장 앵커 > 비교 시세" : "해당 없음",
+        },
+        {
+          label: "비교단지 상·하급지 압력",
+          points: comparablePressureScore,
+          detail: `${Math.round(comparableMarketPressureRate * 100)}%`,
+        },
+      ]
+    : [];
 
   // ── confidenceScore ───────────────────────────────────────────────
   const totalTxCount = params.targetSaleTransactions.length + params.saleTransactions.length + params.jeonseTransactions.length;
@@ -513,6 +546,7 @@ export function estimatePrice(params: {
     recommendedAskingPrice: calculateRecommendedAskingPrice(expectedSaleMid, lowPriceAbsorptionRate),
     defensePrice: calculateDefensePrice(expectedSaleMid),
     upsideScore,
+    upsideBreakdown,
     confidenceScore,
     conclusion: conclusionFromScore(upsideScore, hasMinData),
     reasonSummary,

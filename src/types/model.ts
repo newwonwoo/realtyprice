@@ -17,6 +17,13 @@ export type ModelWeights = {
   comparableMarketPressure: number;
 };
 
+// upsideScore 점수 분해 (가격추정 근거를 수치로 표시)
+export type ScoreComponent = {
+  label: string;
+  points: number;       // 점수 기여분 (음수 가능)
+  detail?: string;      // 산출 근거 수치 (예: "전세가율 68%")
+};
+
 export type PriceEstimate = {
   id: string;
   targetApartmentId: string;
@@ -44,6 +51,7 @@ export type PriceEstimate = {
   recommendedAskingPrice: number;
   defensePrice: number;
   upsideScore: number;
+  upsideBreakdown: ScoreComponent[];
   confidenceScore: number;
   conclusion: "strong_up" | "up" | "neutral" | "weak" | "price_cut_needed" | "insufficient_data";
   reasonSummary: string[];
