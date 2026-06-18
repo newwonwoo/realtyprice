@@ -9,6 +9,7 @@ export type LeaderEntry = {
   address: string;
   brand?: string;
   households?: number;
+  complexPk?: string;  // 부동산원 단지고유번호 — scripts/verify-leaders.mjs로 API에서 채움
 };
 
 export const LEADER_APARTMENTS: LeaderEntry[] = [
@@ -126,10 +127,17 @@ export function findLeaderForAddress(address: string): LeaderEntry | undefined {
   return sorted.find((entry) => address.includes(entry.region));
 }
 
+// 부동산원 complexPk로 대장 판별 (verify-leaders.mjs가 채운 정식 ID 정확매칭)
+export function isLeaderByComplexPk(complexPk?: string): boolean {
+  if (!complexPk) return false;
+  return LEADER_APARTMENTS.some((entry) => entry.complexPk && entry.complexPk === complexPk);
+}
+
 // 단지명+주소가 그 지역의 대장아파트인지 판별
-// API 단지명과 테이블 단지명이 미묘하게 다를 수 있어(예: "잠실리센츠"↔"리센츠")
-// 공백 제거 후 양방향 부분 포함으로 완화 매칭한다.
-export function isLeaderApartment(name: string, address: string): boolean {
+// complexPk가 있으면 그쪽이 정확하므로 그걸 우선 쓰고(isLeaderByComplexPk),
+// 이름만 있을 때를 위한 폴백: 공백 제거 후 양방향 부분 포함 완화 매칭.
+export function isLeaderApartment(name: string, address: string, complexPk?: string): boolean {
+  if (isLeaderByComplexPk(complexPk)) return true;
   if (!name) return false;
   const n = name.replace(/\s/g, "");
   if (!n) return false;
