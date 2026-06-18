@@ -25,7 +25,7 @@ function toContractDate(tx: MolitTransaction): string {
   return `${y}-${m}-${d}`;
 }
 
-function molitToTransaction(tx: MolitTransaction, apartmentId: string): Transaction {
+export function molitToTransaction(tx: MolitTransaction, apartmentId: string): Transaction {
   const now = nowIso();
   return {
     id: `molit_${apartmentId}_${tx.transactionType}_${tx.dealYear}${tx.dealMonth}${tx.dealDay}_${tx.floor}_${tx.excluUseAr}`,
@@ -44,6 +44,40 @@ function molitToTransaction(tx: MolitTransaction, apartmentId: string): Transact
   };
 }
 
+export async function fetchTransactions(
+  apartment: Apartment,
+  existingTransactions: Transaction[],
+  fromYm: string,
+  toYm: string,
+  type: string
+): Promise<{ newTxs: Transaction[]; total: number; error?: string }> {
+  const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
+  const serviceKey = keys.find((k) => k.provider === "data_go_kr")?.value;
+  if (!serviceKey) return { newTxs: [], total: 0, error: "공공데이터포털 API 키 없음" };
+
+  const lawdCd = findSggCode(apartment.region);
+  if (!lawdCd) return { newTxs: [], total: 0, error: `지역코드 없음: "${apartment.region}"` };
+
+  const params = new URLSearchParams({
+    serviceKey,
+    lawdCd,
+    aptName: apartment.shortName ?? apartment.name,
+    fromYm,
+    toYm,
+    type,
+  });
+  const res = await window.fetch(`/api/transactions?${params.toString()}`);
+  const json = await res.json();
+  if (!res.ok) return { newTxs: [], total: 0, error: json.error ?? "오류" };
+
+  const existingIds = new Set(existingTransactions.map((tx) => tx.id));
+  const newTxs = (json.items as MolitTransaction[])
+    .map((item) => molitToTransaction(item, apartment.id))
+    .filter((tx) => !existingIds.has(tx.id) && tx.price > 0 && tx.exclusiveArea > 0);
+
+  return { newTxs, total: json.total };
+}
+
 const thisYear = new Date().getFullYear();
 const thisMonth = String(new Date().getMonth() + 1).padStart(2, "0");
 
@@ -56,44 +90,14 @@ export function TransactionFetcher({ apartment, existingTransactions, onImport }
   const [error, setError] = useState("");
 
   async function fetch() {
-    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
-    const serviceKey = keys.find((k) => k.provider === "data_go_kr")?.value;
-
-    if (!serviceKey) {
-      setError("공공데이터포털 API 키가 없습니다. 설정 > API 키 설정에서 등록하세요.");
-      return;
-    }
-
-    const lawdCd = findSggCode(apartment.region);
-    if (!lawdCd) {
-      setError(`지역코드를 찾을 수 없습니다: "${apartment.region}". 아파트 지역 정보를 확인하세요.`);
-      return;
-    }
-
     setLoading(true);
     setError("");
     setResult(null);
-
     try {
-      const params = new URLSearchParams({
-        serviceKey,
-        lawdCd,
-        aptName: apartment.shortName ?? apartment.name,
-        fromYm,
-        toYm,
-        type,
-      });
-      const res = await window.fetch(`/api/transactions?${params.toString()}`);
-      const json = await res.json();
-      if (!res.ok) { setError(json.error ?? "오류가 발생했습니다."); return; }
-
-      const existingIds = new Set(existingTransactions.map((tx) => tx.id));
-      const newTxs: Transaction[] = (json.items as MolitTransaction[])
-        .map((item) => molitToTransaction(item, apartment.id))
-        .filter((tx) => !existingIds.has(tx.id) && tx.price > 0 && tx.exclusiveArea > 0);
-
+      const { newTxs, total, error: err } = await fetchTransactions(apartment, existingTransactions, fromYm, toYm, type);
+      if (err) { setError(err); return; }
       onImport(newTxs);
-      setResult({ imported: newTxs.length, skipped: json.total - newTxs.length });
+      setResult({ imported: newTxs.length, skipped: total - newTxs.length });
     } catch (e) {
       setError(`요청 실패: ${String(e)}`);
     } finally {

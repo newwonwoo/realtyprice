@@ -65,10 +65,16 @@ export default function TargetDetailPage() {
   const comparableWeights = Object.fromEntries(selectedLinks.map((item) => [item.apartmentId, item.compareWeight || 1]));
   const inventorySignal = store.inventorySignals.find((item) => item.apartmentId === id);
   const rule = store.comparableRules.find((item) => item.targetApartmentId === id);
-  const leaderApartment = rule?.leaderApartmentId ? store.apartments.find((a) => a.id === rule.leaderApartmentId) : undefined;
-  const leaderTransactions = rule?.leaderApartmentId
-    ? store.transactions.filter((tx) => tx.apartmentId === rule.leaderApartmentId && (tx.transactionType === "sale" || tx.transactionType === "presale"))
-    : [];
+  const isSelfLeader = rule?.leaderApartmentId === id;
+  const leaderApartment = isSelfLeader
+    ? apartment
+    : (rule?.leaderApartmentId ? store.apartments.find((a) => a.id === rule.leaderApartmentId) : undefined);
+  // 대상 = 대장이면 자기 실거래를 그대로 사용, ratio는 1.0
+  const leaderTransactions = isSelfLeader
+    ? targetTransactions.filter((tx) => tx.transactionType === "sale" || tx.transactionType === "presale")
+    : (rule?.leaderApartmentId
+        ? store.transactions.filter((tx) => tx.apartmentId === rule.leaderApartmentId && (tx.transactionType === "sale" || tx.transactionType === "presale"))
+        : []);
   const areaOptions = useMemo(() => {
     const areas = [apartment?.defaultArea, ...targetTransactions.map((tx) => tx.exclusiveArea), ...targetListings.map((listing) => listing.exclusiveArea)]
       .filter((area): area is number => !!area && area > 0)
@@ -173,7 +179,7 @@ export default function TargetDetailPage() {
       comparableWeights,
       presalePrice,
       leaderTransactions,
-      targetToLeaderRatio: rule?.targetToLeaderRatio,
+      targetToLeaderRatio: isSelfLeader ? 1.0 : rule?.targetToLeaderRatio,
       regionProfile: regionProfileFromAddress(apartment?.address),
       supplyCliffMode,
       supplyPressurePct: supplyVolume?.priceImpactPct,
@@ -440,6 +446,20 @@ export default function TargetDetailPage() {
         <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
       </div>
 
+      {/* 대장아파트 실거래 수집 (대상≠대장인 경우에만) */}
+      {leaderApartment && !isSelfLeader && (
+        <div className="mt-4">
+          <p className="mb-2 text-sm font-bold text-blue-700">
+            대장아파트 실거래 수집 — {leaderApartment.shortName ?? leaderApartment.name}
+            {leaderTransactions.length > 0 && <span className="ml-2 text-xs font-normal text-slate-500">({leaderTransactions.length}건 보유)</span>}
+          </p>
+          <TransactionFetcher
+            apartment={leaderApartment}
+            existingTransactions={leaderTransactions}
+            onImport={importTransactions}
+          />
+        </div>
+      )}
     </AppShell>
   );
 }

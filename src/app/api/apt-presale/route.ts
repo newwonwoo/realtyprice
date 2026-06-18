@@ -28,7 +28,9 @@ export type PresaleInfo = {
 type StrategyDiag = { field: string; value: string; httpStatus: number; rawCount: number; error?: string };
 
 function buildListUrl(page: number, serviceKey: string): string {
-  const keyEncoded = encodeURIComponent(serviceKey);
+  let normalizedKey = serviceKey;
+  try { normalizedKey = decodeURIComponent(serviceKey); } catch { /* 그대로 사용 */ }
+  const keyEncoded = encodeURIComponent(normalizedKey);
   return `${API_BASE}?serviceKey=${keyEncoded}&page=${page}&perPage=${PER_PAGE}`;
 }
 
@@ -52,7 +54,7 @@ function toPresale(item: Record<string, unknown>): PresaleInfo {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const serviceKey = searchParams.get("serviceKey");
+  const serviceKey = searchParams.get("serviceKey") ?? process.env.DATA_GO_KR_API_KEY ?? "";
   const houseName = searchParams.get("houseName");
   const debug = searchParams.get("debug") === "1";
   const diag: StrategyDiag[] = [];
