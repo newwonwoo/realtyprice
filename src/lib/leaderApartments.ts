@@ -125,3 +125,14 @@ export function findLeaderForAddress(address: string): LeaderEntry | undefined {
   const sorted = [...LEADER_APARTMENTS].sort((a, b) => b.region.length - a.region.length);
   return sorted.find((entry) => address.includes(entry.region));
 }
+
+// 단지명+주소가 그 지역의 대장아파트인지 판별 (공백 무시 단지명 매칭)
+export function isLeaderApartment(name: string, address: string): boolean {
+  if (!name) return false;
+  const n = name.replace(/\s/g, "");
+  return LEADER_APARTMENTS.some(
+    (entry) =>
+      (address ? address.includes(entry.region) : true) &&
+      entry.name.replace(/\s/g, "") === n
+  );
+}

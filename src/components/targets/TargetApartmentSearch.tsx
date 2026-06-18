@@ -7,6 +7,7 @@ import { nowIso } from "@/lib/format";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
 import type { PresaleInfo } from "@/app/api/apt-presale/route";
+import { isLeaderApartment } from "@/lib/leaderApartments";
 
 type Tab = "api" | "local";
 
@@ -248,7 +249,10 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
                 <tbody>
                   {apiResults.map((r, i) => r.source === "completed" ? (
                     <tr key={`c_${r.data.complexPk}`}>
-                      <td className="font-semibold">{r.data.name}</td>
+                      <td className="font-semibold">
+                        {r.data.name}
+                        {isLeaderApartment(r.data.name, r.data.address) && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700">👑 대장</span>}
+                      </td>
                       <td className="text-xs">{r.data.address}</td>
                       <td className="text-right text-xs">{r.data.households ? `${r.data.households.toLocaleString()}세대` : "-"}</td>
                       <td><span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">완공 {builtLabel(r.data.builtDate)}</span></td>
@@ -256,7 +260,10 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
                     </tr>
                   ) : (
                     <tr key={`p_${r.data.houseManageNo}_${i}`}>
-                      <td className="font-semibold">{r.data.houseName}</td>
+                      <td className="font-semibold">
+                        {r.data.houseName}
+                        {isLeaderApartment(r.data.houseName, r.data.supplyLocation) && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700">👑 대장</span>}
+                      </td>
                       <td className="text-xs">{r.data.supplyLocation}</td>
                       <td className="text-right text-xs">{r.data.totalSupplyHouseholds ? `${r.data.totalSupplyHouseholds.toLocaleString()}세대` : "-"}</td>
                       <td><span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">분양 {r.data.recruitPublicNoticeDate?.slice(0, 7) ?? ""}</span></td>

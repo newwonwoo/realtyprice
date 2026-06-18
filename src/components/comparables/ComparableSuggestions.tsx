@@ -5,6 +5,7 @@ import type { Apartment } from "@/types/apartment";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import { nowIso } from "@/lib/format";
 import { locationGradeScore } from "@/lib/locationScore";
+import { isLeaderApartment } from "@/lib/leaderApartments";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
 import type { SchoolDistrictResult } from "@/app/api/school-district/route";
 
@@ -351,9 +352,13 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
                     const itemYear = item.builtDate ? parseInt(item.builtDate.slice(0, 4), 10) : undefined;
                     const tier = tierFromDiff(locationGradeScore(item.address, item.name, item.households, itemYear) - targetGrade);
                     const dist = distMap[item.complexPk];
+                    const isLeader = isLeaderApartment(item.name, item.address);
                     return (
                       <tr key={item.complexPk}>
-                        <td className="font-semibold text-sm">{item.name}</td>
+                        <td className="font-semibold text-sm">
+                          {item.name}
+                          {isLeader && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700">👑 대장</span>}
+                        </td>
                         <td><span className={`rounded px-1.5 py-0.5 text-xs font-bold ${tier.cls}`}>{tier.label}</span></td>
                         <td className="text-sm whitespace-nowrap text-slate-500">{dist !== undefined ? (dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`) : "-"}</td>
                         <td className="text-right text-sm">{item.households ? item.households.toLocaleString() : "-"}</td>
