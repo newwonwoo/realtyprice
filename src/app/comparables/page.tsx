@@ -102,8 +102,8 @@ export default function ComparablesPage() {
       </div>
 
       <div className="flex flex-col gap-5">
-        {/* 상단: 설정 영역 - 3열 그리드 */}
-        <div className="grid gap-5 lg:grid-cols-3">
+        {/* 상단: 설정 영역 - 2열 그리드 */}
+        <div className="grid gap-5 lg:grid-cols-2">
           {/* 1열: 대상아파트 선택 */}
           <div className="card p-5">
             <label className="text-sm font-bold text-slate-700" htmlFor="target">대상아파트</label>
@@ -116,78 +116,7 @@ export default function ComparablesPage() {
             </div>
           </div>
 
-          {/* 2열: 대장아파트 설정 */}
-          <div className="card p-5">
-            <p className="text-sm font-black text-blue-800">대장아파트 설정</p>
-            <p className="mt-1 text-xs text-blue-600">가격 추정 시 spillover 앵커로 사용됩니다. 대장 단지의 실거래도 수집하면 비율이 더 정확해집니다.</p>
-
-            {/* 자동 지정 안내 */}
-            {currentLeaderName && suggestedLeader && currentLeaderName === suggestedLeader.name && (
-              <p className="mt-2 text-xs text-blue-600">지역 테이블에서 자동 지정됨 — 변경 가능</p>
-            )}
-            {!suggestedLeader && !rule.leaderApartmentId && (
-              <p className="mt-2 text-xs text-slate-400">이 지역의 대장단지가 테이블에 없습니다. 아래에서 수동 선택하세요.</p>
-            )}
-
-            <label className="mt-3 block">
-              <span className="text-xs font-semibold text-slate-700">대장아파트 선택</span>
-              <select
-                className="input mt-1"
-                value={rule.leaderApartmentId ?? ""}
-                onChange={(e) => {
-                  const leaderId = e.target.value || undefined;
-                  const leader = leaderId ? store.apartments.find((a) => a.id === leaderId) : undefined;
-                  const ratio = activeTarget && leader
-                    ? autoLeaderRatio(activeTarget, leader, store.transactions, activeTarget.defaultArea)
-                    : undefined;
-                  saveRule({ ...rule, leaderApartmentId: leaderId, targetToLeaderRatio: ratio, targetApartmentId: activeTargetId });
-                }}
-              >
-                <option value="">-- 미설정 --</option>
-                {store.apartments.filter((a) => a.id !== activeTargetId).map((a) => (
-                  <option key={a.id} value={a.id}>{a.shortName ?? a.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="mt-3 block">
-              <span className="text-xs font-semibold text-slate-700">대상/대장 가격 비율 (%)</span>
-              <input
-                className="input mt-1"
-                type="number"
-                min="50"
-                max="130"
-                step="1"
-                placeholder="예: 88 (대상이 대장의 88%)"
-                value={rule.targetToLeaderRatio !== undefined ? Math.round(rule.targetToLeaderRatio * 100) : ""}
-                onChange={(e) => saveRule({ ...rule, targetToLeaderRatio: e.target.value ? Number(e.target.value) / 100 : undefined, targetApartmentId: activeTargetId })}
-              />
-              <p className="mt-1 text-xs text-slate-400">대장 선택 시 자동산출 (실거래 우선 → 입지점수 근사). 직접 수정 가능.</p>
-            </label>
-
-            {/* 대장 실거래 수집 */}
-            {rule.leaderApartmentId && rule.leaderApartmentId !== activeTargetId && (() => {
-              const leaderApt = store.apartments.find((a) => a.id === rule.leaderApartmentId);
-              if (!leaderApt) return null;
-              const leaderTxs = store.transactions.filter((tx) => tx.apartmentId === rule.leaderApartmentId);
-              return (
-                <div className="mt-4">
-                  <p className="mb-1 text-xs font-bold text-blue-700">
-                    대장 실거래 수집
-                    {leaderTxs.length > 0 && <span className="ml-1 font-normal text-slate-500">({leaderTxs.length}건 보유)</span>}
-                  </p>
-                  <TransactionFetcher
-                    apartment={leaderApt}
-                    existingTransactions={leaderTxs}
-                    onImport={(newTxs) => {
-                      if (newTxs.length > 0) store.setTransactions([...store.transactions, ...newTxs]);
-                    }}
-                  />
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* 3열: 필터 조건 */}
+          {/* 2열: 필터 조건 */}
           <div className="card p-5">
             <p className="text-sm font-black text-slate-700 mb-3">필터 조건</p>
             <div className="space-y-3">
@@ -207,7 +136,7 @@ export default function ComparablesPage() {
           </div>
         </div>
 
-        {/* 자동추천 - 전체 너비 */}
+        {/* 자동추천 - 전체 너비 (대장 표시 포함) */}
         {activeTarget && (
           <div className="card p-5">
             <ComparableSuggestions
@@ -217,6 +146,79 @@ export default function ComparablesPage() {
             />
           </div>
         )}
+
+        {/* 대장아파트 설정 - 추천 다음 */}
+        <div className="card p-5">
+          <p className="text-sm font-black text-blue-800">👑 대장아파트 설정</p>
+          <p className="mt-1 text-xs text-blue-600">가격 추정 시 spillover 앵커로 사용됩니다. 대장 단지의 실거래도 수집하면 비율이 더 정확해집니다.</p>
+
+          {/* 자동 지정 안내 */}
+          {currentLeaderName && suggestedLeader && currentLeaderName === suggestedLeader.name && (
+            <p className="mt-2 text-xs text-blue-600">지역 테이블에서 자동 지정됨 — 변경 가능</p>
+          )}
+          {!suggestedLeader && !rule.leaderApartmentId && (
+            <p className="mt-2 text-xs text-slate-400">이 지역의 대장단지가 테이블에 없습니다. 아래에서 수동 선택하세요.</p>
+          )}
+
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-700">대장아파트 선택</span>
+              <select
+                className="input mt-1"
+                value={rule.leaderApartmentId ?? ""}
+                onChange={(e) => {
+                  const leaderId = e.target.value || undefined;
+                  const leader = leaderId ? store.apartments.find((a) => a.id === leaderId) : undefined;
+                  const ratio = activeTarget && leader
+                    ? autoLeaderRatio(activeTarget, leader, store.transactions, activeTarget.defaultArea)
+                    : undefined;
+                  saveRule({ ...rule, leaderApartmentId: leaderId, targetToLeaderRatio: ratio, targetApartmentId: activeTargetId });
+                }}
+              >
+                <option value="">-- 미설정 --</option>
+                {store.apartments.filter((a) => a.id !== activeTargetId).map((a) => (
+                  <option key={a.id} value={a.id}>{a.shortName ?? a.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-700">대상/대장 가격 비율 (%)</span>
+              <input
+                className="input mt-1"
+                type="number"
+                min="50"
+                max="130"
+                step="1"
+                placeholder="예: 88 (대상이 대장의 88%)"
+                value={rule.targetToLeaderRatio !== undefined ? Math.round(rule.targetToLeaderRatio * 100) : ""}
+                onChange={(e) => saveRule({ ...rule, targetToLeaderRatio: e.target.value ? Number(e.target.value) / 100 : undefined, targetApartmentId: activeTargetId })}
+              />
+              <p className="mt-1 text-xs text-slate-400">대장 선택 시 자동산출 (실거래 우선 → 입지점수 근사). 직접 수정 가능.</p>
+            </label>
+          </div>
+
+          {/* 대장 실거래 수집 */}
+          {rule.leaderApartmentId && rule.leaderApartmentId !== activeTargetId && (() => {
+            const leaderApt = store.apartments.find((a) => a.id === rule.leaderApartmentId);
+            if (!leaderApt) return null;
+            const leaderTxs = store.transactions.filter((tx) => tx.apartmentId === rule.leaderApartmentId);
+            return (
+              <div className="mt-4">
+                <p className="mb-1 text-xs font-bold text-blue-700">
+                  대장 실거래 수집
+                  {leaderTxs.length > 0 && <span className="ml-1 font-normal text-slate-500">({leaderTxs.length}건 보유)</span>}
+                </p>
+                <TransactionFetcher
+                  apartment={leaderApt}
+                  existingTransactions={leaderTxs}
+                  onImport={(newTxs) => {
+                    if (newTxs.length > 0) store.setTransactions([...store.transactions, ...newTxs]);
+                  }}
+                />
+              </div>
+            );
+          })()}
+        </div>
 
         {/* 비교단지 일괄 실거래 수집 */}
         {store.comparables.length > 0 && (
