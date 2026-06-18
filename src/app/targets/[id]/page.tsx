@@ -249,6 +249,19 @@ export default function TargetDetailPage() {
 
       <AptDetailInfo apartment={apartment} />
 
+      {/* ── 실거래 가져오기 ── */}
+      <div className="mt-6">
+        <details open={targetTransactions.length === 0} className="card overflow-hidden">
+          <summary className="flex cursor-pointer items-center justify-between p-5 font-bold text-slate-700 hover:bg-slate-50">
+            <span>실거래 가져오기</span>
+            <span className="text-sm font-normal text-slate-500">{targetTransactions.length > 0 ? `${targetTransactions.length + comparableTransactions.length}건 로드됨` : "데이터 없음"}</span>
+          </summary>
+          <div className="border-t border-slate-100">
+            <TransactionFetcher apartment={apartment} existingTransactions={[...targetTransactions, ...comparableTransactions]} onImport={importTransactions} />
+          </div>
+        </details>
+      </div>
+
       {/* ── 결과 요약 ── */}
       <div className="grid gap-5 lg:grid-cols-4 mt-6">
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -259,7 +272,7 @@ export default function TargetDetailPage() {
         </div>
         <Summary label="예상 매매가" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"} />
         <Summary label="권장 매각호가" value={latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"} />
-        <Summary label="상승가능성" value={latestEstimate ? `${latestEstimate.upsideScore}점` : "-"} />
+        <Summary label="상승가능성 점수" value={latestEstimate ? `${latestEstimate.upsideScore}점` : "-"} title="추세지속·거래속도·입지·공급 등 5개 항목 합산 (0~100점)" />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
@@ -327,8 +340,8 @@ export default function TargetDetailPage() {
             <Summary label="예상 상단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMax) : "-"} />
             <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} />
             <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
-            <Summary label="저가소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} />
-            <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} />
+            <Summary label="급매소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} title="호가 목록에서 급매·저가 매물이 얼마나 소진됐는지 비율. 높을수록 상승압력 강함." />
+            <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} title="가격앵커 데이터 충분도 (0~100점). 실거래·호가가 많을수록 높아집니다." />
             <Summary label="적용 평형" value={`${latestEstimate?.selectedArea ?? effectiveArea}㎡`} />
           </div>
         </div>
@@ -377,25 +390,18 @@ export default function TargetDetailPage() {
         <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다." />
         <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} />
         <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} />
-        <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "저가매물 소진율 30% 이상 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
+        <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "급매·저가매물 소진 30% 이상 — 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
         <LocationFeaturesCard apartment={apartment} />
         <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
       </div>
 
-      <div className="mt-6">
-        <TransactionFetcher
-          apartment={apartment}
-          existingTransactions={[...targetTransactions, ...comparableTransactions]}
-          onImport={importTransactions}
-        />
-      </div>
     </AppShell>
   );
 }
 
-function Summary({ label, value }: { label: string; value: string }) {
+function Summary({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" title={title}>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
     </div>
