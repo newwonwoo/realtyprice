@@ -126,13 +126,17 @@ export function findLeaderForAddress(address: string): LeaderEntry | undefined {
   return sorted.find((entry) => address.includes(entry.region));
 }
 
-// 단지명+주소가 그 지역의 대장아파트인지 판별 (공백 무시 단지명 매칭)
+// 단지명+주소가 그 지역의 대장아파트인지 판별
+// API 단지명과 테이블 단지명이 미묘하게 다를 수 있어(예: "잠실리센츠"↔"리센츠")
+// 공백 제거 후 양방향 부분 포함으로 완화 매칭한다.
 export function isLeaderApartment(name: string, address: string): boolean {
   if (!name) return false;
   const n = name.replace(/\s/g, "");
-  return LEADER_APARTMENTS.some(
-    (entry) =>
-      (address ? address.includes(entry.region) : true) &&
-      entry.name.replace(/\s/g, "") === n
-  );
+  if (!n) return false;
+  return LEADER_APARTMENTS.some((entry) => {
+    if (address && !address.includes(entry.region)) return false;
+    const e = entry.name.replace(/\s/g, "");
+    // 한쪽이 다른쪽을 포함하면 같은 단지로 본다 (단, 너무 짧은 부분일치 방지: 4자 이상)
+    return n === e || (n.length >= 4 && e.includes(n)) || (e.length >= 4 && n.includes(e));
+  });
 }
