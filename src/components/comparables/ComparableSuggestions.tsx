@@ -352,7 +352,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
                     const itemYear = item.builtDate ? parseInt(item.builtDate.slice(0, 4), 10) : undefined;
                     const tier = tierFromDiff(locationGradeScore(item.address, item.name, item.households, itemYear) - targetGrade);
                     const dist = distMap[item.complexPk];
-                    const isLeader = isLeaderApartment(item.name, item.address);
+                    const isLeader = isLeaderApartment(item.name, item.address, item.complexPk);
                     return (
                       <tr key={item.complexPk}>
                         <td className="font-semibold text-sm">

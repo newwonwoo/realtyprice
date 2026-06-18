@@ -251,7 +251,7 @@ export function TargetApartmentSearch({ apartments, onAdd }: { apartments: Apart
                     <tr key={`c_${r.data.complexPk}`}>
                       <td className="font-semibold">
                         {r.data.name}
-                        {isLeaderApartment(r.data.name, r.data.address) && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700">👑 대장</span>}
+                        {isLeaderApartment(r.data.name, r.data.address, r.data.complexPk) && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700">👑 대장</span>}
                       </td>
                       <td className="text-xs">{r.data.address}</td>
                       <td className="text-right text-xs">{r.data.households ? `${r.data.households.toLocaleString()}세대` : "-"}</td>
