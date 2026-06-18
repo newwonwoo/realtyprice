@@ -156,10 +156,10 @@ export default function ListingsPage() {
             <Metric label="신규매물수" value={`${snapshot.newCount}건`} />
             <Metric label="사라진 매물" value={`${snapshot.disappearedCount}건`} />
             <Metric label="매물소진율" value={formatPercent(snapshot.absorptionRate)} />
-            <Metric label="저가소진율" value={formatPercent(snapshot.lowPriceAbsorptionRate)} />
+            <Metric label="하위호가 소진율" value={formatPercent(snapshot.lowPriceAbsorptionRate)} />
           </div>
           <p className={`mt-4 rounded-lg p-3 text-sm font-semibold ${snapshot.lowPriceAbsorptionRate >= 0.3 ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-600"}`}>
-            {snapshot.lowPriceAbsorptionRate >= 0.3 ? "저가매물 소진율 30% 이상: 강한 상승 신호" : "저가매물은 전일 매물 하위 30% 가격대입니다."}
+            {snapshot.lowPriceAbsorptionRate >= 0.3 ? "하위 30% 가격대 매물 소진 30%↑ — 상승 신호" : "호가 목록 가격 하위 30% 매물이 얼마나 사라졌는지 비율입니다."}
           </p>
           <button className="btn-primary mt-4 w-full" onClick={saveInventorySignal}>매물소진 신호 저장</button>
           {latestSignal && <p className="mt-3 text-sm text-slate-500">최근 저장: {latestSignal.signalDate} · {formatPercent(latestSignal.lowPriceAbsorptionRate)}</p>}

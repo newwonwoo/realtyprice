@@ -32,6 +32,14 @@ const conclusionColor: Record<string, string> = {
   price_cut_needed: "text-red-700",
   insufficient_data: "text-slate-400",
 };
+const conclusionBg: Record<string, string> = {
+  strong_up: "bg-emerald-50 border-emerald-200",
+  up: "bg-blue-50 border-blue-200",
+  neutral: "bg-amber-50 border-amber-200",
+  weak: "bg-amber-50 border-amber-200",
+  price_cut_needed: "bg-red-50 border-red-200",
+  insufficient_data: "bg-slate-50 border-slate-200",
+};
 
 export default function TargetDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -228,17 +236,21 @@ export default function TargetDetailPage() {
 
       {/* ── 단계별 진행 동선 ── */}
       <div className="mb-6 card p-4">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center flex-wrap gap-y-3">
           {steps.map((step, i) => {
             const isActive = i === currentStep;
             return (
-              <div key={i} className="flex items-center gap-2">
-                {i > 0 && <span className="text-slate-300">›</span>}
-                <span className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold
-                  ${step.done ? "bg-emerald-100 text-emerald-700" : isActive ? "bg-blue-100 text-blue-700 ring-1 ring-blue-400" : "bg-slate-100 text-slate-400"}`}>
+              <div key={i} className="flex items-center">
+                {i > 0 && <div className="w-6 h-px bg-slate-200 flex-shrink-0 mx-1" />}
+                <span className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-all
+                  ${step.done
+                    ? "bg-emerald-500 text-white shadow-sm"
+                    : isActive
+                      ? "bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-1 shadow-sm"
+                      : "bg-slate-100 text-slate-400"}`}>
                   {step.done ? "✓" : `${i + 1}`} {step.label}
                   {step.href && !step.done && (
-                    <a href={step.href} className="underline">→</a>
+                    <a href={step.href} className="underline opacity-80">→</a>
                   )}
                 </span>
               </div>
@@ -262,21 +274,44 @@ export default function TargetDetailPage() {
         </details>
       </div>
 
+      {/* ── 섹션 구분선 ── */}
+      <div className="relative my-8">
+        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
+        <div className="relative flex justify-center"><span className="bg-slate-50 px-4 text-sm font-bold text-slate-400">분석 결과</span></div>
+      </div>
+
       {/* ── 결과 요약 ── */}
       <div className="grid gap-5 lg:grid-cols-4 mt-6">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className={`rounded-xl border p-5 shadow-sm ${latestEstimate ? conclusionBg[latestEstimate.conclusion] : "bg-white border-slate-200"}`}>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">결론</p>
           <p className={`mt-2 text-xl font-black ${latestEstimate ? conclusionColor[latestEstimate.conclusion] : "text-slate-300"}`}>
             {latestEstimate ? conclusionLabel[latestEstimate.conclusion] : "계산 필요"}
           </p>
         </div>
-        <Summary label="예상 매매가" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"} />
-        <Summary label="권장 매각호가" value={latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"} />
-        <Summary label="상승가능성 점수" value={latestEstimate ? `${latestEstimate.upsideScore}점` : "-"} title="추세지속·거래속도·입지·공급 등 5개 항목 합산 (0~100점)" />
+        <div className="rounded-xl border border-l-4 border-blue-400 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 매매가</p>
+          <p className="mt-2 text-xl font-black text-blue-800">{latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"}</p>
+        </div>
+        <div className="rounded-xl border border-l-4 border-emerald-400 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">권장 매각호가</p>
+          <p className="mt-2 text-xl font-black text-emerald-800">{latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" title="추세지속·거래속도·입지·공급 등 5개 항목 합산 (0~100점)">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">상승가능성 점수</p>
+          <p className="mt-2 text-xl font-black text-slate-950">{latestEstimate ? `${latestEstimate.upsideScore}점` : "-"}</p>
+          {latestEstimate && (
+            <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
+              <div
+                className="h-1.5 rounded-full bg-blue-400 transition-all"
+                style={{ width: `${Math.min(100, latestEstimate.upsideScore)}%` }}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="card p-6">
+        <div className="card p-6 bg-gradient-to-br from-white to-blue-50/30">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h2 className="text-xl font-black">가격추정 실행</h2>
@@ -299,7 +334,7 @@ export default function TargetDetailPage() {
                 공급절벽 모드
               </label>
             <button
-              className={`btn-primary relative min-w-[120px] ${!allReady ? "opacity-70" : ""}`}
+              className={`relative min-w-[140px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all ${!allReady ? "opacity-70" : ""}`}
               onClick={runEstimate}
               disabled={estimating}
             >
@@ -315,8 +350,10 @@ export default function TargetDetailPage() {
 
           {/* 완료 메시지 */}
           {justDone && latestEstimate && (
-            <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-4">
-              <p className="font-bold text-emerald-800">✓ 가격 추정이 완료되었습니다.</p>
+            <div className="mt-4 rounded-xl border-l-4 border-emerald-400 bg-emerald-50 border border-emerald-200 p-4 flex gap-3">
+              <span className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-full bg-emerald-500 text-white text-sm font-black">✓</span>
+              <div>
+              <p className="font-bold text-emerald-800">가격 추정이 완료되었습니다.</p>
               <p className="mt-1 text-sm text-emerald-700">
                 예상 매매가 <strong>{formatEok(latestEstimate.expectedSaleMid)}</strong>
                 &nbsp;({formatEok(latestEstimate.expectedSaleMin)} ~ {formatEok(latestEstimate.expectedSaleMax)})
@@ -326,6 +363,7 @@ export default function TargetDetailPage() {
               {latestEstimate.warnings?.filter(w => w !== "사라진 매물은 거래완료가 아니라 소진추정입니다.").map((w, i) => (
                 <p key={i} className="mt-1 text-xs text-amber-700">⚠ {w}</p>
               ))}
+              </div>
             </div>
           )}
 
@@ -340,7 +378,7 @@ export default function TargetDetailPage() {
             <Summary label="예상 상단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMax) : "-"} />
             <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} />
             <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
-            <Summary label="급매소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} title="호가 목록에서 급매·저가 매물이 얼마나 소진됐는지 비율. 높을수록 상승압력 강함." />
+            <Summary label="하위호가 소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} title="호가 목록에서 가격 하위 30% 매물이 사라진 비율. 사라진 매물 = 판매 가능성 높음. 높을수록 상승압력 강함." />
             <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} title="가격앵커 데이터 충분도 (0~100점). 실거래·호가가 많을수록 높아집니다." />
             <Summary label="적용 평형" value={`${latestEstimate?.selectedArea ?? effectiveArea}㎡`} />
           </div>
@@ -386,11 +424,17 @@ export default function TargetDetailPage() {
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
-        <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} />
-        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다." />
-        <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} />
-        <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} />
-        <DataCard title="매물소진 신호" value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"} description={inventorySignal?.conclusion === "strong_up" ? "급매·저가매물 소진 30% 이상 — 강한 상승 신호" : "호가/매물 화면에서 산출합니다."} />
+        <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} accent="blue" />
+        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다." accent="emerald" />
+        <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} accent="violet" />
+        <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} accent="amber" />
+        <DataCard
+          title="하위호가 소진율"
+          value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"}
+          description={inventorySignal?.conclusion === "strong_up" ? "하위 30% 가격대 매물 소진 30%↑ — 상승 신호" : "호가/매물 화면에서 하위 30% 호가 매물 소진 비율을 산출합니다."}
+          accent={inventorySignal?.conclusion === "strong_up" ? "red" : "slate"}
+          fireSignal={inventorySignal?.conclusion === "strong_up"}
+        />
         <LocationFeaturesCard apartment={apartment} />
         <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
       </div>
@@ -408,11 +452,20 @@ function Summary({ label, value, title }: { label: string; value: string; title?
   );
 }
 
-function DataCard({ title, value, description }: { title: string; value: string; description: string }) {
+const dataCardAccent: Record<string, string> = {
+  blue: "border-l-4 border-blue-300",
+  emerald: "border-l-4 border-emerald-400",
+  violet: "border-l-4 border-violet-400",
+  amber: "border-l-4 border-amber-400",
+  red: "border-l-4 border-red-400",
+  slate: "border-l-4 border-slate-200",
+};
+
+function DataCard({ title, value, description, accent = "slate", fireSignal }: { title: string; value: string; description: string; accent?: string; fireSignal?: boolean }) {
   return (
-    <div className="card p-5">
+    <div className={`card p-5 ${dataCardAccent[accent] ?? ""}`}>
       <p className="text-sm font-semibold text-slate-500">{title}</p>
-      <p className="mt-2 text-2xl font-black">{value}</p>
+      <p className="mt-2 text-3xl font-black">{value}{fireSignal && <span className="ml-1">🔥</span>}</p>
       <p className="mt-2 text-sm text-slate-600">{description}</p>
     </div>
   );
@@ -429,7 +482,7 @@ function ModelTable({
   return (
     <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-xs text-slate-500">
+        <thead className="bg-blue-50 text-xs text-slate-500">
           <tr>
             <th className="px-3 py-2 text-left font-semibold">평가요소</th>
             <th className="px-3 py-2 text-left font-semibold">참조값 (가격·거래량 등)</th>
@@ -440,7 +493,7 @@ function ModelTable({
         </thead>
         <tbody>
           {factors.map((f, i) => (
-            <tr key={i} className={`border-t border-slate-100 ${f.active ? "" : "text-slate-400"}`}>
+            <tr key={i} className={`border-t border-slate-100 ${f.active && (typeof f.result === "string" && parseFloat(f.result) > 0) ? "bg-emerald-50/40" : i % 2 === 0 ? "bg-white" : "bg-slate-50/50"} ${!f.active ? "text-slate-400" : ""}`}>
               <td className="px-3 py-2 font-semibold text-slate-700">{f.label}</td>
               <td className="px-3 py-2 text-xs text-slate-500">{f.source}</td>
               <td className="px-3 py-2 text-xs text-slate-600">{f.rawValue}</td>
@@ -449,8 +502,8 @@ function ModelTable({
             </tr>
           ))}
           {totalLabel && (
-            <tr className="border-t-2 border-slate-300 bg-slate-50">
-              <td className="px-3 py-2 font-black" colSpan={4}>{totalLabel}</td>
+            <tr className="border-t-2 border-blue-200 bg-blue-100">
+              <td className="px-3 py-2 font-black text-blue-900" colSpan={4}>{totalLabel}</td>
               <td className="px-3 py-2 text-right font-black tabular-nums text-blue-800">{totalResult}</td>
             </tr>
           )}
@@ -599,10 +652,18 @@ function SupplyVolumeCard({
   );
 }
 
+function distanceBadge(m?: number) {
+  if (m == null) return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-400">-</span>;
+  const label = m < 1000 ? `${m}m` : `${(m / 1000).toFixed(1)}km`;
+  if (m <= 300) return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">{label}</span>;
+  if (m <= 800) return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">{label}</span>;
+  if (m <= 1500) return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700">{label}</span>;
+  return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500">{label}</span>;
+}
+
 function LocationFeaturesCard({ apartment }: { apartment: import("@/types/apartment").Apartment }) {
   const lf = apartment.locationFeatures;
   const hasCoords = apartment.latitude && apartment.longitude;
-  const fmt = (m?: number) => m != null ? (m < 1000 ? `${m}m` : `${(m / 1000).toFixed(1)}km`) : "-";
   return (
     <div className="card p-5">
       <p className="text-sm font-semibold text-slate-500">입지 자동분석
@@ -610,11 +671,23 @@ function LocationFeaturesCard({ apartment }: { apartment: import("@/types/apartm
         {!hasCoords && <span className="ml-2 text-xs font-normal text-amber-500">위경도 미설정</span>}
         {hasCoords && !lf && <span className="ml-2 text-xs font-normal text-slate-400">조회 중…</span>}
       </p>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <div><span className="text-slate-400">지하철역</span><br /><span className="font-bold">{fmt(lf?.nearestSubwayM)}</span>{lf?.nearestSubwayName ? ` ${lf.nearestSubwayName}` : ""}</div>
-        <div><span className="text-slate-400">대형마트</span><br /><span className="font-bold">{fmt(lf?.nearestMartM)}</span>{lf?.nearestMartName ? ` ${lf.nearestMartName}` : ""}</div>
-        <div><span className="text-slate-400">공원</span><br /><span className="font-bold">{fmt(lf?.nearestParkM)}</span>{lf?.nearestParkName ? ` ${lf.nearestParkName}` : ""}</div>
-        <div><span className="text-slate-400">수변/산림</span><br /><span className="font-bold">{lf ? [lf.hasWaterfront && "수변", lf.hasForestPark && "산림"].filter(Boolean).join("·") || "없음" : "-"}</span></div>
+      <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+        <div className="flex flex-col gap-1">
+          <span className="text-slate-400">지하철역</span>
+          <div className="flex items-center gap-1.5">{distanceBadge(lf?.nearestSubwayM)}{lf?.nearestSubwayName && <span className="text-slate-600">{lf.nearestSubwayName}</span>}</div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-slate-400">대형마트</span>
+          <div className="flex items-center gap-1.5">{distanceBadge(lf?.nearestMartM)}{lf?.nearestMartName && <span className="text-slate-600">{lf.nearestMartName}</span>}</div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-slate-400">공원</span>
+          <div className="flex items-center gap-1.5">{distanceBadge(lf?.nearestParkM)}{lf?.nearestParkName && <span className="text-slate-600">{lf.nearestParkName}</span>}</div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-slate-400">수변/산림</span>
+          <span className="font-bold text-slate-700">{lf ? [lf.hasWaterfront && "수변", lf.hasForestPark && "산림"].filter(Boolean).join("·") || "없음" : "-"}</span>
+        </div>
       </div>
     </div>
   );
