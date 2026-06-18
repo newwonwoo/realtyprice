@@ -185,6 +185,7 @@ export function estimatePrice(params: {
   targetToLeaderRatio?: number;
   regionProfile?: RegionProfile;
   supplyCliffMode?: boolean;
+  supplyPressurePct?: number; // 현재 입주물량 공급압력 % (음수=하락압력, 양수=희소)
 }) {
   const targetArea = params.targetArea > 0 ? params.targetArea : 84;
   // 지역 레짐에 맞춰 가격 앵커 가중치 재조정 (서울/경기 상승 동인 차이 반영)
@@ -430,9 +431,18 @@ export function estimatePrice(params: {
     : comparableMarketPressureRate < 0 ? Math.round(comparableMarketPressureRate * 60)
     : 0;
 
-  // (매물보너스 제거: 매물 수 ≥2면 +3은 가격방향과 무관한 "데이터 있음" 표시일 뿐.
-  //  매물 수는 confidenceScore에 이미 반영. 매물 "수" 자체를 쓰려면 공급압력 신호로
-  //  입주물량과 묶어 별도 설계 예정.)
+  // 입주물량 공급압력 점수: 국토부 3개월 합산 입주예정 세대 기준
+  // -5%→-8점, -3%→-5점, -1%→-2점, 0%→0점, +2%→+4점, +3%→+6점
+  const rawSupplyPct = params.supplyPressurePct;
+  const supplyPressureScore =
+    rawSupplyPct == null ? 0
+    : rawSupplyPct >= 3 ? 6
+    : rawSupplyPct >= 2 ? 4
+    : rawSupplyPct >= 0 ? 0
+    : rawSupplyPct >= -1 ? -2
+    : rawSupplyPct >= -3 ? -5
+    : -8;
+
   const UPSIDE_BASE = 35; // 기저값 (데이터 존재 시 중립 출발점)
   const upsideScore = hasMinData
     ? Math.min(100, Math.round(
@@ -441,6 +451,7 @@ export function estimatePrice(params: {
         + jeonseSupplyDemandScore  // 전세 수요/공급 확인 (-4~+7)
         + leaderBoost              // 대장 앵커 상방압력 (+6)
         + comparablePressureScore  // 비교단지 압력 (-3~+6)
+        + supplyPressureScore      // 입주물량 공급압력 (-8~+6)
       ))
     : 0;
 
@@ -476,6 +487,7 @@ export function estimatePrice(params: {
         { group: "upside", label: "전세 수요/공급", source: "가격 — 전세 실거래가 ÷ 매매 실거래가(전세가율)", rawValue: `전세가율 ${Math.round(jeonseRatio * 100)}%`, weight: "-4~+7", result: `${jeonseSupplyDemandScore >= 0 ? "+" : ""}${jeonseSupplyDemandScore}점`, active: true },
         { group: "upside", label: "대장 앵커 상방압력", source: "가격 — 대장 환산가 vs 비교단지 시세", rawValue: leaderApartmentAnchorPrice > 0 ? (leaderBoost > 0 ? "대장 > 비교 시세" : "대장 ≤ 비교 시세") : "대장 미설정", weight: "0/+6", result: `+${leaderBoost}점`, active: leaderBoost > 0 },
         { group: "upside", label: "비교단지 상·하급지 압력", source: "등급(가격대) — 비교단지 등급차 → 압력률", rawValue: `${Math.round(comparableMarketPressureRate * 100)}%`, weight: "-3~+6", result: `${comparablePressureScore >= 0 ? "+" : ""}${comparablePressureScore}점`, active: comparablePressureScore !== 0 },
+        { group: "upside", label: "입주물량 공급압력", source: "국토부 입주예정물량 — 3개월 합산 세대", rawValue: rawSupplyPct != null ? `공급영향 ${rawSupplyPct > 0 ? "+" : ""}${rawSupplyPct}%` : "미조회", weight: "-8~+6", result: `${supplyPressureScore >= 0 ? "+" : ""}${supplyPressureScore}점`, active: rawSupplyPct != null },
       ]
     : [];
 
@@ -507,6 +519,7 @@ export function estimatePrice(params: {
     volumeMomentumScore >= 6 ? `거래 속도가 빠릅니다 (최근2주 ${raw14}건·1개월 ${raw30}건·3개월 ${raw90}건, 대장 가중반영, +${volumeMomentumScore}점).` : null,
     jeonseSupplyDemandScore > 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 수요 우위 신호.` : jeonseSupplyDemandScore < 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 공급 여력 있음.` : null,
     supplyCliffMode ? "공급절벽 모드 ON: 입지 비중을 낮추고 전세 소진·호가 lock-in 중심으로 가중치를 재편했습니다." : null,
+    supplyPressureScore > 0 ? `입주물량 희소 (공급영향 +${rawSupplyPct}%) — 공급압력 상승 반영 (+${supplyPressureScore}점).` : supplyPressureScore < 0 ? `입주물량 과다 (공급영향 ${rawSupplyPct}%) — 하락압력 반영 (${supplyPressureScore}점).` : null,
   ].filter(Boolean) as string[];
 
   const warnings = [

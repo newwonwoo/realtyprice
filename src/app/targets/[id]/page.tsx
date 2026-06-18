@@ -176,6 +176,7 @@ export default function TargetDetailPage() {
       targetToLeaderRatio: rule?.targetToLeaderRatio,
       regionProfile: regionProfileFromAddress(apartment?.address),
       supplyCliffMode,
+      supplyPressurePct: supplyVolume?.priceImpactPct,
     });
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
     setEstimating(false);
@@ -647,6 +648,37 @@ function SupplyVolumeCard({
             {apartment.expectedMoveInYm && <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded bg-blue-500" />입주시점</span>}
           </div>
         </div>
+      )}
+
+      {/* 단지별 상세 목록 */}
+      {data && data.monthlyData.length > 0 && (
+        <details className="mt-4">
+          <summary className="cursor-pointer text-xs font-semibold text-slate-500 hover:text-slate-700">
+            단지별 상세 보기 ({data.monthlyData.reduce((s, m) => s + (m.complexes?.length ?? 0), 0)}개 단지)
+          </summary>
+          <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-slate-100">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50">
+                <tr>
+                  <th className="px-3 py-1.5 text-left font-semibold text-slate-500">입주월</th>
+                  <th className="px-3 py-1.5 text-left font-semibold text-slate-500">단지명</th>
+                  <th className="px-3 py-1.5 text-right font-semibold text-slate-500">세대</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.monthlyData.flatMap((m) =>
+                  (m.complexes ?? []).map((c, i) => (
+                    <tr key={`${m.yyyymm}-${i}`} className="border-t border-slate-50">
+                      <td className="px-3 py-1 text-slate-400">{i === 0 ? fmtYm(m.yyyymm) : ""}</td>
+                      <td className="px-3 py-1 font-medium text-slate-700">{c.name || "—"}</td>
+                      <td className="px-3 py-1 text-right tabular-nums text-slate-600">{fmt(c.units)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
     </div>
   );

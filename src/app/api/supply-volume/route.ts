@@ -4,10 +4,17 @@ import { NextRequest, NextResponse } from "next/server";
 // https://www.data.go.kr/data/15058017/openapi.do
 const API_BASE = "https://apis.data.go.kr/1613000/AptMvnInfoSvc/getAptMvnInfo";
 
+export type SupplyComplexItem = {
+  name: string;   // 단지명
+  units: number;  // 세대수
+  yyyymm: string;
+};
+
 export type SupplyMonthData = {
   yyyymm: string;       // YYYYMM
   units: number;        // 입주예정 호수
   complexCount: number; // 단지수
+  complexes?: SupplyComplexItem[]; // 단지별 상세 (월별 개별 데이터에만 포함)
 };
 
 export type SupplyVolumeResult = {
@@ -15,7 +22,7 @@ export type SupplyVolumeResult = {
   regionName: string;
   current: SupplyMonthData;        // 현재월 기준 3개월 합계
   targetMoveIn?: SupplyMonthData;  // 대상단지 입주시점 3개월 합계
-  monthlyData: SupplyMonthData[];  // 조회 기간 전체 월별 데이터
+  monthlyData: SupplyMonthData[];  // 조회 기간 전체 월별 데이터 (단지별 상세 포함)
   priceImpactPct: number;          // 현재 공급압력 가격영향 % (음수=하락압력)
   targetMoveInPriceImpactPct?: number; // 입주시점 가격영향 %
 };
@@ -39,8 +46,13 @@ async function fetchMonthly(serviceKey: string, lawdCd: string, yyyymm: string):
     const items = data?.response?.body?.items?.item;
     if (!items) return { yyyymm, units: 0, complexCount: 0 };
     const arr = Array.isArray(items) ? items : [items];
-    const units = arr.reduce((s: number, x: Record<string, unknown>) => s + Number(x.mnthCnt ?? x.householdCount ?? 0), 0);
-    return { yyyymm, units, complexCount: arr.length };
+    const complexes: SupplyComplexItem[] = arr.map((x: Record<string, unknown>) => ({
+      name: String(x.aptNm ?? x.complexName ?? x.aptName ?? ""),
+      units: Number(x.mnthCnt ?? x.householdCount ?? 0),
+      yyyymm,
+    }));
+    const units = complexes.reduce((s, c) => s + c.units, 0);
+    return { yyyymm, units, complexCount: arr.length, complexes };
   } catch {
     return null;
   }
