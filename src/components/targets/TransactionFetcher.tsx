@@ -14,14 +14,14 @@ type Props = {
   onImport: (transactions: Transaction[]) => void;
 };
 
-function parsePrice(str: string): number {
-  return parseInt(str.replace(/,/g, "").trim(), 10) || 0;
+function parsePrice(val: unknown): number {
+  return parseInt(String(val ?? "").replace(/,/g, "").trim(), 10) || 0;
 }
 
 function toContractDate(tx: MolitTransaction): string {
-  const y = tx.dealYear?.trim() ?? "";
-  const m = (tx.dealMonth?.trim() ?? "").padStart(2, "0");
-  const d = (tx.dealDay?.trim() ?? "1").padStart(2, "0");
+  const y = String(tx.dealYear ?? "").trim();
+  const m = String(tx.dealMonth ?? "").trim().padStart(2, "0");
+  const d = String(tx.dealDay ?? "1").trim().padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
@@ -31,10 +31,10 @@ export function molitToTransaction(tx: MolitTransaction, apartmentId: string): T
     id: `molit_${apartmentId}_${tx.transactionType}_${tx.dealYear}${tx.dealMonth}${tx.dealDay}_${tx.floor}_${tx.excluUseAr}`,
     apartmentId,
     transactionType: tx.transactionType,
-    exclusiveArea: parseFloat(tx.excluUseAr) || 0,
-    price: tx.transactionType === "sale" ? parsePrice(tx.dealAmount ?? "") : parsePrice(tx.deposit ?? ""),
-    deposit: tx.transactionType !== "sale" ? parsePrice(tx.deposit ?? "") : undefined,
-    monthlyRent: tx.transactionType === "monthly_rent" ? parsePrice(tx.monthlyRent ?? "") : undefined,
+    exclusiveArea: parseFloat(String(tx.excluUseAr ?? "")) || 0,
+    price: tx.transactionType === "sale" ? parsePrice(tx.dealAmount) : parsePrice(tx.deposit),
+    deposit: tx.transactionType !== "sale" ? parsePrice(tx.deposit) : undefined,
+    monthlyRent: tx.transactionType === "monthly_rent" ? parsePrice(tx.monthlyRent) : undefined,
     contractDate: toContractDate(tx),
     floor: parseInt(tx.floor, 10) || undefined,
     grade: "B",

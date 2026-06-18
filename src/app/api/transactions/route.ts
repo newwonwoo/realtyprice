@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
 
     // 단지명 필터
     const filtered = allTx.filter((tx) =>
-      tx.aptNm?.replace(/\s/g, "").includes(aptName.replace(/\s/g, ""))
+      String(tx.aptNm ?? "").replace(/\s/g, "").includes(aptName.replace(/\s/g, ""))
     );
 
     return NextResponse.json({ items: filtered, total: filtered.length });
