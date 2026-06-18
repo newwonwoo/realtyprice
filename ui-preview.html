@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>realtyprice — 대상단지 상세</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; background: #f8fafc; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; }
+  .input { border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 10px; font-size: 13px; background: #fff; outline: none; }
+  .btn-primary { background: #1e40af; color: #fff; border-radius: 8px; padding: 8px 20px; font-size: 13px; font-weight: 700; border: none; cursor: pointer; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-secondary { background: #f1f5f9; color: #374151; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; border: 1px solid #e2e8f0; cursor: pointer; }
+  th { font-size: 11px; color: #6b7280; font-weight: 600; padding: 8px 12px; text-align: left; background: #f8fafc; }
+  td { font-size: 12px; padding: 8px 12px; border-top: 1px solid #f1f5f9; color: #374151; }
+  .tabular { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body class="min-h-screen p-6">
+
+<!-- ── 상단 네비 ── -->
+<div class="flex items-center gap-3 mb-6 text-sm text-slate-500">
+  <span class="font-black text-slate-900 text-base">realtyprice</span>
+  <span>›</span><span>대상아파트</span>
+  <span>›</span><span class="text-blue-700 font-semibold">래미안 원베일리</span>
+  <div class="ml-auto flex gap-2">
+    <a href="#" class="text-xs text-slate-400 hover:text-slate-600">네이버 부동산 →</a>
+    <a href="#" class="text-xs text-slate-400 hover:text-slate-600">호갱노노 →</a>
+    <a href="#" class="text-xs text-slate-400 hover:text-slate-600">청약홈 →</a>
+  </div>
+</div>
+
+<!-- ── 헤더 ── -->
+<div class="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+  <div>
+    <p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">Target detail</p>
+    <h1 class="text-3xl font-black text-slate-950">래미안 원베일리</h1>
+    <p class="mt-1 text-slate-500 text-sm">서울특별시 서초구 반포동 2-1</p>
+  </div>
+</div>
+
+<!-- ── 단계별 진행 ── -->
+<div class="mb-6 card p-4">
+  <div class="flex items-center gap-2 flex-wrap">
+    <span class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">✓ 대상아파트 선정</span>
+    <span class="text-slate-300">›</span>
+    <span class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">✓ 비교단지 선택 (4개)</span>
+    <span class="text-slate-300">›</span>
+    <span class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">✓ 실거래 수집 (47건)</span>
+    <span class="text-slate-300">›</span>
+    <span class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">✓ 호가 수집 (8건)</span>
+    <span class="text-slate-300">›</span>
+    <span class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">✓ 가격 추정 실행</span>
+  </div>
+</div>
+
+<!-- ── 단지 상세정보 ── -->
+<div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 mb-6">
+  <p class="mb-3 text-xs font-black text-slate-600 uppercase tracking-wide">단지 상세정보</p>
+  <div class="grid gap-x-8 md:grid-cols-2 text-sm">
+    <div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">도로명주소</span><span class="font-semibold">서울 서초구 신반포로 19</span></div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">세대수</span><span class="font-semibold">2,990세대</span></div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">사용승인</span><span class="font-semibold">2023.09</span></div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">모집공고 분양가</span><span class="font-semibold text-blue-700">49.8억 <span class="text-xs text-slate-400 font-normal">(공고일 2021-07)</span></span></div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">시공사</span><span class="font-semibold">삼성물산(래미안)</span></div>
+    </div>
+    <div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">배정초등학교</span><span class="font-semibold flex items-center gap-1">신반포초 <span class="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">신입생 312명</span><span class="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">210m</span></span></div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">지하철</span><span class="font-semibold">9호선 신반포역</span></div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">지하철역 거리</span><span class="font-semibold">350m</span></div>
+      <div class="flex justify-between border-b border-slate-100 py-1.5"><span class="text-slate-500">주차(지하)</span><span class="font-semibold">4,318대</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 결과 요약 카드 ── -->
+<div class="grid gap-5 lg:grid-cols-4 mb-6">
+  <div class="card p-5 border-l-4 border-l-emerald-500">
+    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">결론</p>
+    <p class="mt-2 text-xl font-black text-emerald-700">강한 상승예상</p>
+  </div>
+  <div class="card p-5">
+    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 매매가</p>
+    <p class="mt-2 text-xl font-black text-slate-950">82.4억</p>
+    <p class="text-xs text-slate-400 mt-0.5">79.9억 ~ 84.9억</p>
+  </div>
+  <div class="card p-5">
+    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">권장 매각호가</p>
+    <p class="mt-2 text-xl font-black text-slate-950">84.9억</p>
+  </div>
+  <div class="card p-5">
+    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">상승가능성</p>
+    <p class="mt-2 text-xl font-black text-blue-700">78점</p>
+    <div class="mt-2 w-full bg-slate-100 rounded-full h-1.5"><div class="bg-blue-500 h-1.5 rounded-full" style="width:78%"></div></div>
+  </div>
+</div>
+
+<!-- ── 메인 패널 ── -->
+<div class="mt-2 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+
+  <!-- 가격추정 실행 -->
+  <div class="card p-6">
+    <div class="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+      <div>
+        <h2 class="text-xl font-black">가격추정 실행</h2>
+        <p class="mt-1 text-sm text-slate-500">대상·비교단지 실거래/호가를 선택 평형 기준으로 환산하고 입지 보정을 반영합니다.</p>
+      </div>
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <label class="text-xs font-bold text-slate-600">전용면적
+          <select class="input ml-2 w-32"><option>84.9㎡</option><option>59.9㎡</option><option>114.8㎡</option></select>
+        </label>
+        <label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500">
+          <span class="flex h-4 w-7 items-center rounded-full p-0.5 bg-slate-200"><span class="block h-3 w-3 rounded-full bg-white shadow"></span></span>
+          공급절벽 모드
+        </label>
+        <button class="btn-primary min-w-[120px]">가격추정 실행</button>
+      </div>
+    </div>
+
+    <!-- 완료 메시지 -->
+    <div class="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-4">
+      <p class="font-bold text-emerald-800">✓ 가격 추정이 완료되었습니다.</p>
+      <p class="mt-1 text-sm text-emerald-700">예상 매매가 <strong>82.4억</strong> (79.9억 ~ 84.9억) | 신뢰도 87점 | <span class="text-emerald-700 font-bold">강한 상승예상</span></p>
+    </div>
+
+    <div class="mt-5 grid gap-3 md:grid-cols-3">
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 하단</p><p class="mt-2 text-xl font-black">79.9억</p></div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 상단</p><p class="mt-2 text-xl font-black">84.9억</p></div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">방어가격</p><p class="mt-2 text-xl font-black">80.8억</p></div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 전세가</p><p class="mt-2 text-xl font-black">52.0억</p></div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">저가소진율</p><p class="mt-2 text-xl font-black">38%</p></div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">신뢰도</p><p class="mt-2 text-xl font-black">87점</p></div>
+      <div class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">적용 평형</p><p class="mt-2 text-xl font-black">84.9㎡</p></div>
+    </div>
+  </div>
+
+  <!-- 가격추정 모델 전체 -->
+  <div class="card p-6 lg:col-span-2">
+    <h2 class="text-xl font-black">가격추정 모델 전체</h2>
+    <p class="mt-1 text-xs text-slate-500">평가요소별로 <b>참조값(가격·거래량 등)</b>, 측정 <b>원점수</b>, 적용 <b>가중치·배점</b>, 최종 <b>결과</b>를 분리해 표시합니다. 한국 시장 특수성(추세지속·거래속도 선행) 기반.</p>
+
+    <!-- 예상가 앵커 -->
+    <div class="mt-5 flex items-baseline justify-between">
+      <h3 class="text-base font-black text-slate-700">① 예상가 앵커 (가중평균 → 예상가)</h3>
+      <p class="text-sm font-bold text-slate-500">예상가 <span class="text-xl text-slate-900">82.4억</span></p>
+    </div>
+    <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-xs text-slate-500">
+          <tr><th>평가요소</th><th>참조값 (가격·거래량 등)</th><th>원점수 (측정값)</th><th class="text-right">가중치·배점</th><th class="text-right">환산가</th></tr>
+        </thead>
+        <tbody>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">대상단지 실거래가</td><td class="px-3 py-2 text-xs text-slate-500">가격 — 대상단지 매매·분양권 실거래</td><td class="px-3 py-2 text-xs text-slate-600">83.1억</td><td class="px-3 py-2 text-right text-xs text-slate-500 tabular">가중 32%</td><td class="px-3 py-2 text-right font-bold tabular">83.1억</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">비교단지 보정 실거래가</td><td class="px-3 py-2 text-xs text-slate-500">가격 — 비교단지 매매 실거래(상·하급지 보정)</td><td class="px-3 py-2 text-xs text-slate-600">79.8억</td><td class="px-3 py-2 text-right text-xs text-slate-500 tabular">가중 28%</td><td class="px-3 py-2 text-right font-bold tabular">79.8억</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">비교단지 현재 호가</td><td class="px-3 py-2 text-xs text-slate-500">가격 — 비교단지 매물 호가</td><td class="px-3 py-2 text-xs text-slate-600">81.5억</td><td class="px-3 py-2 text-right text-xs text-slate-500 tabular">가중 12%</td><td class="px-3 py-2 text-right font-bold tabular">81.5억</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">대상단지 현재 호가</td><td class="px-3 py-2 text-xs text-slate-500">가격 — 대상단지 매물 호가</td><td class="px-3 py-2 text-xs text-slate-600">85.0억</td><td class="px-3 py-2 text-right text-xs text-slate-500 tabular">가중 10%</td><td class="px-3 py-2 text-right font-bold tabular">85.0억</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">전세기반 하방가</td><td class="px-3 py-2 text-xs text-slate-500">가격 — 전세 실거래가(보증금) ÷ 전세가율</td><td class="px-3 py-2 text-xs text-slate-600">52.0억 ÷ 0.63</td><td class="px-3 py-2 text-right text-xs text-slate-500 tabular">가중 8%</td><td class="px-3 py-2 text-right font-bold tabular">82.5억</td></tr>
+          <tr class="border-t border-slate-100 text-slate-400"><td class="px-3 py-2 font-semibold">매물 소진 반영가</td><td class="px-3 py-2 text-xs">매물 수 — 저가매물 소진율(스냅샷)</td><td class="px-3 py-2 text-xs">소진율 38%→×1.04</td><td class="px-3 py-2 text-right text-xs tabular">가중 5%</td><td class="px-3 py-2 text-right font-bold tabular">85.6억</td></tr>
+          <tr class="border-t border-slate-100 text-slate-400"><td class="px-3 py-2 font-semibold">분양가 프리미엄</td><td class="px-3 py-2 text-xs">가격 — 분양가 대비 실거래 시세비율</td><td class="px-3 py-2 text-xs">49.8억 × 1.30</td><td class="px-3 py-2 text-right text-xs tabular">가중 3%</td><td class="px-3 py-2 text-right font-bold tabular">64.7억</td></tr>
+          <tr class="border-t border-slate-100 text-slate-400"><td class="px-3 py-2 font-semibold">거시환경</td><td class="px-3 py-2 text-xs">가격 — 사용자 입력 거시 가격</td><td class="px-3 py-2 text-xs">—</td><td class="px-3 py-2 text-right text-xs tabular">—</td><td class="px-3 py-2 text-right font-bold">제외</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">대장아파트 앵커</td><td class="px-3 py-2 text-xs text-slate-500">가격 — 대장 실거래 환산가 × 비율</td><td class="px-3 py-2 text-xs text-slate-600">디에이치퍼스티어 97.0억 × 0.88</td><td class="px-3 py-2 text-right text-xs text-slate-500 tabular">가중 7%</td><td class="px-3 py-2 text-right font-bold tabular">85.4억</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">대상 입지 보정</td><td class="px-3 py-2 text-xs text-slate-500">입지 점수 — 역세권·학군 등</td><td class="px-3 py-2 text-xs text-slate-600">신반포역 350m / 초품아 210m</td><td class="px-3 py-2 text-right text-xs text-slate-500 tabular">가중 4%</td><td class="px-3 py-2 text-right font-bold tabular">85.7억</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">비교단지 상·하급지 압력</td><td class="px-3 py-2 text-xs text-slate-500">등급(가격대) — 비교단지 등급차</td><td class="px-3 py-2 text-xs text-slate-600">상급지 비교단지 2개</td><td class="px-3 py-2 text-right text-xs text-slate-500 tabular">가중 4%</td><td class="px-3 py-2 text-right font-bold tabular">84.6억</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 상승가능성 점수 -->
+    <div class="mt-6 flex items-baseline justify-between">
+      <h3 class="text-base font-black text-slate-700">② 상승가능성 점수 (원점수 합산)</h3>
+      <p class="text-sm font-bold text-slate-500">합계 <span class="text-xl text-blue-700">78</span>점 / 100</p>
+    </div>
+    <div class="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-xs text-slate-500">
+          <tr><th>평가요소</th><th>참조값 (가격·거래량 등)</th><th>원점수 (측정값)</th><th class="text-right">가중치·배점</th><th class="text-right">점수</th></tr>
+        </thead>
+        <tbody>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">기저값</td><td class="px-3 py-2 text-xs text-slate-500">— (중립 출발점)</td><td class="px-3 py-2 text-xs text-slate-600">—</td><td class="px-3 py-2 text-right text-xs text-slate-500">+35</td><td class="px-3 py-2 text-right font-bold text-blue-700">35점</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">거래 속도</td><td class="px-3 py-2 text-xs text-slate-500">거래량 — 매매 실거래 계약 건수·계약일 (대장1.8>대상1.2>비교≤1.0 가중)</td><td class="px-3 py-2 text-xs text-slate-600">가속 1.6배(2주)·1.3배(1개월) · 2주 5건/1개월 11건/3개월 31건</td><td class="px-3 py-2 text-right text-xs text-slate-500">최대 +25</td><td class="px-3 py-2 text-right font-bold text-blue-700">+22점</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">전세 수요/공급</td><td class="px-3 py-2 text-xs text-slate-500">가격 — 전세 실거래가 ÷ 매매 실거래가(전세가율)</td><td class="px-3 py-2 text-xs text-slate-600">전세가율 63%</td><td class="px-3 py-2 text-right text-xs text-slate-500">-4~+7</td><td class="px-3 py-2 text-right font-bold text-blue-700">+3점</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">대장 앵커 상방압력</td><td class="px-3 py-2 text-xs text-slate-500">가격 — 대장 환산가 vs 비교단지 시세</td><td class="px-3 py-2 text-xs text-slate-600">대장 > 비교 시세</td><td class="px-3 py-2 text-right text-xs text-slate-500">0/+6</td><td class="px-3 py-2 text-right font-bold text-blue-700">+6점</td></tr>
+          <tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold text-slate-700">비교단지 상·하급지 압력</td><td class="px-3 py-2 text-xs text-slate-500">등급(가격대) — 비교단지 등급차 → 압력률</td><td class="px-3 py-2 text-xs text-slate-600">+2%</td><td class="px-3 py-2 text-right text-xs text-slate-500">-3~+6</td><td class="px-3 py-2 text-right font-bold text-blue-700">+4점</td></tr>
+          <tr class="border-t-2 border-slate-300 bg-slate-50"><td class="px-3 py-2 font-black" colspan="4">상승가능성 합계 (최대 100)</td><td class="px-3 py-2 text-right font-black tabular text-blue-800">78점</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="mt-3 rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">대장아파트 비율: 88% | 대장 실거래 14건 반영</p>
+    <div class="mt-4 space-y-1">
+      <p class="text-xs text-slate-500">✓ 대상단지 실거래가를 선택 평형 기준으로 반영했습니다.</p>
+      <p class="text-xs text-slate-500">✓ 비교단지 보정 실거래가를 선택 평형 기준으로 반영했습니다.</p>
+      <p class="text-xs text-slate-500">✓ 전세기반 하방가를 반영했습니다. (전세가율 63% 실측)</p>
+      <p class="text-xs text-slate-500">✓ 인근 대장아파트 실거래가 앵커를 반영했습니다.</p>
+      <p class="text-xs text-slate-500">✓ 서울 레짐: 대장 신고가·상급지 압력·호가 리딩 가중을 강조했습니다.</p>
+      <p class="text-xs font-semibold text-blue-600">✓ 거래 속도가 빠릅니다 (최근2주 5건·1개월 11건·3개월 31건, 대장 가중반영, +22점).</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 데이터 카드 그리드 ── -->
+<div class="mt-6 grid gap-5 lg:grid-cols-3">
+  <div class="card p-5"><p class="text-sm font-semibold text-slate-500">선택 비교단지</p><p class="mt-2 text-2xl font-black">4개</p><p class="mt-2 text-sm text-slate-600">아크로리버파크, 반포자이, 래미안반포팰리스, 반포래미안아이파크</p></div>
+  <div class="card p-5"><p class="text-sm font-semibold text-slate-500">실거래 입력</p><p class="mt-2 text-2xl font-black">47건</p><p class="mt-2 text-sm text-slate-600">대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다.</p></div>
+  <div class="card p-5"><p class="text-sm font-semibold text-slate-500">비교단지 호가</p><p class="mt-2 text-2xl font-black">23건</p><p class="mt-2 text-sm text-slate-600">선택 평형 직접 매칭 11건</p></div>
+  <div class="card p-5"><p class="text-sm font-semibold text-slate-500">상·하급지 보정</p><p class="mt-2 text-2xl font-black">+2%</p><p class="mt-2 text-sm text-slate-600">상급지 비교단지 2개가 많아 상승압력을 제한적으로 반영합니다.</p></div>
+  <div class="card p-5"><p class="text-sm font-semibold text-slate-500">매물소진 신호</p><p class="mt-2 text-2xl font-black">38%</p><p class="mt-2 text-sm text-slate-600">저가매물 소진율 30% 이상 강한 상승 신호</p></div>
+
+  <!-- 입지 자동분석 -->
+  <div class="card p-5">
+    <p class="text-sm font-semibold text-slate-500">입지 자동분석 <span class="ml-2 text-xs font-normal text-slate-400">(OSM · 2026.06.17)</span></p>
+    <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div><span class="text-slate-400">지하철역</span><br><span class="font-bold">350m</span> 신반포역</div>
+      <div><span class="text-slate-400">대형마트</span><br><span class="font-bold">820m</span> 이마트 반포점</div>
+      <div><span class="text-slate-400">공원</span><br><span class="font-bold">280m</span> 반포한강공원</div>
+      <div><span class="text-slate-400">수변/산림</span><br><span class="font-bold text-emerald-600">수변</span></div>
+    </div>
+  </div>
+
+  <!-- 입주물량 2시점 -->
+  <div class="card p-5 lg:col-span-2">
+    <div class="flex items-center justify-between">
+      <p class="text-sm font-semibold text-slate-500">입주물량 분석 (국토부 · 2시점)</p>
+      <button class="text-xs text-blue-600 underline">새로고침</button>
+    </div>
+    <div class="mt-4 grid gap-4 md:grid-cols-2">
+      <div class="rounded-lg border border-slate-200 p-4">
+        <p class="text-xs font-bold text-slate-500">현재시점 (2026년 6월 기준 3개월)</p>
+        <p class="mt-1 text-2xl font-black">1,240<span class="ml-1 text-sm font-normal text-slate-500">세대</span></p>
+        <p class="text-xs text-slate-400">8개 단지 입주</p>
+        <p class="mt-2 text-sm font-bold text-slate-600">공급 보통 (±0%)</p>
+      </div>
+      <div class="rounded-lg border border-blue-200 bg-blue-50/40 p-4">
+        <p class="text-xs font-bold text-slate-500">입주시점 (2026년 6월 기준 — 완공단지)</p>
+        <p class="mt-2 text-xs text-slate-400">단지 정보 &gt; 입주예정년월(YYYYMM) 입력 후 새로고침</p>
+      </div>
+    </div>
+    <div class="mt-4">
+      <p class="text-xs text-slate-400 mb-2">월별 입주물량 (세대)</p>
+      <div class="flex items-end gap-1 h-16">
+        <div class="flex flex-col items-center gap-0.5 flex-1"><div class="w-full rounded-t bg-emerald-500" style="height:32px"></div><span class="text-[9px] text-slate-400">06/26</span></div>
+        <div class="flex flex-col items-center gap-0.5 flex-1"><div class="w-full rounded-t bg-slate-200" style="height:45px"></div><span class="text-[9px] text-slate-400">07/26</span></div>
+        <div class="flex flex-col items-center gap-0.5 flex-1"><div class="w-full rounded-t bg-slate-200" style="height:28px"></div><span class="text-[9px] text-slate-400">08/26</span></div>
+      </div>
+      <div class="mt-1 flex gap-3 text-[10px] text-slate-400"><span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded bg-emerald-500"></span>현재</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 실거래 수집 ── -->
+<div class="mt-6 card p-6">
+  <div class="flex items-center justify-between mb-4">
+    <div><h3 class="font-black">실거래 자동수집 (국토부)</h3><p class="text-xs text-slate-500 mt-1">공공데이터포털 API 키로 국토부 실거래를 자동으로 가져옵니다.</p></div>
+    <button class="btn-primary">실거래 가져오기</button>
+  </div>
+  <div class="grid gap-3 md:grid-cols-4 text-sm">
+    <label class="text-xs font-bold text-slate-600">조회 시작월<input type="month" class="input mt-1 w-full" value="2024-06"></label>
+    <label class="text-xs font-bold text-slate-600">조회 종료월<input type="month" class="input mt-1 w-full" value="2026-06"></label>
+    <label class="text-xs font-bold text-slate-600">거래 유형
+      <select class="input mt-1 w-full"><option>전체 (매매+전세+분양권)</option><option>매매만</option><option>전세만</option></select>
+    </label>
+  </div>
+  <p class="mt-3 text-xs text-emerald-600 font-semibold">✓ 47건 가져옴 — 서초구 매매 33건 · 전세 14건</p>
+</div>
+
+<p class="mt-8 text-center text-xs text-slate-400">realtyprice — 내부용 부동산 가격 추정 도구 · 실거래 데이터: 국토교통부 · POI: OpenStreetMap</p>
+
+</body>
+</html>

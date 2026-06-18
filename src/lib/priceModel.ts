@@ -1,5 +1,6 @@
 import type { Listing } from "@/types/listing";
-import type { ModelWeights, PriceEstimate } from "@/types/model";
+import type { ModelWeights, PriceEstimate, ModelFactor } from "@/types/model";
+import { formatEok } from "./format";
 import type { Transaction } from "@/types/transaction";
 import { normalizeToBGrade } from "./grade";
 import { median, getLowPriceListings } from "./inventory";
@@ -184,6 +185,7 @@ export function estimatePrice(params: {
   targetToLeaderRatio?: number;
   regionProfile?: RegionProfile;
   supplyCliffMode?: boolean;
+  supplyPressurePct?: number; // 현재 입주물량 공급압력 % (음수=하락압력, 양수=희소)
 }) {
   const targetArea = params.targetArea > 0 ? params.targetArea : 84;
   // 지역 레짐에 맞춰 가격 앵커 가중치 재조정 (서울/경기 상승 동인 차이 반영)
@@ -350,21 +352,144 @@ export function estimatePrice(params: {
   const expectedSaleMax = Math.round(expectedSaleMid * 1.03);
   const expectedJeonseMid = Math.round(expectedJeonsePrice) || 0;
 
-  // ── upsideScore: 데이터 없으면 0에서 시작 (기저값 45 제거) ────────
+  // ── upsideScore: 한국 주택시장 특수성 반영 ──────────────────────────
+  // 설계 원칙:
+  //  - 평균회귀 없음. 서울/수도권은 추세지속형 (주택금융연구 9(1):59-107)
+  //  - 학군 프리미엄은 locationPremium·비교단지 실거래에 이미 내재화 → 별도 항목 없음
+  //  - 지역 추세 특성은 regionProfile 가중치 배수로 처리 → 여기선 중복 추가 없음
+  //  - 전세가율 = 수요/공급 확인 신호 (하방가 앵커와 별개)
+  //  - 거래량이 가격에 선행 (Granger 인과, 특히 강남3구)
   const hasMinData = params.targetSaleTransactions.length > 0 || params.saleTransactions.length > 0 || params.saleListings.length >= 2 || (params.comparableSaleListings ?? []).length >= 2;
-  const recentTxCount = [...params.targetSaleTransactions, ...params.saleTransactions].filter((tx) => temporalWeight(tx.contractDate ?? "") >= 1.1).length;
-  const leaderBoost = leaderApartmentAnchorPrice > 0 && leaderApartmentAnchorPrice > (adjustedComparableSalePrice || saleAskingPrice) ? 5 : 0;
+
+  // ── 거래량 속도(velocity) — 소진율 대신 "얼마나 빠르게 계약되나" ──────
+  // 데이터: 국토부 실거래(일 단위 계약일). 신고기한 = 계약일 30일 이내(과소집계 보정).
+  // 3-tier 일평균(rate)으로 정규화 → 창 길이 달라도 비교 가능. 2주가 최고 가중.
+  // "데이터 유무에 따라 최소 2주부터": 단기 창이 비면 더 긴 창으로 적응적 폴백.
+  // 단지별 가중: 대장단지 최고, 대상단지 높음, 같은급 비교단지는 가중평균(comparableWeights).
+  //  → 같은 행정권의 대장이 빠르게 팔리면 속도신호를 더 강하게 끌어올림.
+  const LEADER_VELOCITY_W = 1.8;   // 대장단지 — 최고 가중
+  const TARGET_VELOCITY_W = 1.2;   // 대상단지 본인
+  const COMPARABLE_VELOCITY_CAP = 1.0; // 같은급 비교단지 — 가중평균이되 대장/대상보다 낮게 캡
+  const daysAgo = (d?: string) => {
+    const t = new Date(d ?? "");
+    if (isNaN(t.getTime())) return Infinity;
+    return (Date.now() - t.getTime()) / (1000 * 60 * 60 * 24);
+  };
+  // id로 중복 제거(자기-대장 등) → 여러 그룹에 걸치면 최고 가중 적용
+  const velMap = new Map<string, { d: number; w: number }>();
+  const addVel = (tx: Transaction, w: number) => {
+    const d = daysAgo(tx.contractDate);
+    if (!isFinite(d)) return;
+    const prev = velMap.get(tx.id);
+    if (!prev || w > prev.w) velMap.set(tx.id, { d, w });
+  };
+  params.targetSaleTransactions.forEach((tx) => addVel(tx, TARGET_VELOCITY_W));
+  params.saleTransactions.forEach((tx) =>
+    addVel(tx, Math.min(COMPARABLE_VELOCITY_CAP, Math.max(0, params.comparableWeights?.[tx.apartmentId] ?? 1)))
+  );
+  (params.leaderTransactions ?? []).forEach((tx) => addVel(tx, LEADER_VELOCITY_W));
+  const velTxs = Array.from(velMap.values());
+  // 가중 거래량(점수용) — 단지 가중 합. 표시용 raw 건수는 별도.
+  const wsum = (maxDays: number) => velTxs.filter((x) => x.d <= maxDays).reduce((s, x) => s + x.w, 0);
+  const rawCount = (maxDays: number) => velTxs.filter((x) => x.d <= maxDays).length;
+  const n14 = wsum(14), n30 = wsum(30), n90 = wsum(90);
+  const raw14 = rawCount(14), raw30 = rawCount(30), raw90 = rawCount(90);
+  // 신고지연 보정: 최근 14일은 평균 절반가량만 신고 도착 → ×2로 실제 속도 추정
+  const r14 = (n14 * 2) / 14;   // 일평균(보정)
+  const r30 = n30 / 30;
+  const r90 = Math.max(n90 / 90, 1 / 365); // baseline (0 나눗셈 방지)
+  const accel14 = r14 / r90;    // 2주 속도 / 3개월 기준선 (>1 가속)
+  const accel30 = r30 / r90;    // 1개월 속도 / 기준선
+  // 거래 속도가 (제거된) 저가소진율을 대체 → 배점을 최대 25로 상향 흡수.
+  let volumeMomentumScore: number;
+  if (n14 > 0 || n30 > 0) {
+    // 단기 데이터 존재 → 가속도 기반 (2주 최대 15 : 1개월 최대 7 : 기준활발 최대 3)
+    volumeMomentumScore =
+        (accel14 >= 1.3 ? 15 : accel14 >= 1.0 ? 10 : accel14 >= 0.5 ? 4 : 0)  // 2주
+      + (accel30 >= 1.2 ? 7 : accel30 >= 0.9 ? 4 : 0)                          // 1개월
+      + (n90 >= 5 ? 3 : 0);                                                     // 기준 거래 활발
+  } else {
+    // 단기 창 비어있음 → 3개월 절대 건수로 폴백(속도 신호 약화)
+    volumeMomentumScore = n90 >= 3 ? 5 : n90 >= 1 ? 2 : 0;
+  }
+
+  // 전세가율 수요/공급 신호: 높을수록 수요 우위, 낮을수록 공급 여력 있음
+  // 기준: ≥0.70 수요압력(+7), ≥0.60 보통(+3), ≥0.50 중립(0), <0.50 공급여력(-4)
+  const jeonseSupplyDemandScore =
+    jeonseRatio >= 0.70 ? 7
+    : jeonseRatio >= 0.60 ? 3
+    : jeonseRatio >= 0.50 ? 0
+    : -4;
+
+  // (저가소진율 제거: 거래 속도(velocity)가 "얼마나 빠르게 팔리나"를 대체. 배점은 속도로 이전.)
+  // 대장 앵커 상방압력
+  const leaderBoost = leaderApartmentAnchorPrice > 0 && leaderApartmentAnchorPrice > (adjustedComparableSalePrice || saleAskingPrice) ? 6 : 0;
+
+  // 비교단지 상·하급지 압력
+  const comparablePressureScore =
+    comparableMarketPressureRate > 0 ? Math.round(comparableMarketPressureRate * 120)
+    : comparableMarketPressureRate < 0 ? Math.round(comparableMarketPressureRate * 60)
+    : 0;
+
+  // 입주물량 공급압력 점수: 국토부 3개월 합산 입주예정 세대 기준
+  // -5%→-8점, -3%→-5점, -1%→-2점, 0%→0점, +2%→+4점, +3%→+6점
+  const rawSupplyPct = params.supplyPressurePct;
+  const supplyPressureScore =
+    rawSupplyPct == null ? 0
+    : rawSupplyPct >= 3 ? 6
+    : rawSupplyPct >= 2 ? 4
+    : rawSupplyPct >= 0 ? 0
+    : rawSupplyPct >= -1 ? -2
+    : rawSupplyPct >= -3 ? -5
+    : -8;
+
+  const UPSIDE_BASE = 35; // 기저값 (데이터 존재 시 중립 출발점)
   const upsideScore = hasMinData
     ? Math.min(100, Math.round(
-        40  // 데이터 있을 때의 기저값 (이전 45에서 하향)
-        + lowPriceAbsorptionRate * 50
-        + (recentTxCount >= 3 ? 10 : recentTxCount >= 1 ? 5 : 0)
-        + (params.saleListings.length >= 2 ? 5 : 0)
-        + (comparableMarketPressureRate > 0 ? Math.round(comparableMarketPressureRate * 100) : 0)
-        + (comparableMarketPressureRate < 0 ? Math.round(comparableMarketPressureRate * 50) : 0)
-        + leaderBoost
+        UPSIDE_BASE
+        + volumeMomentumScore      // 거래 속도 (최대 25)
+        + jeonseSupplyDemandScore  // 전세 수요/공급 확인 (-4~+7)
+        + leaderBoost              // 대장 앵커 상방압력 (+6)
+        + comparablePressureScore  // 비교단지 압력 (-3~+6)
+        + supplyPressureScore      // 입주물량 공급압력 (-8~+6)
       ))
     : 0;
+
+  // ── 가격추정 모델 전체 분해 (예상가 앵커 + 상승가능성 점수, 단일 표) ──────
+  const activeWeightPct = (w: number) => (activeWeight > 0 ? Math.round((w / activeWeight) * 100) : 0);
+  const priceFactor = (
+    label: string, source: string, value: number, weight: number
+  ): ModelFactor => ({
+    group: "price", label, source,
+    rawValue: formatEok(value),
+    weight: weight > 0 ? `가중 ${activeWeightPct(weight)}%` : "—",
+    result: value > 0 && weight > 0 ? formatEok(value) : "제외",
+    active: value > 0 && weight > 0,
+  });
+  const accelStr = (n14 > 0 || n30 > 0) ? `가속 ${accel14.toFixed(1)}배(2주)·${accel30.toFixed(1)}배(1개월)` : "단기 거래 없음";
+  const modelBreakdown: ModelFactor[] = hasMinData
+    ? [
+        // ── 예상가(매매) 앵커 ──
+        priceFactor("대상단지 실거래가", "가격 — 대상단지 매매·분양권 실거래", targetSalePrice, weights.targetSale ?? 0),
+        priceFactor("비교단지 보정 실거래가", "가격 — 비교단지 매매 실거래(상·하급지 보정)", adjustedComparableSalePrice, weights.adjustedComparableSale ?? 0),
+        priceFactor("비교단지 현재 호가", "가격 — 비교단지 매물 호가", comparableAskingPrice, weights.comparableAskingPrice ?? 0),
+        priceFactor("대상단지 현재 호가", "가격 — 대상단지 매물 호가", saleAskingPrice, weights.askingPrice ?? 0),
+        priceFactor("전세기반 하방가", "가격 — 전세 실거래가(보증금) ÷ 전세가율", jeonseFloorPrice, weights.jeonseFloorPrice ?? 0),
+        priceFactor("매물 소진 반영가", "매물 수 — 저가매물 소진율(스냅샷)", inventorySignalPriceEffect, weights.inventorySignal ?? 0),
+        priceFactor("분양가 프리미엄", "가격 — 분양가 대비 실거래 시세비율", presalePremiumPrice, weights.presalePremium ?? 0),
+        priceFactor("거시환경", "가격 — 사용자 입력 거시 가격", macroSignalPrice, macroSignalPrice > 0 ? (weights.macroSignal ?? 0) : 0),
+        priceFactor("대장아파트 앵커", "가격 — 대장 실거래 환산가 × 비율", leaderApartmentAnchorPrice, leaderApartmentAnchorPrice > 0 ? (weights.leaderApartmentAnchor ?? 0) : 0),
+        priceFactor("대상 입지 보정", "입지 점수 — 역세권·학군 등", locationPremiumPrice, locationPremiumPrice > 0 ? (weights.locationPremium ?? 0) : 0),
+        priceFactor("비교단지 상·하급지 압력", "등급(가격대) — 비교단지 등급차", comparableMarketPressurePrice, comparableMarketPressurePrice > 0 ? (weights.comparableMarketPressure ?? 0) : 0),
+        // ── 상승가능성 점수 ──
+        { group: "upside", label: "기저값", source: "— (중립 출발점)", rawValue: "—", weight: `+${UPSIDE_BASE}`, result: `${UPSIDE_BASE}점`, active: true },
+        { group: "upside", label: "거래 속도", source: "거래량 — 매매 실거래 계약 건수·계약일 (대장1.8>대상1.2>비교≤1.0 가중)", rawValue: `${accelStr} · 2주 ${raw14}건/1개월 ${raw30}건/3개월 ${raw90}건`, weight: "최대 +25", result: `${volumeMomentumScore >= 0 ? "+" : ""}${volumeMomentumScore}점`, active: volumeMomentumScore !== 0 },
+        { group: "upside", label: "전세 수요/공급", source: "가격 — 전세 실거래가 ÷ 매매 실거래가(전세가율)", rawValue: `전세가율 ${Math.round(jeonseRatio * 100)}%`, weight: "-4~+7", result: `${jeonseSupplyDemandScore >= 0 ? "+" : ""}${jeonseSupplyDemandScore}점`, active: true },
+        { group: "upside", label: "대장 앵커 상방압력", source: "가격 — 대장 환산가 vs 비교단지 시세", rawValue: leaderApartmentAnchorPrice > 0 ? (leaderBoost > 0 ? "대장 > 비교 시세" : "대장 ≤ 비교 시세") : "대장 미설정", weight: "0/+6", result: `+${leaderBoost}점`, active: leaderBoost > 0 },
+        { group: "upside", label: "비교단지 상·하급지 압력", source: "등급(가격대) — 비교단지 등급차 → 압력률", rawValue: `${Math.round(comparableMarketPressureRate * 100)}%`, weight: "-3~+6", result: `${comparablePressureScore >= 0 ? "+" : ""}${comparablePressureScore}점`, active: comparablePressureScore !== 0 },
+        { group: "upside", label: "입주물량 공급압력", source: "국토부 입주예정물량 — 3개월 합산 세대", rawValue: rawSupplyPct != null ? `공급영향 ${rawSupplyPct > 0 ? "+" : ""}${rawSupplyPct}%` : "미조회", weight: "-8~+6", result: `${supplyPressureScore >= 0 ? "+" : ""}${supplyPressureScore}점`, active: rawSupplyPct != null },
+      ]
+    : [];
 
   // ── confidenceScore ───────────────────────────────────────────────
   const totalTxCount = params.targetSaleTransactions.length + params.saleTransactions.length + params.jeonseTransactions.length;
@@ -391,7 +516,10 @@ export function estimatePrice(params: {
     comparableMarketPressurePrice > 0 && comparableMarketPressureRate !== 0 ? `비교단지 상·하급지 압력 ${Math.round(comparableMarketPressureRate * 100)}%를 반영했습니다.` : null,
     regionProfile === "seoul" ? "서울 레짐: 대장 신고가·상급지 압력·호가 리딩 가중을 강조했습니다." : null,
     regionProfile === "gyeonggi" ? "경기·수도권 레짐: 분양권 프리미엄·전세갭·저가매물 소진 가중을 강조했습니다." : null,
+    volumeMomentumScore >= 6 ? `거래 속도가 빠릅니다 (최근2주 ${raw14}건·1개월 ${raw30}건·3개월 ${raw90}건, 대장 가중반영, +${volumeMomentumScore}점).` : null,
+    jeonseSupplyDemandScore > 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 수요 우위 신호.` : jeonseSupplyDemandScore < 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 공급 여력 있음.` : null,
     supplyCliffMode ? "공급절벽 모드 ON: 입지 비중을 낮추고 전세 소진·호가 lock-in 중심으로 가중치를 재편했습니다." : null,
+    supplyPressureScore > 0 ? `입주물량 희소 (공급영향 +${rawSupplyPct}%) — 공급압력 상승 반영 (+${supplyPressureScore}점).` : supplyPressureScore < 0 ? `입주물량 과다 (공급영향 ${rawSupplyPct}%) — 하락압력 반영 (${supplyPressureScore}점).` : null,
   ].filter(Boolean) as string[];
 
   const warnings = [
@@ -433,6 +561,7 @@ export function estimatePrice(params: {
     recommendedAskingPrice: calculateRecommendedAskingPrice(expectedSaleMid, lowPriceAbsorptionRate),
     defensePrice: calculateDefensePrice(expectedSaleMid),
     upsideScore,
+    modelBreakdown,
     confidenceScore,
     conclusion: conclusionFromScore(upsideScore, hasMinData),
     reasonSummary,

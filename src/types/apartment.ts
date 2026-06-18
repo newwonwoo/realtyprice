@@ -1,5 +1,17 @@
 export type ApartmentRole = "target" | "comparable";
 
+export type LocationFeatures = {
+  nearestSubwayM?: number;     // 가장 가까운 지하철역 거리(m)
+  nearestSubwayName?: string;
+  nearestMartM?: number;       // 대형마트 거리(m)
+  nearestMartName?: string;
+  nearestParkM?: number;       // 공원 거리(m)
+  nearestParkName?: string;
+  hasWaterfront?: boolean;     // 수변(강/호수/하천) 인접 500m
+  hasForestPark?: boolean;     // 산림공원 인접 1km
+  fetchedAt?: string;
+};
+
 export type Apartment = {
   id: string;
   name: string;
@@ -15,6 +27,8 @@ export type Apartment = {
   latitude?: number;
   longitude?: number;
   originalPresalePrice?: number; // 모집공고 분양가(만원), 청약홈 API 자동조회
+  expectedMoveInYm?: string;    // 입주예정년월 YYYYMM (분양단지 입주시점 시뮬레이션용)
+  locationFeatures?: LocationFeatures; // Overpass API 자동조회 위치 특성
   createdAt: string;
   updatedAt: string;
 };
