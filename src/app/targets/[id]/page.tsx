@@ -42,6 +42,8 @@ export default function TargetDetailPage() {
   const [supplyCliffMode, setSupplyCliffMode] = useState(false);
   const [supplyVolume, setSupplyVolume] = useState<SupplyVolumeResult | null>(null);
   const [supplyLoading, setSupplyLoading] = useState(false);
+  const [editingMoveIn, setEditingMoveIn] = useState(false);
+  const [moveInInput, setMoveInInput] = useState("");
 
   const apartment = store.targets.find((item) => item.id === id);
   const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
@@ -89,7 +91,7 @@ export default function TargetDetailPage() {
 
   useEffect(() => {
     fetchSupplyVolume();
-  }, [apartment?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [apartment?.id, apartment?.expectedMoveInYm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 위경도 있는 아파트(대상+비교단지) 중 locationFeatures 없거나 24시간 초과 시 자동 조회
   useEffect(() => {
@@ -185,7 +187,43 @@ export default function TargetDetailPage() {
           <h1 className="text-3xl font-black">{apartment.name}</h1>
           <p className="mt-2 text-slate-600">{apartment.address}</p>
         </div>
-        <ExternalLinks apartmentName={apartment.name} />
+        <div className="flex flex-col gap-2 items-start sm:items-end">
+          <ExternalLinks apartmentName={apartment.name} />
+          {/* 입주예정년월 빠른 편집 */}
+          {editingMoveIn ? (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const val = moveInInput.replace(/\D/g, "").slice(0, 6);
+                if (val.length === 6) {
+                  store.setApartments(store.apartments.map((a) => a.id === apartment.id ? { ...a, expectedMoveInYm: val } : a));
+                }
+                setEditingMoveIn(false);
+              }}
+            >
+              <input
+                autoFocus
+                type="text"
+                maxLength={7}
+                placeholder="YYYYMM (예: 202606)"
+                className="input w-40 text-sm"
+                value={moveInInput}
+                onChange={(e) => setMoveInInput(e.target.value)}
+              />
+              <button type="submit" className="btn-primary text-xs px-3 py-1.5">저장</button>
+              <button type="button" className="btn-secondary text-xs px-3 py-1.5" onClick={() => setEditingMoveIn(false)}>취소</button>
+            </form>
+          ) : (
+            <button
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-blue-300 hover:text-blue-600 transition-colors"
+              onClick={() => { setMoveInInput(apartment.expectedMoveInYm ?? ""); setEditingMoveIn(true); }}
+            >
+              입주예정 {apartment.expectedMoveInYm ? `${apartment.expectedMoveInYm.slice(0,4)}.${apartment.expectedMoveInYm.slice(4,6)}` : "미설정"}
+              <span className="text-blue-400">✏</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── 단계별 진행 동선 ── */}
