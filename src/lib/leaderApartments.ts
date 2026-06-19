@@ -75,7 +75,7 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
   { region: "경기 남양주시", name: "별내자이더스타", address: "경기도 남양주시 별내동 999", brand: "자이", households: 740, complexPk: "41360120449174" },
   // ── 경기 고양시 ─────────────────────────────────────────────
   { region: "경기 고양시 일산동구", name: "위시티자이", address: "경기 고양시 일산동구 장항동 640", brand: "자이", households: 4262 },
-  { region: "경기 고양시 덕양구", name: "DMC두산위브더퍼스트", address: "경기도 고양시 덕양구 향동동 405", brand: "두산위브", households: 1059 },
+  { region: "경기 고양시 덕양구", name: "DMC한강자이더헤리티지", address: "경기도 고양시 덕양구 덕은동", brand: "자이", households: 620 },
   // ── 경기 파주시 ─────────────────────────────────────────────
   { region: "경기 파주시", name: "힐스테이트더운정", address: "경기도 파주시 와동동 1471-2", brand: "힐스테이트", households: 1855 },
   // ── 경기 안양시 ─────────────────────────────────────────────
