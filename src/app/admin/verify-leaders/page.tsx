@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface Candidate {
   complexPk: string;
@@ -57,7 +57,12 @@ function toCSV(rows: VerifyRow[], selected: Record<string, string>): string {
 }
 
 export default function VerifyLeadersPage() {
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(() =>
+    typeof window !== "undefined" ? (localStorage.getItem("verifyLeadersApiKey") ?? "") : ""
+  );
+  useEffect(() => {
+    if (apiKey) localStorage.setItem("verifyLeadersApiKey", apiKey);
+  }, [apiKey]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState("");
   const [rows, setRows] = useState<VerifyRow[]>([]);
