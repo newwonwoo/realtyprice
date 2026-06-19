@@ -9,14 +9,14 @@ export type LeaderEntry = {
   address: string;
   brand?: string;
   households?: number;
-  complexPk?: string;  // 부동산원 단지고유번호 — scripts/verify-leaders.mjs로 API에서 채움
+  complexPk?: string;  // 부동산원 단지고유번호
 };
 
 export const LEADER_APARTMENTS: LeaderEntry[] = [
   // ── 서울 강남구 ─────────────────────────────────────────────
-  { region: "서울 강남구", name: "래미안대치팰리스", address: "서울 강남구 대치동 1027", brand: "래미안", households: 1608 },
+  { region: "서울 강남구", name: "래미안대치팰리스", address: "서울특별시 강남구 대치동 1027", brand: "래미안", households: 1608, complexPk: "11680120325153" },
   // ── 서울 서초구 ─────────────────────────────────────────────
-  { region: "서울 서초구", name: "아크로리버파크", address: "서울 서초구 신반포로15길 19", brand: "아크로", households: 1612 },
+  { region: "서울 서초구", name: "아크로리버파크", address: "서울특별시 서초구 반포동 2-12", brand: "아크로", households: 1612, complexPk: "11650120345416" },
   // ── 서울 송파구 ─────────────────────────────────────────────
   { region: "서울 송파구", name: "잠실리센츠", address: "서울 송파구 올림픽로 135", brand: "리센츠", households: 5563 },
   // ── 서울 강동구 ─────────────────────────────────────────────
@@ -24,9 +24,9 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
   // ── 서울 마포구 ─────────────────────────────────────────────
   { region: "서울 마포구", name: "마포래미안푸르지오", address: "서울 마포구 아현동 682-5", brand: "래미안·푸르지오", households: 3885 },
   // ── 서울 용산구 ─────────────────────────────────────────────
-  { region: "서울 용산구", name: "한남더힐", address: "서울 용산구 독서당로 114", brand: "GS건설", households: 600 },
+  { region: "서울 용산구", name: "한남더힐", address: "서울특별시 용산구 한남동 810", brand: "GS건설", households: 600, complexPk: "11170120135016" },
   // ── 서울 성동구 ─────────────────────────────────────────────
-  { region: "서울 성동구", name: "트리마제", address: "서울 성동구 성수동1가 718", brand: "포스코이앤씨", households: 688 },
+  { region: "서울 성동구", name: "트리마제", address: "서울특별시 성동구 성수동1가 718", brand: "포스코이앤씨", households: 688, complexPk: "11200120351769" },
   // ── 서울 광진구 ─────────────────────────────────────────────
   { region: "서울 광진구", name: "자양자이", address: "서울 광진구 자양동 704", brand: "자이", households: 1452 },
   // ── 서울 노원구 ─────────────────────────────────────────────
@@ -40,9 +40,9 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
   // ── 서울 종로구 ─────────────────────────────────────────────
   { region: "서울 종로구", name: "경희궁자이", address: "서울 종로구 송월길 130", brand: "자이", households: 2233 },
   // ── 서울 중구 ───────────────────────────────────────────────
-  { region: "서울 중구", name: "서울역센트럴자이", address: "서울 중구 만리재로 175", brand: "자이", households: 1341 },
+  { region: "서울 중구", name: "서울역센트럴자이", address: "서울특별시 중구 만리동2가 273", brand: "자이", households: 1341, complexPk: "11140120359587" },
   // ── 서울 동대문구 ────────────────────────────────────────────
-  { region: "서울 동대문구", name: "래미안크레시티", address: "서울 동대문구 전농동 590", brand: "래미안", households: 2678 },
+  { region: "서울 동대문구", name: "래미안크레시티", address: "서울특별시 동대문구 전농동 690", brand: "래미안", households: 2678, complexPk: "11230120330456" },
   // ── 서울 중랑구 ─────────────────────────────────────────────
   { region: "서울 중랑구", name: "중랑힐스테이트", address: "서울 중랑구 면목동 628", brand: "힐스테이트", households: 1073 },
   // ── 서울 강서구 ─────────────────────────────────────────────
@@ -56,7 +56,7 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
   // ── 서울 영등포구 ────────────────────────────────────────────
   { region: "서울 영등포구", name: "여의도자이", address: "서울 영등포구 여의도동 39-2", brand: "자이", households: 1067 },
   // ── 서울 동작구 ─────────────────────────────────────────────
-  { region: "서울 동작구", name: "아크로리버하임", address: "서울 동작구 현충로 52", brand: "아크로", households: 1073 },
+  { region: "서울 동작구", name: "아크로리버하임", address: "서울특별시 동작구 흑석동 341", brand: "아크로", households: 1073, complexPk: "11590120381797" },
   // ── 서울 관악구 ─────────────────────────────────────────────
   { region: "서울 관악구", name: "봉천센트레빌", address: "서울 관악구 봉천동 986", brand: "동부건설", households: 1019 },
 
@@ -64,7 +64,7 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
   { region: "경기 성남시 분당구", name: "판교푸르지오그랑블", address: "경기 성남시 분당구 판교동 603-1", brand: "푸르지오", households: 1704 },
   { region: "경기 성남시 분당구", name: "파크뷰", address: "경기 성남시 분당구 백현동 547", brand: "삼성물산", households: 1562 },
   // ── 경기 수원시 ─────────────────────────────────────────────
-  { region: "경기 수원시 영통구", name: "광교호반베르디움", address: "경기 수원시 영통구 이의동 1379", brand: "호반건설", households: 1425 },
+  { region: "경기 수원시 영통구", name: "광교호반베르디움", address: "경기도 수원영통구 원천동 606", brand: "호반건설", households: 1425, complexPk: "41117120292567" },
   { region: "경기 수원시 권선구", name: "수원아이파크시티", address: "경기 수원시 권선구 호매실로 116", brand: "아이파크", households: 5808 },
   // ── 경기 용인시 ─────────────────────────────────────────────
   { region: "경기 용인시 수지구", name: "성복역롯데캐슬", address: "경기 용인시 수지구 성복동 673", brand: "롯데캐슬", households: 2033 },
@@ -72,7 +72,7 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
   // ── 경기 화성시 ─────────────────────────────────────────────
   { region: "경기 화성시", name: "동탄역롯데캐슬", address: "경기 화성시 오산동 100", brand: "롯데캐슬", households: 1448 },
   // ── 경기 남양주시 ────────────────────────────────────────────
-  { region: "경기 남양주시", name: "별내자이더스타", address: "경기 남양주시 별내동 1086", brand: "자이", households: 740 },
+  { region: "경기 남양주시", name: "별내자이더스타", address: "경기도 남양주시 별내동 999", brand: "자이", households: 740, complexPk: "41360120449174" },
   // ── 경기 고양시 ─────────────────────────────────────────────
   { region: "경기 고양시 일산동구", name: "위시티자이", address: "경기 고양시 일산동구 장항동 640", brand: "자이", households: 4262 },
   { region: "경기 고양시 덕양구", name: "향동지구힐스테이트", address: "경기 고양시 덕양구 향동동 667", brand: "힐스테이트", households: 1806 },
@@ -92,7 +92,7 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
   // ── 경기 오산시 ─────────────────────────────────────────────
   { region: "경기 오산시", name: "오산세교2아이파크", address: "경기 오산시 세교동 1", brand: "아이파크", households: 1052 },
   // ── 경기 평택시 ─────────────────────────────────────────────
-  { region: "경기 평택시", name: "평택지제역자이", address: "경기 평택시 동삭동 650", brand: "자이" },
+  { region: "경기 평택시", name: "평택지제역자이", address: "경기 평택시 동삭동 650", brand: "자이", complexPk: "41220120446607" },
   // ── 경기 안산시 ─────────────────────────────────────────────
   { region: "경기 안산시", name: "고잔자이", address: "경기 안산시 단원구 고잔동 517", brand: "자이", households: 1480 },
   // ── 경기 부천시 ─────────────────────────────────────────────
@@ -107,7 +107,7 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
   { region: "경기 이천시", name: "이천롯데캐슬", address: "경기 이천시 중리동 450", brand: "롯데캐슬", households: 939 },
 
   // ── 인천 연수구(송도) ─────────────────────────────────────────
-  { region: "인천 연수구", name: "더샵송도마리나베이", address: "인천 연수구 랜드마크로 160", brand: "더샵", households: 3100 },
+  { region: "인천 연수구", name: "더샵송도마리나베이", address: "인천광역시 연수구 송도동 308-1", brand: "더샵", households: 3100, complexPk: "28185120411147" },
   // ── 인천 서구(청라) ───────────────────────────────────────────
   { region: "인천 서구", name: "청라힐스테이트레이크", address: "인천 서구 청라동 102", brand: "힐스테이트", households: 2050 },
   // ── 인천 남동구 ──────────────────────────────────────────────
@@ -127,7 +127,7 @@ export function findLeaderForAddress(address: string): LeaderEntry | undefined {
   return sorted.find((entry) => address.includes(entry.region));
 }
 
-// 부동산원 complexPk로 대장 판별 (verify-leaders.mjs가 채운 정식 ID 정확매칭)
+// 부동산원 complexPk로 대장 판별 (정식 ID 정확매칭)
 export function isLeaderByComplexPk(complexPk?: string): boolean {
   if (!complexPk) return false;
   return LEADER_APARTMENTS.some((entry) => entry.complexPk && entry.complexPk === complexPk);
