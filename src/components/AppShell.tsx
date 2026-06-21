@@ -13,6 +13,7 @@ const subNav = [
   ["모델 가중치", "/settings/model"],
   ["백업/복원", "/backup"],
   ["실거래 수동입력", "/transactions"],
+  ["사용 매뉴얼", "/help"],
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
