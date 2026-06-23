@@ -9,7 +9,7 @@ import { calculateInventorySignal, getLowPriceListings } from "@/lib/inventory";
 import { formatEok, formatPercent } from "@/lib/format";
 import type { Listing, ListingType } from "@/types/listing";
 import type { UnitGrade } from "@/types/transaction";
-import { ListingFetcher } from "@/components/listings/ListingFetcher";
+import { ListingFetcher, type ApartmentWithRole } from "@/components/listings/ListingFetcher";
 
 const grades: UnitGrade[] = ["S", "A", "B", "C", "D", "UNKNOWN"];
 
@@ -131,10 +131,15 @@ export default function ListingsPage() {
         <p className="mt-2 text-slate-600">현재 매물 + 실거래로 재고소진월수(MOI)를 산출합니다. 스냅샷 1회로도 계산됩니다.</p>
       </div>
 
-      {/* 직방/KB 자동 수집 */}
+      {/* 직방/KB 자동 수집 — listings 페이지는 전체 단지 목록 제공 */}
       {store.apartments.length > 0 && (
         <div className="mb-5">
-          <ListingFetcher apartment={store.apartments.find((a) => a.id === activeApartmentId) ?? store.apartments[0]} />
+          <ListingFetcher
+            apartments={store.apartments.map((a): ApartmentWithRole => ({
+              apartment: a,
+              role: store.targets.some((t) => t.id === a.id) ? "target" : "comparable",
+            }))}
+          />
         </div>
       )}
 
