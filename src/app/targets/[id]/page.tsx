@@ -176,6 +176,7 @@ export default function TargetDetailPage() {
       comparableMarketPressureRate: comparableGradeAnalysis.marketPressureRate,
       weights,
       lowPriceAbsorptionRate: inventorySignal?.lowPriceAbsorptionRate ?? 0,
+      monthsOfInventory: inventorySignal?.monthsOfInventory ?? 0,
       comparableWeights,
       presalePrice,
       leaderTransactions,
@@ -313,7 +314,7 @@ export default function TargetDetailPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">권장 매각호가</p>
           <p className="mt-2 text-xl font-black text-emerald-800">{latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" title="추세지속·거래속도·입지·공급 등 5개 항목 합산 (0~100점)">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" title="거래속도·MOI 수급·전세가율·대장앵커·비교단지·입주물량 합산 (0~100점)">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">상승가능성 점수</p>
           <p className="mt-2 text-xl font-black text-slate-950">{latestEstimate ? `${latestEstimate.upsideScore}점` : "-"}</p>
           {latestEstimate && (

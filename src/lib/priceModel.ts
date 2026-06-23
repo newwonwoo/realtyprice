@@ -186,6 +186,7 @@ export function estimatePrice(params: {
   regionProfile?: RegionProfile;
   supplyCliffMode?: boolean;
   supplyPressurePct?: number; // 현재 입주물량 공급압력 % (음수=하락압력, 양수=희소)
+  monthsOfInventory?: number; // MOI(재고소진월수) = 활성매물 / 월판매속도. 0=계산불가
 }) {
   const targetArea = params.targetArea > 0 ? params.targetArea : 84;
   // 지역 레짐에 맞춰 가격 앵커 가중치 재조정 (서울/경기 상승 동인 차이 반영)
@@ -401,17 +402,34 @@ export function estimatePrice(params: {
   const accel14 = r14 / r90;    // 2주 속도 / 3개월 기준선 (>1 가속)
   const accel30 = r30 / r90;    // 1개월 속도 / 기준선
   // 거래 속도가 (제거된) 저가소진율을 대체 → 배점을 최대 25로 상향 흡수.
+  // 배점 25→20 축소: MOI(수급)와 분모(판매속도)를 공유하므로 모멘텀 축 과대표집 보정.
+  // (근거: flow/stock 직교 분해 — 한 항목이 sales-pace를 흡수하면 그만큼 가중 이전.)
   let volumeMomentumScore: number;
   if (n14 > 0 || n30 > 0) {
-    // 단기 데이터 존재 → 가속도 기반 (2주 최대 15 : 1개월 최대 7 : 기준활발 최대 3)
+    // 단기 데이터 존재 → 가속도 기반 (2주 최대 12 : 1개월 최대 5 : 기준활발 최대 3)
     volumeMomentumScore =
-        (accel14 >= 1.3 ? 15 : accel14 >= 1.0 ? 10 : accel14 >= 0.5 ? 4 : 0)  // 2주
-      + (accel30 >= 1.2 ? 7 : accel30 >= 0.9 ? 4 : 0)                          // 1개월
+        (accel14 >= 1.3 ? 12 : accel14 >= 1.0 ? 8 : accel14 >= 0.5 ? 3 : 0)   // 2주
+      + (accel30 >= 1.2 ? 5 : accel30 >= 0.9 ? 3 : 0)                          // 1개월
       + (n90 >= 5 ? 3 : 0);                                                     // 기준 거래 활발
   } else {
     // 단기 창 비어있음 → 3개월 절대 건수로 폴백(속도 신호 약화)
-    volumeMomentumScore = n90 >= 3 ? 5 : n90 >= 1 ? 2 : 0;
+    volumeMomentumScore = n90 >= 3 ? 4 : n90 >= 1 ? 2 : 0;
   }
+
+  // ── MOI(재고소진월수) 수급 타이트니스 — 공급 차원 (velocity와 직교) ──────
+  // velocity=수요 모멘텀(flow), MOI=수급 수준(stock÷flow). MOI는 "활성 매물수(공급)"
+  // 라는 독립 정보를 추가. 연속비례가 아닌 임계구간으로 점수화 → 판매속도 한계변화에
+  // 둔감 → 이중계산 억제. 비대칭(+8/-6): 수도권 추세지속형(평균회귀 없음) 반영.
+  // 기준: <2 극단매도자우위 / 4.5~6 균형 / >9 강한매수자우위 (NAR·FRED, 수도권 보정 전).
+  const moi = params.monthsOfInventory ?? 0;
+  const moiScore =
+    moi <= 0 ? 0                  // 계산불가(매물·실거래 부족) → 비활성
+    : moi < 2 ? 8
+    : moi < 3 ? 5
+    : moi < 4.5 ? 3
+    : moi <= 6 ? 0
+    : moi <= 9 ? -3
+    : -6;
 
   // 전세가율 수요/공급 신호: 높을수록 수요 우위, 낮을수록 공급 여력 있음
   // 기준: ≥0.70 수요압력(+7), ≥0.60 보통(+3), ≥0.50 중립(0), <0.50 공급여력(-4)
@@ -447,7 +465,8 @@ export function estimatePrice(params: {
   const upsideScore = hasMinData
     ? Math.min(100, Math.round(
         UPSIDE_BASE
-        + volumeMomentumScore      // 거래 속도 (최대 25)
+        + volumeMomentumScore      // 거래 속도 (최대 20)
+        + moiScore                 // MOI 수급 타이트니스 (-6~+8)
         + jeonseSupplyDemandScore  // 전세 수요/공급 확인 (-4~+7)
         + leaderBoost              // 대장 앵커 상방압력 (+6)
         + comparablePressureScore  // 비교단지 압력 (-3~+6)
@@ -483,7 +502,8 @@ export function estimatePrice(params: {
         priceFactor("비교단지 상·하급지 압력", "등급(가격대) — 비교단지 등급차", comparableMarketPressurePrice, comparableMarketPressurePrice > 0 ? (weights.comparableMarketPressure ?? 0) : 0),
         // ── 상승가능성 점수 ──
         { group: "upside", label: "기저값", source: "— (중립 출발점)", rawValue: "—", weight: `+${UPSIDE_BASE}`, result: `${UPSIDE_BASE}점`, active: true },
-        { group: "upside", label: "거래 속도", source: "거래량 — 매매 실거래 계약 건수·계약일 (대장1.8>대상1.2>비교≤1.0 가중)", rawValue: `${accelStr} · 2주 ${raw14}건/1개월 ${raw30}건/3개월 ${raw90}건`, weight: "최대 +25", result: `${volumeMomentumScore >= 0 ? "+" : ""}${volumeMomentumScore}점`, active: volumeMomentumScore !== 0 },
+        { group: "upside", label: "거래 속도", source: "거래량 — 매매 실거래 계약 건수·계약일 (대장1.8>대상1.2>비교≤1.0 가중)", rawValue: `${accelStr} · 2주 ${raw14}건/1개월 ${raw30}건/3개월 ${raw90}건`, weight: "최대 +20", result: `${volumeMomentumScore >= 0 ? "+" : ""}${volumeMomentumScore}점`, active: volumeMomentumScore !== 0 },
+        { group: "upside", label: "MOI 수급 타이트니스", source: "매물 수급 — 활성매물 ÷ 월판매속도 (재고소진월수)", rawValue: moi > 0 ? `${Math.round(moi * 10) / 10}개월 (<2 극단매도자우위·>9 강한매수자우위)` : "매물·실거래 부족", weight: "-6~+8", result: `${moiScore >= 0 ? "+" : ""}${moiScore}점`, active: moiScore !== 0 },
         { group: "upside", label: "전세 수요/공급", source: "가격 — 전세 실거래가 ÷ 매매 실거래가(전세가율)", rawValue: `전세가율 ${Math.round(jeonseRatio * 100)}%`, weight: "-4~+7", result: `${jeonseSupplyDemandScore >= 0 ? "+" : ""}${jeonseSupplyDemandScore}점`, active: true },
         { group: "upside", label: "대장 앵커 상방압력", source: "가격 — 대장 환산가 vs 비교단지 시세", rawValue: leaderApartmentAnchorPrice > 0 ? (leaderBoost > 0 ? "대장 > 비교 시세" : "대장 ≤ 비교 시세") : "대장 미설정", weight: "0/+6", result: `+${leaderBoost}점`, active: leaderBoost > 0 },
         { group: "upside", label: "비교단지 상·하급지 압력", source: "등급(가격대) — 비교단지 등급차 → 압력률", rawValue: `${Math.round(comparableMarketPressureRate * 100)}%`, weight: "-3~+6", result: `${comparablePressureScore >= 0 ? "+" : ""}${comparablePressureScore}점`, active: comparablePressureScore !== 0 },
