@@ -24,29 +24,6 @@ async function checkEnvVar(name: string, label: string): Promise<CheckResult> {
   return { name: label, status: "ok", message: `설정됨 (${val.slice(0, 12)}...)` };
 }
 
-async function checkNaverApi(): Promise<CheckResult> {
-  const cookie = process.env.NAVER_COOKIE ?? "";
-  const headers: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://new.land.naver.com/",
-    "Accept": "application/json",
-  };
-  if (cookie) headers["Cookie"] = cookie;
-  try {
-    const res = await fetch("https://new.land.naver.com/api/search?query=래미안&pg=1&rs=1&re=3&sm=13&fa=apt", {
-      headers,
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const d = await res.json();
-      const cnt = (d?.complexes ?? d?.result?.complexes ?? []).length;
-      return { name: "네이버 부동산 API", status: "ok", message: `응답 정상 · 검색결과 ${cnt}건` };
-    }
-    return { name: "네이버 부동산 API", status: "warn", message: `HTTP ${res.status}`, detail: cookie ? "쿠키 만료 가능성" : "NAVER_COOKIE 미설정" };
-  } catch (e) {
-    return { name: "네이버 부동산 API", status: "error", message: "접속 실패", detail: String(e) };
-  }
-}
 
 async function checkDataGoKr(): Promise<CheckResult> {
   const key = process.env.DATA_GO_KR_API_KEY;
@@ -122,20 +99,16 @@ async function checkTableCounts(): Promise<CheckResult> {
 }
 
 export async function GET() {
-  const [db, dbCounts, naver, dataGoKr, zigbang, kbland, pgUrl, naverCookie] = await Promise.all([
+  const [db, dbCounts, dataGoKr, zigbang, kbland, pgUrl] = await Promise.all([
     checkDb(),
     checkTableCounts(),
-    checkNaverApi(),
     checkDataGoKr(),
     checkZigbang(),
     checkKbLand(),
     checkEnvVar("POSTGRES_DATABASE_URL", "POSTGRES_DATABASE_URL"),
-    process.env.NAVER_COOKIE
-      ? Promise.resolve<CheckResult>({ name: "NAVER_COOKIE", status: "ok", message: `설정됨 (${process.env.NAVER_COOKIE.slice(0, 20)}...)` })
-      : Promise.resolve<CheckResult>({ name: "NAVER_COOKIE", status: "warn", message: "미설정 · 서버에서 네이버 API 차단될 수 있음" }),
   ]);
 
-  const checks = [db, dbCounts, pgUrl, naverCookie, naver, dataGoKr, zigbang, kbland];
+  const checks = [db, dbCounts, pgUrl, dataGoKr, zigbang, kbland];
   const hasError = checks.some((c) => c.status === "error");
   const hasWarn = checks.some((c) => c.status === "warn");
   const overall = hasError ? "error" : hasWarn ? "warn" : "ok";

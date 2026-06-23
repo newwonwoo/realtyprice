@@ -9,7 +9,6 @@ import { calculateInventorySignal, getLowPriceListings } from "@/lib/inventory";
 import { formatEok, formatPercent } from "@/lib/format";
 import type { Listing, ListingType } from "@/types/listing";
 import type { UnitGrade } from "@/types/transaction";
-import { NaverListingFetcher } from "@/components/listings/NaverListingFetcher";
 
 const grades: UnitGrade[] = ["S", "A", "B", "C", "D", "UNKNOWN"];
 
@@ -130,13 +129,6 @@ export default function ListingsPage() {
         <h1 className="text-3xl font-black">호가/매물 입력</h1>
         <p className="mt-2 text-slate-600">현재 매물 + 실거래로 재고소진월수(MOI)를 산출합니다. 스냅샷 1회로도 계산됩니다.</p>
       </div>
-
-      {/* Naver Auto Fetch */}
-      {store.apartments.length > 0 && (
-        <div className="mb-5">
-          <NaverListingFetcher apartment={store.apartments.find((a) => a.id === activeApartmentId) ?? store.apartments[0]} />
-        </div>
-      )}
 
       <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
         <div className="card p-5">
