@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // 네이버 부동산 비공식 내부 API (역공학 기반)
-const NAVER_BASE = "https://new.land.naver.com/api";
+const NAVER_BASE = "https://neo.land.naver.com/api";
 
 // NAVER_COOKIE 환경변수: 네이버 로그인 후 브라우저 개발자도구 → Network → new.land.naver.com 요청 → Cookie 헤더값 복사
 // 예) NID_AUT=...; NID_SES=...; landHomeFlashUseYn=Y
@@ -10,7 +10,7 @@ const NAVER_COOKIE = process.env.NAVER_COOKIE ?? "";
 function buildHeaders(): Record<string, string> {
   const h: Record<string, string> = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://new.land.naver.com/",
+    "Referer": "https://neo.land.naver.com/",
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "ko-KR,ko;q=0.9",
   };
