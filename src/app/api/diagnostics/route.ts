@@ -24,7 +24,6 @@ async function checkEnvVar(name: string, label: string): Promise<CheckResult> {
   return { name: label, status: "ok", message: `설정됨 (${val.slice(0, 12)}...)` };
 }
 
-
 async function checkDataGoKr(): Promise<CheckResult> {
   const key = process.env.DATA_GO_KR_API_KEY;
   if (!key) return { name: "공공데이터 API (data.go.kr)", status: "warn", message: "DATA_GO_KR_API_KEY 환경변수 없음 · 브라우저 localStorage에서 사용 중" };
