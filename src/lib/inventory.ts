@@ -1,9 +1,49 @@
 import type { InventorySignal, Listing } from "@/types/listing";
+import type { Transaction } from "@/types/transaction";
 
-export function calculateAbsorptionRate(previousCount: number, currentCount: number, newCount: number) {
-  if (previousCount <= 0) return 0;
-  const disappearedCount = Math.max(0, previousCount + newCount - currentCount);
-  return disappearedCount / previousCount;
+// ════════════════════════════════════════════════════════════════════
+// 매물소진 신호 — MOI(재고소진월수, Months of Inventory) 중심
+// ────────────────────────────────────────────────────────────────────
+// 근거(리서치 종합):
+//  · MOI = 활성매물수 / 월간 실거래건수 = 현재 매물을 다 소진하는 데 걸리는 개월.
+//    낮을수록 매도자 우위(상승압력). Richmond Fed(2025): MOI는 실업률·금리보다
+//    집값 방향을 잘 예측하는 선행지표.
+//  · 흡수율(absorption rate) = 월실거래/활성매물 = 1/MOI.
+//  · 거래회전율 = 월실거래×12/세대수 (동행지표, 레짐 판단 보조). 한국 연율
+//    ~3% 침체 / ~5% 활발 / ~8% 호황.
+//  · 매물건수 단순 증감은 허위·중복매물/세제 영향으로 노이즈 큼 → 보조 확인용만.
+//
+// 임계값(US NAR 관행, 수도권 보정 전 기본값):
+//  MOI < 3        강한 매도자우위 (강한 상승)
+//  3 ≤ MOI < 4    매도자우위    (상승)
+//  4 ≤ MOI ≤ 6    균형          (보합)
+//  6 < MOI ≤ 6.5  매수자우위    (약한 하락)
+//  MOI > 6.5      강한 매수자우위 (하락)
+// ════════════════════════════════════════════════════════════════════
+
+export const MOI_THRESHOLDS = {
+  SELLER_STRONG: 3.0,
+  SELLER: 4.0,
+  BALANCED_HI: 6.0,
+  BUYER: 6.5,
+} as const;
+
+export const DEFAULT_TX_WINDOW_MONTHS = 6;
+
+// ── 매물 디둡: complexPk 대신 단지 내 면적+가격+동/층 클러스터로 중복 제거 ──
+// 네이버 호가는 중개사 중복게시(±1층/동)로 부풀려짐 → 같은 단위는 1건으로.
+export function dedupeListings(listings: Listing[]): Listing[] {
+  const seen = new Map<string, Listing>();
+  for (const l of listings) {
+    const key = [
+      l.exclusiveArea,
+      Math.round(l.askingPrice / 100), // 100만원 단위 반올림 — 미세 호가차 흡수
+      l.buildingNo ?? "",
+      l.floor ?? "",
+    ].join("|");
+    if (!seen.has(key)) seen.set(key, l);
+  }
+  return Array.from(seen.values());
 }
 
 export function getLowPriceListings(listings: Listing[]) {
@@ -24,38 +64,126 @@ export function average(values: number[]) {
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
-export function calculateInventorySignal(apartmentId: string, previousListings: Listing[], currentListings: Listing[]): InventorySignal {
-  const previousKeys = new Set(previousListings.map((listing) => listing.listingKey ?? listing.id));
-  const currentKeys = new Set(currentListings.map((listing) => listing.listingKey ?? listing.id));
-  const newListingCount = currentListings.filter((listing) => !previousKeys.has(listing.listingKey ?? listing.id)).length;
-  const disappearedListingCount = previousListings.filter((listing) => !currentKeys.has(listing.listingKey ?? listing.id)).length;
-  const absorptionRate = calculateAbsorptionRate(previousListings.length, currentListings.length, newListingCount);
-  const lowPriceListings = getLowPriceListings(previousListings);
-  const lowPriceKeys = new Set(lowPriceListings.map((listing) => listing.listingKey ?? listing.id));
-  const lowPriceDisappearedCount = previousListings.filter((listing) => {
-    const key = listing.listingKey ?? listing.id;
-    return lowPriceKeys.has(key) && !currentKeys.has(key);
+// (구) 스냅샷 차이 소진율 — 두 시점 매물 비교. 보조 확인용으로 유지.
+export function calculateAbsorptionRate(previousCount: number, currentCount: number, newCount: number) {
+  if (previousCount <= 0) return 0;
+  const disappearedCount = Math.max(0, previousCount + newCount - currentCount);
+  return disappearedCount / previousCount;
+}
+
+// ── 최근 windowMonths개월 내 매매 실거래 건수 ──
+function countRecentSales(transactions: Transaction[], windowMonths: number): number {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - windowMonths);
+  return transactions.filter((tx) => {
+    if (tx.transactionType !== "sale") return false;
+    const d = new Date(tx.contractDate);
+    return !Number.isNaN(d.getTime()) && d >= cutoff;
   }).length;
-  const lowPriceAbsorptionRate = lowPriceListings.length ? lowPriceDisappearedCount / lowPriceListings.length : 0;
-  const currentPrices = currentListings.map((listing) => listing.askingPrice);
-  const signalScore = Math.min(100, Math.round(35 + absorptionRate * 35 + lowPriceAbsorptionRate * 45));
+}
+
+function moiToScore(moi: number): number {
+  // MOI 0 → ~92, 3 → ~68, 6 → ~44, 10 → ~12. 낮을수록 고점.
+  return Math.max(0, Math.min(100, Math.round(92 - moi * 8)));
+}
+
+function moiToConclusion(moi: number): InventorySignal["conclusion"] {
+  if (moi < MOI_THRESHOLDS.SELLER_STRONG) return "strong_up";
+  if (moi < MOI_THRESHOLDS.BALANCED_HI) return "up";
+  if (moi <= MOI_THRESHOLDS.BUYER) return "neutral";
+  return "down";
+}
+
+export type InventorySignalOptions = {
+  households?: number;          // 단지 세대수 — 거래회전율 계산용
+  previousListings?: Listing[]; // 직전 스냅샷 — (구) 소진율 보조계산용
+  windowMonths?: number;        // 실거래 집계 기간 (기본 6개월)
+};
+
+/**
+ * MOI 중심 매물소진 신호 산출.
+ * 단일 매물 스냅샷 + 실거래 이력만으로 계산 가능 (스냅샷 2개 불필요).
+ */
+export function calculateInventorySignal(
+  apartmentId: string,
+  currentListings: Listing[],
+  transactions: Transaction[] = [],
+  options: InventorySignalOptions = {},
+): InventorySignal {
+  const windowMonths = options.windowMonths ?? DEFAULT_TX_WINDOW_MONTHS;
+
+  // 매매 매물만, 디둡
+  const saleListings = dedupeListings(currentListings.filter((l) => l.listingType === "sale"));
+  const activeListingCount = saleListings.length;
+
+  // 월간 실거래 페이스
+  const recentSales = countRecentSales(transactions, windowMonths);
+  const monthlySalesPace = recentSales / windowMonths;
+
+  // MOI — 실거래 0이면 계산불가(0). 매물 0이면 MOI 0.
+  const moi = monthlySalesPace > 0 ? activeListingCount / monthlySalesPace : 0;
+  const hasMoi = monthlySalesPace > 0 && activeListingCount > 0;
+
+  // 거래회전율(연율 %)
+  const turnoverAnnualized = options.households && options.households > 0
+    ? (monthlySalesPace * 12) / options.households * 100
+    : undefined;
+
+  // 매매수급 프록시 0~200 (100=균형). 수요≈월실거래, 공급≈활성매물.
+  const denom = monthlySalesPace + activeListingCount;
+  const supplyDemandProxy = denom > 0
+    ? Math.round(100 + 100 * (monthlySalesPace - activeListingCount) / denom)
+    : 100;
+
+  // (구) 스냅샷 소진율 — previousListings 있으면 보조계산
+  let snapshotAbsorption = 0;
+  let lowPriceAbsorptionRate = 0;
+  let newListingCount = 0;
+  let disappearedListingCount = 0;
+  let lowPriceListingCount = 0;
+  let lowPriceDisappearedCount = 0;
+  if (options.previousListings && options.previousListings.length) {
+    const prev = dedupeListings(options.previousListings.filter((l) => l.listingType === "sale"));
+    const prevKeys = new Set(prev.map((l) => l.listingKey ?? l.id));
+    const currKeys = new Set(saleListings.map((l) => l.listingKey ?? l.id));
+    newListingCount = saleListings.filter((l) => !prevKeys.has(l.listingKey ?? l.id)).length;
+    disappearedListingCount = prev.filter((l) => !currKeys.has(l.listingKey ?? l.id)).length;
+    snapshotAbsorption = calculateAbsorptionRate(prev.length, saleListings.length, newListingCount);
+    const lowPrev = getLowPriceListings(prev);
+    lowPriceListingCount = lowPrev.length;
+    lowPriceDisappearedCount = lowPrev.filter((l) => !currKeys.has(l.listingKey ?? l.id)).length;
+    lowPriceAbsorptionRate = lowPrev.length ? lowPriceDisappearedCount / lowPrev.length : 0;
+  }
+
+  const prices = saleListings.map((l) => l.askingPrice);
+
+  // 신호점수·결론: MOI 가능하면 MOI 기준, 아니면 데이터 부족 보합(35)
+  const signalScore = hasMoi ? moiToScore(moi) : 35;
+  const conclusion = hasMoi ? moiToConclusion(moi) : "neutral";
 
   return {
     id: `inventory_${apartmentId}_${Date.now()}`,
     apartmentId,
     signalDate: currentListings[0]?.capturedAt ?? new Date().toISOString().slice(0, 10),
-    totalListingCount: currentListings.length,
+    totalListingCount: activeListingCount,
     newListingCount,
     disappearedListingCount,
-    lowPriceListingCount: lowPriceListings.length,
+    lowPriceListingCount,
     lowPriceDisappearedCount,
-    absorptionRate,
+    absorptionRate: hasMoi ? monthlySalesPace / activeListingCount : snapshotAbsorption,
     lowPriceAbsorptionRate,
-    bottomPrice: currentPrices.length ? Math.min(...currentPrices) : 0,
-    avgAskingPrice: average(currentPrices),
-    medianAskingPrice: median(currentPrices),
+    bottomPrice: prices.length ? Math.min(...prices) : 0,
+    avgAskingPrice: average(prices),
+    medianAskingPrice: median(prices),
     signalScore,
-    conclusion: lowPriceAbsorptionRate >= 0.3 ? "strong_up" : signalScore >= 60 ? "up" : signalScore >= 35 ? "neutral" : "down",
-    createdAt: new Date().toISOString()
+    conclusion,
+    createdAt: new Date().toISOString(),
+
+    monthsOfInventory: hasMoi ? Math.round(moi * 10) / 10 : 0,
+    monthlySalesPace: Math.round(monthlySalesPace * 10) / 10,
+    activeListingCount,
+    turnoverAnnualized: turnoverAnnualized !== undefined ? Math.round(turnoverAnnualized * 100) / 100 : undefined,
+    supplyDemandProxy,
+    transactionWindowMonths: windowMonths,
   };
 }

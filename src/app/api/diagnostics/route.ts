@@ -81,6 +81,32 @@ async function checkZigbang(): Promise<CheckResult> {
   }
 }
 
+async function checkKbLand(): Promise<CheckResult> {
+  try {
+    const res = await fetch(
+      "https://api.kbland.kr/land-complex/serch/intgraSerch?검색설정명=SRC_NTOTAL&검색키워드=래미안&출력갯수=5&페이지설정값=1",
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          "Referer": "https://kbland.kr/",
+          "Origin": "https://kbland.kr",
+          "Accept": "application/json",
+          "webService": "1",
+        },
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+    if (res.ok) {
+      const d = await res.json();
+      const cnt = (d?.dataBody?.data?.data?.HSCM?.data ?? []).length;
+      return { name: "KB부동산 API", status: "ok", message: `응답 정상 · 검색결과 ${cnt}건` };
+    }
+    return { name: "KB부동산 API", status: "warn", message: `HTTP ${res.status}` };
+  } catch (e) {
+    return { name: "KB부동산 API", status: "error", message: "접속 실패", detail: String(e) };
+  }
+}
+
 async function checkTableCounts(): Promise<CheckResult> {
   try {
     const tables = ["apartments", "comparable_rules", "transactions", "listings", "price_estimates"];
@@ -96,19 +122,20 @@ async function checkTableCounts(): Promise<CheckResult> {
 }
 
 export async function GET() {
-  const [db, dbCounts, naver, dataGoKr, zigbang, pgUrl, naverCookie] = await Promise.all([
+  const [db, dbCounts, naver, dataGoKr, zigbang, kbland, pgUrl, naverCookie] = await Promise.all([
     checkDb(),
     checkTableCounts(),
     checkNaverApi(),
     checkDataGoKr(),
     checkZigbang(),
+    checkKbLand(),
     checkEnvVar("POSTGRES_DATABASE_URL", "POSTGRES_DATABASE_URL"),
     process.env.NAVER_COOKIE
       ? Promise.resolve<CheckResult>({ name: "NAVER_COOKIE", status: "ok", message: `설정됨 (${process.env.NAVER_COOKIE.slice(0, 20)}...)` })
       : Promise.resolve<CheckResult>({ name: "NAVER_COOKIE", status: "warn", message: "미설정 · 서버에서 네이버 API 차단될 수 있음" }),
   ]);
 
-  const checks = [db, dbCounts, pgUrl, naverCookie, naver, dataGoKr, zigbang];
+  const checks = [db, dbCounts, pgUrl, naverCookie, naver, dataGoKr, zigbang, kbland];
   const hasError = checks.some((c) => c.status === "error");
   const hasWarn = checks.some((c) => c.status === "warn");
   const overall = hasError ? "error" : hasWarn ? "warn" : "ok";
