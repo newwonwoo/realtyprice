@@ -38,6 +38,7 @@ type ZbState = {
   loading: boolean;
   error: string;
   message: string;
+  searchQuery: string;   // 사용자가 직접 수정 가능한 검색어
   complexList: ZigbangComplex[];
   selectedId: string;
   sale: ZigbangListing[];
@@ -53,7 +54,7 @@ type KbState = {
   prices: { area: KbAreaType; price: KbPrice | null }[];
 };
 
-const defaultZb = (): ZbState => ({ loading: false, error: "", message: "", complexList: [], selectedId: "", sale: [], jeonse: [] });
+const defaultZb = (name = ""): ZbState => ({ loading: false, error: "", message: "", searchQuery: name, complexList: [], selectedId: "", sale: [], jeonse: [] });
 const defaultKb = (): KbState => ({ loading: false, error: "", complexList: [], selectedNo: "", areaTypes: [], prices: [] });
 
 export function ListingFetcher({ apartments }: Props) {
@@ -67,11 +68,11 @@ export function ListingFetcher({ apartments }: Props) {
   const selectedEntry = apartments.find((a) => a.apartment.id === selectedAptId) ?? apartments[0];
   const apt = selectedEntry?.apartment;
 
-  const zb = zbStates[selectedAptId] ?? defaultZb();
+  const zb = zbStates[selectedAptId] ?? defaultZb(apt?.name ?? "");
   const kb = kbStates[selectedAptId] ?? defaultKb();
 
   function setZb(id: string, patch: Partial<ZbState>) {
-    setZbStates((prev) => ({ ...prev, [id]: { ...(prev[id] ?? defaultZb()), ...patch } }));
+    setZbStates((prev) => ({ ...prev, [id]: { ...(prev[id] ?? defaultZb(apt?.name ?? "")), ...patch } }));
   }
   function setKb(id: string, patch: Partial<KbState>) {
     setKbStates((prev) => ({ ...prev, [id]: { ...(prev[id] ?? defaultKb()), ...patch } }));
@@ -80,10 +81,11 @@ export function ListingFetcher({ apartments }: Props) {
   // ── 직방 수집 ──────────────────────────────────────────
   async function fetchZigbang(complexId?: string) {
     if (!apt) return;
+    const query = (zbStates[apt.id]?.searchQuery ?? apt.name).trim() || apt.name;
     setZb(apt.id, { loading: true, error: "", message: "" });
     const params = new URLSearchParams({ type: "all" });
     if (complexId) params.set("complexId", complexId);
-    else params.set("aptName", apt.name);
+    else params.set("aptName", query);
     try {
       const res = await fetch(`/api/zigbang-listings?${params}`);
       const data = await res.json();
@@ -196,8 +198,14 @@ export function ListingFetcher({ apartments }: Props) {
       {tab === "zigbang" && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-600 flex-1"><strong>{apt.name}</strong> 직방 매물 수집</span>
-            <button className="btn-primary text-sm px-4 py-1.5" disabled={zb.loading} onClick={() => fetchZigbang()}>
+            <input
+              className="input flex-1 text-sm"
+              value={zb.searchQuery ?? apt.name}
+              onChange={(e) => setZb(apt.id, { searchQuery: e.target.value })}
+              placeholder="검색어 수정 가능 (예: 중흥에듀)"
+              onKeyDown={(e) => e.key === "Enter" && fetchZigbang()}
+            />
+            <button className="btn-primary text-sm px-4 py-1.5 whitespace-nowrap" disabled={zb.loading} onClick={() => fetchZigbang()}>
               {zb.loading ? "수집중…" : "수집"}
             </button>
           </div>
