@@ -31,6 +31,19 @@ export default function ListingsPage() {
 
   const snapshot = useMemo(() => buildSnapshot(store.listings, activeApartmentId), [activeApartmentId, store.listings]);
   const latestSignal = store.inventorySignals.find((item) => item.apartmentId === activeApartmentId);
+  const activeApartment = store.apartments.find((a) => a.id === activeApartmentId);
+  const activeTransactions = useMemo(
+    () => store.transactions.filter((t) => t.apartmentId === activeApartmentId),
+    [activeApartmentId, store.transactions]
+  );
+  // 현재 신호 미리보기 (저장 전 실시간 계산)
+  const liveSignal = useMemo(
+    () => calculateInventorySignal(activeApartmentId, snapshot.current, activeTransactions, {
+      households: activeApartment?.households,
+      previousListings: snapshot.previous,
+    }),
+    [activeApartmentId, snapshot.current, snapshot.previous, activeTransactions, activeApartment?.households]
+  );
 
   function addListing() {
     if (!activeApartmentId || !askingPrice || Number.isNaN(Number(askingPrice))) {
@@ -96,13 +109,16 @@ export default function ListingsPage() {
   }
 
   function saveInventorySignal() {
-    if (!snapshot.previous.length || !snapshot.current.length) {
-      setMessage("같은 단지의 매매 매물 스냅샷 날짜가 최소 2개 필요합니다.");
+    if (!snapshot.current.length) {
+      setMessage("현재 단지의 매매 매물이 필요합니다. (호가 수집 먼저)");
       return;
     }
-    const signal = calculateInventorySignal(activeApartmentId, snapshot.previous, snapshot.current);
-    store.setInventorySignals([signal, ...store.inventorySignals.filter((item) => item.apartmentId !== activeApartmentId)]);
-    setMessage("매물소진 신호를 저장했습니다.");
+    if (activeTransactions.filter((t) => t.transactionType === "sale").length === 0) {
+      setMessage("MOI 계산에 실거래(매매)가 필요합니다. 실거래를 먼저 수집하세요.");
+      return;
+    }
+    store.setInventorySignals([liveSignal, ...store.inventorySignals.filter((item) => item.apartmentId !== activeApartmentId)]);
+    setMessage("매물소진 신호(MOI)를 저장했습니다.");
   }
 
   const lowPriceListings = getLowPriceListings(snapshot.previous);
@@ -112,7 +128,7 @@ export default function ListingsPage() {
       <div className="mb-8">
         <p className="text-sm font-semibold text-blue-600">Listings</p>
         <h1 className="text-3xl font-black">호가/매물 입력</h1>
-        <p className="mt-2 text-slate-600">날짜별 매물 스냅샷으로 매물소진추정과 저가매물 소진율을 계산합니다.</p>
+        <p className="mt-2 text-slate-600">현재 매물 + 실거래로 재고소진월수(MOI)를 산출합니다. 스냅샷 1회로도 계산됩니다.</p>
       </div>
 
       {/* Naver Auto Fetch */}
@@ -149,20 +165,61 @@ export default function ListingsPage() {
         </div>
 
         <div className="card p-5">
-          <h2 className="text-lg font-black">매물소진추정</h2>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <Metric label="전일 매물수" value={`${snapshot.previous.length}건`} />
-            <Metric label="금일 매물수" value={`${snapshot.current.length}건`} />
-            <Metric label="신규매물수" value={`${snapshot.newCount}건`} />
-            <Metric label="사라진 매물" value={`${snapshot.disappearedCount}건`} />
-            <Metric label="매물소진율" value={formatPercent(snapshot.absorptionRate)} />
-            <Metric label="하위호가 소진율" value={formatPercent(snapshot.lowPriceAbsorptionRate)} />
+          <h2 className="text-lg font-black">매물소진추정 (MOI)</h2>
+          <p className="mt-1 text-xs text-slate-500">재고소진월수 = 활성매물 ÷ 월평균 실거래. 낮을수록 매도자 우위(상승압력).</p>
+
+          {/* 핵심 지표: MOI */}
+          <div className={`mt-4 rounded-xl border-2 p-4 ${moiBoxStyle(liveSignal.conclusion)}`}>
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-xs font-semibold text-slate-500">재고소진월수 (MOI)</p>
+                <p className="mt-1 text-4xl font-black">
+                  {liveSignal.monthsOfInventory && liveSignal.monthsOfInventory > 0
+                    ? `${liveSignal.monthsOfInventory}개월`
+                    : "—"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className={`text-sm font-black ${moiTextStyle(liveSignal.conclusion)}`}>
+                  {moiRegimeLabel(liveSignal.conclusion)}
+                </p>
+                <p className="text-xs text-slate-500">신호점수 {liveSignal.signalScore}점</p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              {liveSignal.monthsOfInventory && liveSignal.monthsOfInventory > 0
+                ? "기준: <3 강한상승 · 3~6 보합 · >6.5 하락 (US NAR, 수도권 보정 전)"
+                : "활성매물 + 최근 매매 실거래가 모두 있어야 계산됩니다."}
+            </p>
           </div>
-          <p className={`mt-4 rounded-lg p-3 text-sm font-semibold ${snapshot.lowPriceAbsorptionRate >= 0.3 ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-600"}`}>
-            {snapshot.lowPriceAbsorptionRate >= 0.3 ? "하위 30% 가격대 매물 소진 30%↑ — 상승 신호" : "호가 목록 가격 하위 30% 매물이 얼마나 사라졌는지 비율입니다."}
-          </p>
+
+          {/* 보조 지표 */}
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <Metric label="활성 매물수 (디둡)" value={`${liveSignal.activeListingCount ?? 0}건`} />
+            <Metric label="월평균 실거래" value={`${liveSignal.monthlySalesPace ?? 0}건/월`} />
+            <Metric label="흡수율(월)" value={formatPercent(liveSignal.absorptionRate)} />
+            <Metric
+              label="거래회전율(연)"
+              value={liveSignal.turnoverAnnualized !== undefined ? `${liveSignal.turnoverAnnualized}%` : "세대수 필요"}
+            />
+            <Metric label="매매수급 프록시" value={`${liveSignal.supplyDemandProxy ?? 100}`} />
+            <Metric label="실거래 집계기간" value={`${liveSignal.transactionWindowMonths ?? 6}개월`} />
+          </div>
+
+          {/* 보조 확인용: 스냅샷 소진율 (2개 스냅샷 있을 때만) */}
+          {snapshot.previous.length > 0 && (
+            <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+              <span className="font-semibold">스냅샷 보조지표</span> · 전일 {snapshot.previous.length}건 → 금일 {snapshot.current.length}건
+              {" · "}저가소진율 {formatPercent(snapshot.lowPriceAbsorptionRate)}
+            </div>
+          )}
+
           <button className="btn-primary mt-4 w-full" onClick={saveInventorySignal}>매물소진 신호 저장</button>
-          {latestSignal && <p className="mt-3 text-sm text-slate-500">최근 저장: {latestSignal.signalDate} · {formatPercent(latestSignal.lowPriceAbsorptionRate)}</p>}
+          {latestSignal && (
+            <p className="mt-3 text-sm text-slate-500">
+              최근 저장: {latestSignal.signalDate} · MOI {latestSignal.monthsOfInventory ?? "-"}개월 · {latestSignal.signalScore}점
+            </p>
+          )}
         </div>
       </div>
 
@@ -205,6 +262,31 @@ function buildSnapshot(listings: Listing[], apartmentId: string) {
     absorptionRate: previous.length ? disappearedCount / previous.length : 0,
     lowPriceAbsorptionRate
   };
+}
+
+function moiBoxStyle(conclusion: string): string {
+  switch (conclusion) {
+    case "strong_up": return "border-emerald-300 bg-emerald-50";
+    case "up": return "border-blue-300 bg-blue-50";
+    case "down": return "border-red-300 bg-red-50";
+    default: return "border-slate-200 bg-slate-50";
+  }
+}
+function moiTextStyle(conclusion: string): string {
+  switch (conclusion) {
+    case "strong_up": return "text-emerald-700";
+    case "up": return "text-blue-700";
+    case "down": return "text-red-700";
+    default: return "text-slate-600";
+  }
+}
+function moiRegimeLabel(conclusion: string): string {
+  switch (conclusion) {
+    case "strong_up": return "강한 매도자우위";
+    case "up": return "매도자우위";
+    case "down": return "매수자우위";
+    default: return "균형/보합";
+  }
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
