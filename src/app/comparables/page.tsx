@@ -69,8 +69,10 @@ export default function ComparablesPage() {
   const suggestedLeader = activeTarget ? findLeaderForAddress(activeTarget.address ?? activeTarget.region ?? "") : undefined;
 
   useEffect(() => {
-    if (!activeTarget || rule.leaderApartmentId || !suggestedLeader) return;
+    if (!activeTarget || !suggestedLeader) return;
     const id = `leader_${suggestedLeader.region.replace(/\s/g, "_")}_${suggestedLeader.name.replace(/\s/g, "_")}`;
+
+    // store에 없으면 항상 재추가 (페이지 재로드 후 store 초기화 대응)
     const existing = store.apartments.find((a) => a.id === id);
     const leaderApt: Apartment = existing ?? {
       id,
@@ -84,6 +86,9 @@ export default function ComparablesPage() {
       updatedAt: nowIso(),
     };
     if (!existing) store.setApartments([...store.apartments, leaderApt]);
+
+    // rule 미설정일 때만 자동 지정
+    if (rule.leaderApartmentId) return;
     const ratio = autoLeaderRatio(activeTarget, leaderApt, store.transactions, activeTarget.defaultArea);
     saveRule({ ...rule, leaderApartmentId: id, targetToLeaderRatio: ratio, targetApartmentId: activeTargetId });
   // eslint-disable-next-line react-hooks/exhaustive-deps
