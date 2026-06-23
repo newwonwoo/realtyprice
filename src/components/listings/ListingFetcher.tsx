@@ -61,6 +61,8 @@ export function ListingFetcher({ apartments }: Props) {
   const store = useRealtyStore();
   const [tab, setTab] = useState<Tab>("zigbang");
   const [selectedAptId, setSelectedAptId] = useState(apartments[0]?.apartment.id ?? "");
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<string>("");
 
   const [zbStates, setZbStates] = useState<Record<string, ZbState>>({});
   const [kbStates, setKbStates] = useState<Record<string, KbState>>({});
@@ -104,6 +106,61 @@ export function ListingFetcher({ apartments }: Props) {
     } catch (e) {
       setZb(apt.id, { loading: false, error: String(e) });
     }
+  }
+
+  // 전체 단지 직방 일괄 수집 → 자동 저장
+  async function fetchAndImportAll() {
+    setBatchRunning(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const allImported: Listing[] = [];
+
+    for (let i = 0; i < apartments.length; i++) {
+      const { apartment: a } = apartments[i];
+      setBatchProgress(`${i + 1}/${apartments.length} — ${a.name} 수집중…`);
+      const query = (zbStates[a.id]?.searchQuery ?? a.name).trim() || a.name;
+      setZbStates((prev) => ({ ...prev, [a.id]: { ...(prev[a.id] ?? defaultZb(a.name)), loading: true, error: "", message: "" } }));
+      try {
+        const params = new URLSearchParams({ type: "all", aptName: query });
+        const res = await fetch(`/api/zigbang-listings?${params}`);
+        const data = await res.json();
+        if (!res.ok) {
+          setZbStates((prev) => ({ ...prev, [a.id]: { ...(prev[a.id] ?? defaultZb(a.name)), loading: false, error: data.error ?? "실패" } }));
+          continue;
+        }
+        const saleList: ZigbangListing[] = data.saleListings ?? [];
+        const jeonseList: ZigbangListing[] = data.jeonseListings ?? [];
+        const toListings = (ls: ZigbangListing[], type: "sale" | "jeonse"): Listing[] =>
+          ls.map((l) => ({
+            id: `listing_zb_${a.id}_${l.itemId}`,
+            apartmentId: a.id,
+            listingType: type,
+            exclusiveArea: l.area,
+            askingPrice: l.price,
+            floor: l.floor || undefined,
+            grade: "B" as const,
+            adjustedAskingPrice: normalizeToBGrade(l.price, "B"),
+            source: "manual" as const,
+            listingKey: `zb_${a.id}_${l.itemId}`,
+            capturedAt: today,
+            status: "active" as const,
+            memo: l.description || undefined,
+          }));
+        allImported.push(...toListings(saleList, "sale"), ...toListings(jeonseList, "jeonse"));
+        setZbStates((prev) => ({
+          ...prev,
+          [a.id]: { ...(prev[a.id] ?? defaultZb(a.name)), loading: false, sale: saleList, jeonse: jeonseList, message: `매매 ${saleList.length} · 전세 ${jeonseList.length}건` },
+        }));
+      } catch (e) {
+        setZbStates((prev) => ({ ...prev, [a.id]: { ...(prev[a.id] ?? defaultZb(a.name)), loading: false, error: String(e) } }));
+      }
+    }
+
+    // 전체 수집 완료 후 한번에 저장
+    const existingKeys = new Set(store.listings.map((l: Listing) => l.listingKey));
+    const newOnes = allImported.filter((l) => !existingKeys.has(l.listingKey));
+    if (newOnes.length > 0) store.setListings([...newOnes, ...store.listings]);
+    setBatchProgress(`완료 — ${newOnes.length}건 신규 저장 (중복 ${allImported.length - newOnes.length}건 제외)`);
+    setBatchRunning(false);
   }
 
   function importZigbang(listings: ZigbangListing[], type: "sale" | "jeonse") {
@@ -158,7 +215,23 @@ export function ListingFetcher({ apartments }: Props) {
 
   return (
     <div className="card p-5">
-      {/* 단지 선택 */}
+      {/* 전체 일괄 수집 */}
+      <div className="flex items-center gap-3 mb-3">
+        <button
+          className="btn-primary text-sm px-4 py-1.5 whitespace-nowrap"
+          disabled={batchRunning}
+          onClick={fetchAndImportAll}
+        >
+          {batchRunning ? "수집중…" : `전체 수집 (${apartments.length}개 단지)`}
+        </button>
+        {batchProgress && (
+          <span className={`text-sm ${batchRunning ? "text-blue-600" : "text-emerald-700 font-semibold"}`}>
+            {batchProgress}
+          </span>
+        )}
+      </div>
+
+      {/* 단지별 개별 수집 */}
       <div className="flex flex-wrap gap-2 mb-4">
         {apartments.map(({ apartment: a, role }) => (
           <button
