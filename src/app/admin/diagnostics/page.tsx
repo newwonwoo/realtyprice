@@ -121,9 +121,8 @@ export default function DiagnosticsPage() {
             <p className="font-semibold mb-1">문제 해결 가이드</p>
             <ul className="space-y-1 list-disc list-inside">
               <li>DB 연결 실패 → Vercel Storage 탭에서 Postgres 프로젝트 연결 확인</li>
-              <li>NAVER_COOKIE 경고 → Vercel 환경변수에 브라우저 Cookie 헤더값 추가</li>
-              <li>네이버 API 실패 → NAVER_COOKIE 만료, 브라우저에서 재추출 후 갱신</li>
               <li>공공데이터 API → /settings/api 에서 data.go.kr 키 등록 (브라우저 저장)</li>
+              <li>직방/KB API 실패 → Vercel 서버 IP 차단 여부 확인 (외부 크롤링 방어)</li>
             </ul>
           </div>
         </>
