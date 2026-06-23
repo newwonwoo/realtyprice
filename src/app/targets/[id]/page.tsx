@@ -5,6 +5,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
 import { UnifiedTransactionFetcher } from "@/components/targets/UnifiedTransactionFetcher";
+import { ListingFetcher, type ApartmentWithRole } from "@/components/listings/ListingFetcher";
 import { AptDetailInfo } from "@/components/targets/AptDetailInfo";
 import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
@@ -287,6 +288,27 @@ export default function TargetDetailPage() {
               comparables={selectedComparables}
               existingTransactions={[...targetTransactions, ...comparableTransactions]}
               onImport={importTransactions}
+            />
+          </div>
+        </details>
+
+        {/* ── 호가 수집 (직방/KB) ── */}
+        <details className="group" open>
+          <summary className="flex cursor-pointer items-center justify-between px-5 py-4 select-none">
+            <span className="font-semibold text-slate-700">호가 수집 (직방 · KB)</span>
+            <span className="text-xs text-slate-400">
+              {[apartment, ...selectedComparables].reduce((sum, a) =>
+                sum + store.listings.filter((l) => l.apartmentId === a.id).length, 0
+              )}건 수집됨
+            </span>
+          </summary>
+          <div className="border-t border-slate-100 p-4">
+            <ListingFetcher
+              apartments={[
+                { apartment, role: "target" },
+                ...(leaderApartment && !isSelfLeader ? [{ apartment: leaderApartment, role: "leader" as const }] : []),
+                ...selectedComparables.map((a): ApartmentWithRole => ({ apartment: a, role: "comparable" })),
+              ]}
             />
           </div>
         </details>
