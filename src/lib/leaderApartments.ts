@@ -120,11 +120,17 @@ export const LEADER_APARTMENTS: LeaderEntry[] = [
 
 // target 주소에서 가장 세분화된 매칭 구/시 찾기
 // 예: "경기 오산시 가수동" → "경기 오산시" 매칭
+// "경기도 오산시 원동" 처럼 도(道)가 붙은 주소도 정규화해서 매칭
 export function findLeaderForAddress(address: string): LeaderEntry | undefined {
   if (!address) return undefined;
+  // "경기도" → "경기", "충청남도" → "충청남" 등 도명 정규화
+  const normalized = address
+    .replace(/경기도/g, "경기")
+    .replace(/인천광역시/g, "인천")
+    .replace(/서울특별시/g, "서울");
   // 긴 region 키워드부터 매칭 (구·동 레벨 우선)
   const sorted = [...LEADER_APARTMENTS].sort((a, b) => b.region.length - a.region.length);
-  return sorted.find((entry) => address.includes(entry.region));
+  return sorted.find((entry) => normalized.includes(entry.region));
 }
 
 // 부동산원 complexPk로 대장 판별 (정식 ID 정확매칭)
@@ -141,8 +147,11 @@ export function isLeaderApartment(name: string, address: string, complexPk?: str
   if (!name) return false;
   const n = name.replace(/\s/g, "");
   if (!n) return false;
+  const normalizedAddr = address
+    ? address.replace(/경기도/g, "경기").replace(/인천광역시/g, "인천").replace(/서울특별시/g, "서울")
+    : "";
   return LEADER_APARTMENTS.some((entry) => {
-    if (address && !address.includes(entry.region)) return false;
+    if (normalizedAddr && !normalizedAddr.includes(entry.region)) return false;
     const e = entry.name.replace(/\s/g, "");
     // 한쪽이 다른쪽을 포함하면 같은 단지로 본다 (단, 너무 짧은 부분일치 방지: 4자 이상)
     return n === e || (n.length >= 4 && e.includes(n)) || (e.length >= 4 && n.includes(e));
