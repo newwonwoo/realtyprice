@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
-import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
+import { UnifiedTransactionFetcher } from "@/components/targets/UnifiedTransactionFetcher";
 import { AptDetailInfo } from "@/components/targets/AptDetailInfo";
 import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
@@ -268,15 +268,25 @@ export default function TargetDetailPage() {
 
       <AptDetailInfo apartment={apartment} />
 
-      {/* ── 실거래 가져오기 ── */}
+      {/* ── 실거래 통합수집 ── */}
       <div className="mt-6">
         <details open={targetTransactions.length === 0} className="card overflow-hidden">
           <summary className="flex cursor-pointer items-center justify-between p-5 font-bold text-slate-700 hover:bg-slate-50">
-            <span>실거래 가져오기</span>
-            <span className="text-sm font-normal text-slate-500">{targetTransactions.length > 0 ? `${targetTransactions.length + comparableTransactions.length}건 로드됨` : "데이터 없음"}</span>
+            <span>실거래 통합수집</span>
+            <span className="text-sm font-normal text-slate-500">
+              {(targetTransactions.length + comparableTransactions.length) > 0
+                ? `${targetTransactions.length + comparableTransactions.length}건 로드됨`
+                : "데이터 없음"}
+            </span>
           </summary>
           <div className="border-t border-slate-100">
-            <TransactionFetcher apartment={apartment} existingTransactions={[...targetTransactions, ...comparableTransactions]} onImport={importTransactions} />
+            <UnifiedTransactionFetcher
+              targetApartment={apartment}
+              leaderApartmentId={rule?.leaderApartmentId}
+              comparables={selectedComparables}
+              existingTransactions={[...targetTransactions, ...comparableTransactions]}
+              onImport={importTransactions}
+            />
           </div>
         </details>
       </div>
@@ -446,20 +456,6 @@ export default function TargetDetailPage() {
         <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
       </div>
 
-      {/* 대장아파트 실거래 수집 (대상≠대장인 경우에만) */}
-      {leaderApartment && !isSelfLeader && (
-        <div className="mt-4">
-          <p className="mb-2 text-sm font-bold text-blue-700">
-            대장아파트 실거래 수집 — {leaderApartment.shortName ?? leaderApartment.name}
-            {leaderTransactions.length > 0 && <span className="ml-2 text-xs font-normal text-slate-500">({leaderTransactions.length}건 보유)</span>}
-          </p>
-          <TransactionFetcher
-            apartment={leaderApartment}
-            existingTransactions={leaderTransactions}
-            onImport={importTransactions}
-          />
-        </div>
-      )}
     </AppShell>
   );
 }
