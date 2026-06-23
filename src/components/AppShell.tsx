@@ -14,6 +14,7 @@ const subNav = [
   ["백업/복원", "/backup"],
   ["실거래 수동입력", "/transactions"],
   ["사용 매뉴얼", "/help"],
+  ["시스템 진단", "/admin/diagnostics"],
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
