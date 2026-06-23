@@ -277,14 +277,23 @@ export function estimatePrice(params: {
       : weightedJeonsePrice || jeonseAskingMedian;
   const jeonseFloorPrice = calculateJeonseFloorPrice(expectedJeonsePrice, jeonseRatio);
 
-  // ── 매물소진 신호 ─────────────────────────────────────────────────
+  // ── 매물소진 신호 (MOI 기반 가격 앵커 보정) ──────────────────────
+  // MOI = 활성매물 / 월판매속도. 낮을수록 매도자 우위 → 가격 상향.
+  // 상승점수(upsideScore)의 moiScore와 역할이 다름:
+  //  - upsideScore.moiScore: 방향성 점수 (이산 임계값, stock÷flow 수급 타이트니스)
+  //  - inventorySignalPriceEffect: 가격 앵커에 직접 곱하는 배율 → 예상가 자체를 조정
+  const moiForPrice = params.monthsOfInventory ?? 0;
+  const inventoryMultiplier =
+    moiForPrice <= 0 ? 1.00    // 계산불가(매물·실거래 부족) → 중립
+    : moiForPrice < 2 ? 1.05   // 극단 매도자우위
+    : moiForPrice < 3 ? 1.04   // 강한 매도자우위
+    : moiForPrice < 4.5 ? 1.02 // 매도자우위
+    : moiForPrice <= 6 ? 1.00  // 균형
+    : moiForPrice <= 9 ? 0.99  // 매수자우위
+    : 0.98;                    // 강한 매수자우위
   const lowPriceAbsorptionRate = params.lowPriceAbsorptionRate ?? 0;
   const priceAnchor = targetSalePrice || saleAskingPrice || adjustedComparableSalePrice || comparableAskingPrice || jeonseFloorPrice;
-  const inventorySignalPriceEffect = priceAnchor * (
-    lowPriceAbsorptionRate >= 0.3 ? 1.04
-    : lowPriceAbsorptionRate >= 0.15 ? 1.02
-    : 1
-  );
+  const inventorySignalPriceEffect = priceAnchor * inventoryMultiplier;
 
   // ── 분양가 프리미엄 ──────────────────────────────────────────────
   // 고정 5% 대신: 비교단지 대비 분양가 비율로 동적 산출
@@ -298,9 +307,7 @@ export function estimatePrice(params: {
     presalePremiumPrice = Math.round(params.presalePrice * Math.min(1.30, Math.max(0.90, premiumRatio)));
   }
 
-  // ── 거시환경 ─────────────────────────────────────────────────────
-  // macroSignalPrice가 없으면 이 컴포넌트는 가중치 0으로 제외
-  const macroSignalPrice = params.macroSignalPrice ?? 0;
+  const macroSignalPrice = 0; // 거시환경 입력 경로 미구현 → 제외
 
   // ── 대장아파트 앵커 ───────────────────────────────────────────────
   // Giacoletti & Parsons (2023, RFS): spillover γ = 0.25~0.50
@@ -496,7 +503,6 @@ export function estimatePrice(params: {
         priceFactor("전세기반 하방가", "가격 — 전세 실거래가(보증금) ÷ 전세가율", jeonseFloorPrice, weights.jeonseFloorPrice ?? 0),
         priceFactor("매물 소진 반영가", "매물 수 — 저가매물 소진율(스냅샷)", inventorySignalPriceEffect, weights.inventorySignal ?? 0),
         priceFactor("분양가 프리미엄", "가격 — 분양가 대비 실거래 시세비율", presalePremiumPrice, weights.presalePremium ?? 0),
-        priceFactor("거시환경", "가격 — 사용자 입력 거시 가격", macroSignalPrice, macroSignalPrice > 0 ? (weights.macroSignal ?? 0) : 0),
         priceFactor("대장아파트 앵커", "가격 — 대장 실거래 환산가 × 비율", leaderApartmentAnchorPrice, leaderApartmentAnchorPrice > 0 ? (weights.leaderApartmentAnchor ?? 0) : 0),
         priceFactor("대상 입지 보정", "입지 점수 — 역세권·학군 등", locationPremiumPrice, locationPremiumPrice > 0 ? (weights.locationPremium ?? 0) : 0),
         priceFactor("비교단지 상·하급지 압력", "등급(가격대) — 비교단지 등급차", comparableMarketPressurePrice, comparableMarketPressurePrice > 0 ? (weights.comparableMarketPressure ?? 0) : 0),
@@ -548,7 +554,6 @@ export function estimatePrice(params: {
     leaderApartmentAnchorPrice === 0 && (weights.leaderApartmentAnchor ?? 0) > 0 ? "대장아파트가 미설정되어 해당 구성요소가 제외됐습니다." : null,
     params.saleTransactions.filter((tx) => temporalWeight(tx.contractDate ?? "") < 1.0).length > params.saleTransactions.length * 0.5
       ? "실거래 데이터 대부분이 6개월 초과로 신뢰도가 낮습니다." : null,
-    macroSignalPrice === 0 && weights.macroSignal > 0 ? "거시환경 가격을 입력하지 않아 해당 가중치가 제외됐습니다." : null,
     params.targetSaleTransactions.length === 0 ? "대상단지 매매/분양권 실거래가 없어 대상 실거래 앵커가 제외됐습니다." : null,
     (params.comparableSaleListings ?? []).length === 0 ? "비교단지 호가가 없어 비교 호가 앵커가 제외됐습니다." : null,
     "사라진 매물은 거래완료가 아니라 소진추정입니다.",
