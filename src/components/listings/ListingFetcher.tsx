@@ -66,6 +66,7 @@ type KbPrice = {
 
 type KbState = {
   loading: boolean;
+  searchQuery: string; // 사용자가 수정 가능한 KB 검색어
   reasonCode: string;  // ok | complex_not_found | no_area_types | no_priced_area | no_price_data | blocked | error
   reason: string;
   complexList: KbComplex[];
@@ -87,8 +88,8 @@ const defaultZb = (name = ""): ZbState => ({
   reasonCode: "", reason: "",
   complexList: [], selectedId: "", sale: [], jeonse: [],
 });
-const defaultKb = (): KbState => ({
-  loading: false, reasonCode: "", reason: "",
+const defaultKb = (name = ""): KbState => ({
+  loading: false, searchQuery: name, reasonCode: "", reason: "",
   complexList: [], selectedNo: "", areaTypes: [], prices: [],
 });
 
@@ -119,13 +120,13 @@ export function ListingFetcher({ apartments }: Props) {
   const apt = selectedEntry?.apartment;
 
   const zb = zbStates[selectedAptId] ?? defaultZb(apt?.name ?? "");
-  const kb = kbStates[selectedAptId] ?? defaultKb();
+  const kb = kbStates[selectedAptId] ?? defaultKb(apt?.name ?? "");
 
   function patchZb(id: string, patch: Partial<ZbState>) {
     setZbStates((p) => ({ ...p, [id]: { ...(p[id] ?? defaultZb()), ...patch } }));
   }
   function patchKb(id: string, patch: Partial<KbState>) {
-    setKbStates((p) => ({ ...p, [id]: { ...(p[id] ?? defaultKb()), ...patch } }));
+    setKbStates((p) => ({ ...p, [id]: { ...(p[id] ?? defaultKb(apt?.name ?? "")), ...patch } }));
   }
 
   // ── 직방: 브라우저에서 직접 호출 (Vercel IP 차단 우회) ──────────
@@ -303,9 +304,10 @@ export function ListingFetcher({ apartments }: Props) {
   async function fetchKb(complexNo?: string) {
     if (!apt) return;
     patchKb(apt.id, { loading: true, reasonCode: "", reason: "" });
+    const query = (kbStates[apt.id]?.searchQuery ?? apt.name).trim() || apt.name;
     const params = new URLSearchParams();
     if (complexNo) params.set("complexNo", complexNo);
-    else params.set("aptName", apt.name);
+    else params.set("aptName", query);
     if (apt.defaultArea) params.set("area", String(apt.defaultArea));
     try {
       const res = await fetch(`/api/kb-price?${params}`);
@@ -480,8 +482,14 @@ export function ListingFetcher({ apartments }: Props) {
       {tab === "kb" && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-600 flex-1"><strong>{apt.name}</strong> KB시세 (매매·전세 일반·상한·하한)</span>
-            <button className="btn-primary text-sm px-4 py-1.5" disabled={kb.loading} onClick={() => fetchKb()}>
+            <input
+              className="input flex-1 text-sm"
+              value={kb.searchQuery ?? apt.name}
+              onChange={(e) => patchKb(apt.id, { searchQuery: e.target.value })}
+              placeholder="검색어 수정 가능 (예: 누읍휴먼시아)"
+              onKeyDown={(e) => e.key === "Enter" && fetchKb()}
+            />
+            <button className="btn-primary text-sm px-4 py-1.5 whitespace-nowrap" disabled={kb.loading} onClick={() => fetchKb()}>
               {kb.loading ? "조회중…" : "조회"}
             </button>
           </div>
