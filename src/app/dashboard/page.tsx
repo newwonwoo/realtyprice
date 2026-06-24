@@ -136,7 +136,7 @@ function buildSteps(store: any, hasApiKey: boolean): Step[] {
       label: "⑤ 호가/매물 수집",
       detail: listingCount
         ? `${listingCount}건 수집됨 — 매물소진율 산출 가능`
-        : "네이버 부동산 호가 자동수집 · 저가매물 소진율(매물소진속도 신호) 산출",
+        : "대상아파트 페이지에서 직방 호가 전체 수집 (대상·대장·비교단지) · MOI 산출",
       done: listingCount > 0,
       href: "/listings",
     },
