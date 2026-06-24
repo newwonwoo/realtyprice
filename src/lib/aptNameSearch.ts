@@ -3,28 +3,48 @@
  *
  * 한국 아파트 등록명은 포털별로 다르게 표기되는 경우가 많음:
  *  - 특수문자: "S-클래스" → "S클래스" (직방은 하이픈 미지원)
- *  - 부제: "에듀하이" 같은 단어가 앞/뒤로 붙어 긴 이름 생성
+ *  - 부제: "에듀하이" 같은 마케팅 펫네임이 앞/뒤로 붙어 긴 이름 생성
  *  - 단지 번호: "1단지", "A동" 등 포털마다 포함/제외 다름
- *  - 브랜드 영문: "힐스테이트", "래미안", "e편한세상" 등
+ *  - 브랜드 표기 차이: "e편한세상" ↔ "이편한세상", 하이픈 유무
  *
- * 전략: 원본 → 특수문자 제거 → 브랜드 사전으로 분리 → 지역명+브랜드 / 브랜드+부제 / 브랜드만
- * 평균 4개 후보, 중복 제거
+ * 전략: 원본 → 특수문자 제거 → 브랜드 사전으로 분리 → 지역+브랜드/브랜드+부제/브랜드만
+ * 브랜드 별칭(e편한세상↔이편한세상)도 자동 생성, 평균 4개 이상 후보 반환
  */
 
 // 알려진 브랜드 — 길이 내림차순 (부분 매칭 방지)
 const KNOWN_BRANDS: string[] = [
+  // 대형사
   "e편한세상", "이편한세상", "힐스테이트", "래미안", "롯데캐슬",
-  "아이파크", "푸르지오", "더샵", "SK뷰", "자이", "아크로",
-  "포레나", "중흥", "호반베르디움", "호반", "써밋플레이스",
-  "해링턴플레이스", "한양수자인", "리첸시아", "골든센트로", "트리마제",
+  "아이파크", "푸르지오", "두산위브", "더샵", "SK뷰", "자이",
+  "아크로", "포레나",
+  // 중견사
+  "중흥", "호반베르디움", "호반써밋", "호반",
+  "금호어울림", "금호",
+  "반도유보라", "반도",
+  "우미린", "우미",
+  "대방노블랜드", "대방",
+  "써밋플레이스", "써밋",
+  "해링턴플레이스", "해링턴",
+  "한양수자인", "한양",
+  "리첸시아", "골든센트로", "트리마제",
+  "신안인스빌", "우방아이유쉘", "제일풍경채",
+  "엠코헤리츠", "동원로얄듀크",
 ].sort((a, b) => b.length - a.length);
 
-// 단지명 뒤(또는 지역명 뒤)에 붙는 마케팅 부제 — 길이 내림차순
+// 브랜드 별칭 — 검색 실패 시 대체 표기로 추가 후보 생성
+const BRAND_ALIASES: Record<string, string> = {
+  "e편한세상": "이편한세상",
+  "이편한세상": "e편한세상",
+};
+
+// 단지명 뒤(또는 지역명 뒤)에 붙는 마케팅 부제/펫네임 — 길이 내림차순
 const KNOWN_SUFFIXES: string[] = [
   "더프리미어", "마리나베이", "메가트리아", "센터피스", "그랑블",
   "엘센트로", "골드파크", "스타시티", "크레시티", "리버파크",
   "리버하임", "팰리스", "포레스트", "더파크", "센트럴", "에듀하이",
   "마스터", "더힐", "더스타", "베르디움", "클래스",
+  "더제니스", "더테라스", "포레", "더클래스", "파크뷰", "시티뷰",
+  "루체하임", "레이크뷰", "더퍼스트",
 ].sort((a, b) => b.length - a.length);
 
 // 괄호/특수문자 제거 후 정규화
@@ -58,8 +78,8 @@ function stripKnownSuffix(text: string): string | null {
  * 예: "마곡힐스테이트마스터" →
  *   ["마곡힐스테이트마스터", "마곡힐스테이트", "힐스테이트마스터", "힐스테이트"]
  *
- * 예: "중흥S-클래스에듀하이" →
- *   ["중흥S-클래스에듀하이", "중흥S클래스에듀하이", "중흥", "중흥S클래스", "중흥S클"]
+ * 예: "e편한세상계양더프리미어" →
+ *   ["e편한세상계양더프리미어", "e편한세상", "e편한세상계양", "이편한세상계양", ...]
  */
 export function generateSearchCandidates(name: string): string[] {
   const candidates: string[] = [];
@@ -78,35 +98,49 @@ export function generateSearchCandidates(name: string): string[] {
   // 3. 단지번호/차수 제거
   push(stripComplexNo(norm));
 
-  // 4. 브랜드 사전으로 분리 → 지역명+브랜드 / 브랜드+부제 / 브랜드만
+  // 4. 브랜드 사전으로 분리
   const normLower = norm.toLowerCase();
   for (const brand of KNOWN_BRANDS) {
     const idx = normLower.indexOf(brand.toLowerCase());
     if (idx === -1) continue;
 
     const actualBrand = norm.slice(idx, idx + brand.length);
-    const prefix = norm.slice(0, idx);                   // 브랜드 앞 (지역명 ± 부제)
-    const suffix = norm.slice(idx + brand.length);       // 브랜드 뒤 (부제 ± 단지번호)
+    const prefix = norm.slice(0, idx);                  // 브랜드 앞 (지역명 ± 부제)
+    const suffix = norm.slice(idx + brand.length);      // 브랜드 뒤 (부제 ± 단지번호)
+    const alias = BRAND_ALIASES[actualBrand];
 
-    // 4a. 지역명+브랜드 (prefix + brand, suffix 제거)
+    // 4a. 지역+브랜드 (suffix 제거)
     push(prefix + actualBrand);
 
-    // 4b. 브랜드+부제 (suffix 있을 때, prefix 제거)
+    // 4b. 브랜드+부제 (prefix 제거)
     if (suffix) push(actualBrand + suffix);
 
     // 4c. 브랜드만
     push(actualBrand);
 
-    // 4d. 브랜드가 맨 앞에 올 때: suffix에서 부제를 떼어 지역명만 추출
-    if (!prefix && suffix) {
-      const loc = stripKnownSuffix(suffix);
-      if (loc) push(actualBrand + loc);          // "래미안대치", "더샵송도"
-      if (suffix.length > 2) push(actualBrand + suffix.slice(0, 2)); // 지역 2글자
+    // 4d. 브랜드 별칭 (e편한세상 ↔ 이편한세상) — prefix 없이 별칭만
+    if (alias) {
+      push(alias);                                       // 별칭만
+      if (suffix) push(alias + suffix);                  // 별칭+부제
+      push(prefix + alias);                              // 지역+별칭 (prefix가 있을 때만 의미 있음)
     }
 
-    // 4e. prefix 끝에 부제가 붙어있으면 떼어 순수 지역명+브랜드 생성
+    // 4e. 브랜드가 맨 앞에 올 때: suffix에서 부제를 떼어 지역명 추출
+    if (!prefix && suffix) {
+      const loc = stripKnownSuffix(suffix);
+      if (loc) {
+        push(actualBrand + loc);                         // "래미안대치", "더샵송도"
+        if (alias) push(alias + loc);                    // 별칭+지역 "이편한세상계양"
+      }
+      if (suffix.length > 2) push(actualBrand + suffix.slice(0, 2)); // 지역 2글자
+      // 단지번호 제거 버전도 별칭으로
+      const noNo = stripComplexNo(suffix);
+      if (noNo !== suffix && alias) push(alias + noNo);
+    }
+
+    // 4f. prefix 끝에 부제가 붙어있으면 제거 → 순수 지역+브랜드
     if (prefix) {
-      const cleanPrefix = stripKnownSuffix(prefix); // "사가정센트럴" → "사가정"
+      const cleanPrefix = stripKnownSuffix(prefix);     // "사가정센트럴" → "사가정"
       if (cleanPrefix) push(cleanPrefix + actualBrand); // "사가정아이파크"
     }
 
