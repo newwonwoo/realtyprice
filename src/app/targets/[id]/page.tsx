@@ -160,9 +160,34 @@ export default function TargetDetailPage() {
     const targetSaleListings = targetListings.filter((item) => item.listingType === "sale");
     const targetJeonseListings = targetListings.filter((item) => item.listingType === "jeonse");
     const comparableSaleListings = comparableListings.filter((item) => item.listingType === "sale");
-    // 모집공고 분양가(청약홈) 우선, 없으면 분양권 전매 실거래 중간값 fallback
     const presaleTxMedian = median(targetTransactions.filter((item) => item.transactionType === "presale").map((item) => item.price));
     const presalePrice = apartment?.originalPresalePrice ?? presaleTxMedian;
+
+    // KB 매수우위지수 + 가격전망지수 → macroSignalPrice 계산 (실패 시 0으로 폴백)
+    let macroSignalPrice = 0;
+    try {
+      const macroRes = await fetch("/api/kb-macro?weekly=true");
+      if (macroRes.ok) {
+        const macroJson = await macroRes.json();
+        if (macroJson.reasonCode === "ok" && macroJson.data) {
+          const { buyerDominance, priceOutlook } = macroJson.data;
+          // 매수우위지수(0-200): 100=중립, >100=매수자우위 → 초과분을 ±10% 보정폭으로 변환
+          // 가격전망지수(0-200): 100=중립, >100=상승전망
+          // 두 지수 평균 → 기준가격 대비 ±5% 내 보정 (가중치 3%의 실질적 앵커)
+          const buyerSignal = buyerDominance > 0 ? (buyerDominance - 100) / 100 : 0; // -1 ~ +1
+          const outlookSignal = priceOutlook > 0 ? (priceOutlook - 100) / 100 : 0;
+          const combined = (buyerSignal + outlookSignal) / 2; // -1 ~ +1
+          const anchor = targetSaleListings[0]
+            ? median(targetSaleListings.map((l) => l.askingPrice))
+            : (latestEstimate?.expectedSaleMid ?? 0);
+          if (anchor > 0) {
+            // combined 범위 제한: ±0.05 (±5% 최대 보정)
+            macroSignalPrice = Math.round(anchor * (1 + Math.min(0.05, Math.max(-0.05, combined * 0.1))));
+          }
+        }
+      }
+    } catch { /* 조용히 실패 — macroSignalPrice=0으로 폴백 */ }
+
     const result = estimatePrice({
       targetApartmentId: id,
       targetSaleTransactions: targetTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
@@ -180,6 +205,7 @@ export default function TargetDetailPage() {
       monthsOfInventory: inventorySignal?.monthsOfInventory ?? 0,
       comparableWeights,
       presalePrice,
+      macroSignalPrice,
       leaderTransactions,
       targetToLeaderRatio: isSelfLeader ? 1.0 : rule?.targetToLeaderRatio,
       regionProfile: regionProfileFromAddress(apartment?.address),

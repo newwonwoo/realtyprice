@@ -307,7 +307,7 @@ export function estimatePrice(params: {
     presalePremiumPrice = Math.round(params.presalePrice * Math.min(1.30, Math.max(0.90, premiumRatio)));
   }
 
-  const macroSignalPrice = 0; // 거시환경 입력 경로 미구현 → 제외
+  const macroSignalPrice = params.macroSignalPrice ?? 0;
 
   // ── 대장아파트 앵커 ───────────────────────────────────────────────
   // Giacoletti & Parsons (2023, RFS): spillover γ = 0.25~0.50
