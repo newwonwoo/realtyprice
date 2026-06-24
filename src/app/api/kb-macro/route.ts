@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Edge Runtime: Lambda(ap-northeast-1)와 다른 Cloudflare 엣지 IP 풀 사용
+// → api.kbland.kr Lambda IP 차단을 우회하는 첫 번째 방어선
+export const runtime = "edge";
+
 // data-api.kbland.kr — 역공학 엔드포인트 (PublicDataReader 참조)
 // 메뉴코드 01=매수우위지수, 02=매매거래활발지수, 03=전세수급지수, 05=매매가격전망지수
 // 월간주간구분코드 01=월간, 02=주간 (05는 월간만 지원)
