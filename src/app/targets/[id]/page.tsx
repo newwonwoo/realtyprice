@@ -26,6 +26,14 @@ const conclusionLabel: Record<string, string> = {
   price_cut_needed: "매각가 조정 필요",
   insufficient_data: "데이터 부족",
 };
+const conclusionDesc: Record<string, string> = {
+  strong_up: "상승 신호 다수, 매입 긍정적",
+  up: "상승 조건 충족",
+  neutral: "상승·하락 신호 균형",
+  weak: "약세 신호, 매입 주의",
+  price_cut_needed: "현 호가 과열, 매각 검토",
+  insufficient_data: "데이터를 보완하세요",
+};
 const conclusionColor: Record<string, string> = {
   strong_up: "text-emerald-700",
   up: "text-blue-700",
@@ -434,6 +442,9 @@ export default function TargetDetailPage() {
           <p className={`mt-2 text-xl font-black ${latestEstimate ? conclusionColor[latestEstimate.conclusion] : "text-slate-300"}`}>
             {latestEstimate ? conclusionLabel[latestEstimate.conclusion] : "계산 필요"}
           </p>
+          {latestEstimate && (
+            <p className="mt-1 text-xs text-slate-500">{conclusionDesc[latestEstimate.conclusion]}</p>
+          )}
         </div>
         <div className="rounded-xl border border-l-4 border-blue-400 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 매매가</p>
@@ -526,7 +537,7 @@ export default function TargetDetailPage() {
             <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} />
             <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
             <Summary label="하위호가 소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} title="호가 목록에서 가격 하위 30% 매물이 사라진 비율. 사라진 매물 = 판매 가능성 높음. 높을수록 상승압력 강함." />
-            <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} title="가격앵커 데이터 충분도 (0~100점). 실거래·호가가 많을수록 높아집니다." />
+            <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점 (${latestEstimate.confidenceScore <= 30 ? "낮음" : latestEstimate.confidenceScore <= 60 ? "중간" : "높음"})` : "-"} title="가격앵커 데이터 충분도 (0~100점). 실거래·호가가 많을수록 높아집니다." />
             <Summary label="적용 평형" value={`${latestEstimate?.selectedArea ?? effectiveArea}㎡`} />
           </div>
         </div>
