@@ -18,13 +18,13 @@ export const defaultComparableRule = (targetApartmentId: string): ComparableRule
 
 export const defaultModelWeights: ModelWeights = {
   targetSale: 0.20,
-  adjustedComparableSale: 0.25,
+  adjustedComparableSale: 0.23,
   comparableAskingPrice: 0.10,
   askingPrice: 0.12,
   jeonseFloorPrice: 0.10,
   inventorySignal: 0.08,
   presalePremium: 0.05,
-  macroSignal: 0,
+  macroSignal: 0.03,
   leaderApartmentAnchor: 0.05,
   locationPremium: 0.02,
   comparableMarketPressure: 0.02

@@ -35,7 +35,9 @@ export default function ModelSettingsPage() {
     <AppShell>
       <div className="mb-8"><p className="text-sm font-semibold text-blue-600">Model</p><h1 className="text-3xl font-black">가격추정 모델 설정</h1></div>
       <div className="card p-5">
-        <p className="mb-5 text-sm text-slate-600">가중치 합계: {(total * 100).toFixed(0)}%</p>
+        <p className={`mb-5 text-sm font-semibold ${Math.abs(total - 1) < 0.005 ? "text-green-600" : "text-red-600"}`}>
+          가중치 합계: {(total * 100).toFixed(0)}%{Math.abs(total - 1) >= 0.005 ? " — 합계가 100%가 되어야 합니다" : " ✓"}
+        </p>
         <div className="space-y-4">
           {(Object.keys(weights) as (keyof ModelWeights)[]).map((key) => (
             <label key={key} className="grid gap-3 md:grid-cols-[1fr_180px] md:items-center">
