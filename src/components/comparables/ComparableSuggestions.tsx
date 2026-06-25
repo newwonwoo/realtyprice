@@ -343,7 +343,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
               </div>
               <table className="table w-full">
                 <thead>
-                  <tr><th>단지명</th><th>등급</th><th>거리</th><th>세대</th><th>준공</th><th>배정초교</th><th>신입생</th><th></th></tr>
+                  <tr><th>단지명</th><th>등급</th><th>거리</th><th className="text-right">세대</th><th>준공</th><th>배정초교</th><th>신입생</th><th></th></tr>
                 </thead>
                 <tbody>
                   {suggestions.map((item) => {
