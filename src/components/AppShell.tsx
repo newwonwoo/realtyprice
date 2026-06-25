@@ -63,7 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               href={href}
               className={`block rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
                 active(href)
-                  ? "bg-slate-100 text-slate-800"
+                  ? "border-l-2 border-slate-400 bg-slate-100 pl-[10px] text-slate-800"
                   : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
               }`}
             >
@@ -109,7 +109,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={href}
                   href={href}
                   className={`block rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    active(href) ? "bg-slate-100 text-slate-800" : "text-slate-500 hover:bg-slate-50"
+                    active(href) ? "border-l-2 border-slate-400 bg-slate-100 pl-[10px] text-slate-800" : "text-slate-500 hover:bg-slate-50"
                   }`}
                 >
                   {label}
