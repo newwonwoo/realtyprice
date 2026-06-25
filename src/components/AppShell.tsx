@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Menu, X } from "lucide-react";
 
 const mainNav: [string, string][] = [
   ["① 대상아파트", "/targets"],
@@ -21,6 +23,12 @@ const subNav: [string, string][] = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // 경로 변경 시 모바일 메뉴 자동 닫기
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   function active(href: string) {
     if (pathname === href) return true;
@@ -65,34 +73,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <header className="border-b border-slate-200 bg-white lg:hidden">
-        <div className="px-4 py-3">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white lg:hidden">
+        <div className="flex items-center justify-between px-4 py-3">
           <Link href="/" className="text-base font-black text-slate-950">realtyprice</Link>
-          <nav className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
-            {mainNav.map(([label, href]) => (
-              <Link
-                key={href}
-                href={href}
-                className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-bold ${
-                  active(href) ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
-            {subNav.map(([label, href]) => (
-              <Link
-                key={href}
-                href={href}
-                className={`whitespace-nowrap rounded-md border px-3 py-1.5 text-xs font-semibold ${
-                  active(href) ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
+          <button
+            type="button"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label={mobileOpen ? "메뉴 닫기" : "메뉴 열기"}
+            aria-expanded={mobileOpen}
+            className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100"
+          >
+            {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
         </div>
+        {mobileOpen && (
+          <nav className="border-t border-slate-100 px-4 pb-4 pt-2">
+            <div className="space-y-0.5">
+              {mainNav.map(([label, href]) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`block rounded-md px-3 py-2 text-sm font-bold transition-colors ${
+                    active(href)
+                      ? "border-l-2 border-blue-500 bg-blue-50 pl-[10px] text-blue-700"
+                      : "text-slate-700 hover:bg-blue-50"
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+            <div className="mt-3 border-t border-slate-100 pt-3 space-y-0.5">
+              {subNav.map(([label, href]) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`block rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    active(href) ? "bg-slate-100 text-slate-800" : "text-slate-500 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        )}
       </header>
 
       <main className="lg:pl-56">

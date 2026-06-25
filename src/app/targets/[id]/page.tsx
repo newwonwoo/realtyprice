@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { AppShell } from "@/components/AppShell";
@@ -33,13 +34,14 @@ const conclusionColor: Record<string, string> = {
   price_cut_needed: "text-red-700",
   insufficient_data: "text-slate-400",
 };
+// 의미별 1색 원칙: 보합=slate(텍스트색과 일치), 약세=amber, 충돌 제거
 const conclusionBg: Record<string, string> = {
   strong_up: "bg-emerald-50 border-emerald-200",
   up: "bg-blue-50 border-blue-200",
-  neutral: "bg-amber-50 border-amber-200",
+  neutral: "bg-slate-50 border-slate-200",
   weak: "bg-amber-50 border-amber-200",
   price_cut_needed: "bg-red-50 border-red-200",
-  insufficient_data: "bg-slate-50 border-slate-200",
+  insufficient_data: "bg-slate-50 border-dashed border-slate-300",
 };
 
 export default function TargetDetailPage() {
@@ -53,6 +55,7 @@ export default function TargetDetailPage() {
   const [supplyLoading, setSupplyLoading] = useState(false);
   const [editingMoveIn, setEditingMoveIn] = useState(false);
   const [moveInInput, setMoveInInput] = useState("");
+  const [tab, setTab] = useState<"setup" | "analysis" | "model">("setup");
 
   const apartment = store.targets.find((item) => item.id === id);
   const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
@@ -243,6 +246,7 @@ export default function TargetDetailPage() {
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
     setEstimating(false);
     setJustDone(true);
+    setTab("analysis");
     setTimeout(() => setJustDone(false), 5000);
   }
 
@@ -254,8 +258,12 @@ export default function TargetDetailPage() {
     <AppShell>
       <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
         <div>
-          <p className="text-sm font-semibold text-blue-600">Target detail</p>
-          <h1 className="text-3xl font-black">{apartment.name}</h1>
+          <nav className="flex items-center gap-1.5 text-sm text-slate-400">
+            <Link href="/targets" className="font-semibold hover:text-blue-600">대상아파트</Link>
+            <span>/</span>
+            <span className="font-semibold text-slate-600">{apartment.name}</span>
+          </nav>
+          <h1 className="mt-1.5 text-3xl font-black">{apartment.name}</h1>
           <p className="mt-2 text-slate-600">{apartment.address}</p>
         </div>
         <div className="flex flex-col gap-2 items-start sm:items-end">
@@ -322,6 +330,31 @@ export default function TargetDetailPage() {
         </div>
       </div>
 
+      {/* ── 탭 ── */}
+      <div className="mb-6 flex gap-1 border-b border-slate-200">
+        {([
+          ["setup", "데이터 설정"],
+          ["analysis", "분석 결과"],
+          ["model", "모델 상세"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`relative -mb-px border-b-2 px-4 py-2.5 text-sm font-bold transition-colors ${
+              tab === key
+                ? "border-blue-500 text-blue-700"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {label}
+            {key === "model" && !latestEstimate && <span className="ml-1 text-xs text-slate-300">(추정 후)</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === "setup" && (
+      <>
       <AptDetailInfo apartment={apartment} />
 
       {/* ── 실거래 통합수집 ── */}
@@ -368,14 +401,13 @@ export default function TargetDetailPage() {
         </details>
       </div>
 
-      {/* ── 섹션 구분선 ── */}
-      <div className="relative my-8">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
-        <div className="relative flex justify-center"><span className="bg-slate-50 px-4 text-sm font-bold text-slate-400">분석 결과</span></div>
-      </div>
+      </>
+      )}
 
+      {tab === "analysis" && (
+      <>
       {/* ── 결과 요약 ── */}
-      <div className="grid gap-5 lg:grid-cols-4 mt-6">
+      <div className="grid gap-5 lg:grid-cols-4">
         <div className={`rounded-xl border p-5 shadow-sm ${latestEstimate ? conclusionBg[latestEstimate.conclusion] : "bg-white border-slate-200"}`}>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">결론</p>
           <p className={`mt-2 text-xl font-black ${latestEstimate ? conclusionColor[latestEstimate.conclusion] : "text-slate-300"}`}>
@@ -404,7 +436,7 @@ export default function TargetDetailPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+      <div className="mt-6">
         <div className="card p-6 bg-gradient-to-br from-white to-blue-50/30">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
@@ -477,9 +509,29 @@ export default function TargetDetailPage() {
             <Summary label="적용 평형" value={`${latestEstimate?.selectedArea ?? effectiveArea}㎡`} />
           </div>
         </div>
+      </div>
 
-        {latestEstimate && latestEstimate.modelBreakdown.length > 0 && (
-          <div className="card p-6 lg:col-span-2">
+      <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} accent="blue" />
+        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다." accent="emerald" />
+        <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} accent="violet" />
+        <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} accent="amber" />
+        <DataCard
+          title="하위호가 소진율"
+          value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"}
+          description={inventorySignal?.conclusion === "strong_up" ? "하위 30% 가격대 매물 소진 30%↑ — 상승 신호" : "호가/매물 화면에서 하위 30% 호가 매물 소진 비율을 산출합니다."}
+          accent={inventorySignal?.conclusion === "strong_up" ? "red" : "slate"}
+          fireSignal={inventorySignal?.conclusion === "strong_up"}
+        />
+        <LocationFeaturesCard apartment={apartment} />
+        <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
+      </div>
+      </>
+      )}
+
+      {tab === "model" && (
+        latestEstimate && latestEstimate.modelBreakdown.length > 0 ? (
+          <div className="card p-6">
             <h2 className="text-xl font-black">가격추정 모델 전체</h2>
             <p className="mt-1 text-xs text-slate-500">
               평가요소별로 <b>참조값(가격·거래량 등)</b>, 측정 <b>원점수</b>, 적용 <b>가중치·배점</b>, 최종 <b>결과</b>를 분리해 표시합니다.
@@ -514,24 +566,14 @@ export default function TargetDetailPage() {
               </div>
             )}
           </div>
-        )}
-      </div>
-
-      <div className="mt-6 grid gap-5 lg:grid-cols-3">
-        <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} accent="blue" />
-        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다." accent="emerald" />
-        <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} accent="violet" />
-        <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} accent="amber" />
-        <DataCard
-          title="하위호가 소진율"
-          value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"}
-          description={inventorySignal?.conclusion === "strong_up" ? "하위 30% 가격대 매물 소진 30%↑ — 상승 신호" : "호가/매물 화면에서 하위 30% 호가 매물 소진 비율을 산출합니다."}
-          accent={inventorySignal?.conclusion === "strong_up" ? "red" : "slate"}
-          fireSignal={inventorySignal?.conclusion === "strong_up"}
-        />
-        <LocationFeaturesCard apartment={apartment} />
-        <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
-      </div>
+        ) : (
+          <div className="card p-10 text-center">
+            <p className="text-base font-semibold text-slate-700">아직 추정 결과가 없습니다</p>
+            <p className="mt-1 text-sm text-slate-400">분석 결과 탭에서 가격추정을 먼저 실행하세요.</p>
+            <button type="button" onClick={() => setTab("analysis")} className="btn-primary mt-4 text-sm">분석 결과로 이동</button>
+          </div>
+        )
+      )}
 
     </AppShell>
   );

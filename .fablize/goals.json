@@ -1,0 +1,48 @@
+{
+ "brief": "realtyprice 남은 UX 개선 작업",
+ "created": "2026-06-25T03:57:50.991453+00:00",
+ "goals": [
+  {
+   "id": "G001",
+   "title": "모바일 햄버거 메뉴",
+   "objective": "AppShell 모바일 헤더에 토글 메뉴 추가",
+   "status": "complete",
+   "evidence": "AppShell 모바일 헤더에 Menu/X 토글 추가, 경로변경 시 자동 닫힘, sticky 헤더"
+  },
+  {
+   "id": "G002",
+   "title": "상태 색상 통일",
+   "objective": "결론배지·MOI 시맨틱 3색으로 정리",
+   "status": "complete",
+   "evidence": "결론배지 neutral/weak amber 충돌 제거(neutral→slate), insufficient_data 점선. MOI는 이미 동일 팔레트. 빌드 통과"
+  },
+  {
+   "id": "G003",
+   "title": "Target 상세 탭 분리",
+   "objective": "설정/추정/모델상세 탭으로 분리",
+   "status": "complete",
+   "evidence": "Target 상세를 setup/analysis/model 3탭으로 분리. 헤더·단계표시는 상단 고정. 추정 완료 시 analysis 자동전환, model탭 추정전 빈상태+이동버튼. 빌드 통과"
+  },
+  {
+   "id": "G004",
+   "title": "비교단지 필터 패널",
+   "objective": "7개 필터를 접이식 패널로",
+   "status": "complete",
+   "evidence": "비교단지 필터: 최대거리만 항상 노출, 나머지 5개(입주연도/세대수/면적/키워드)는 details 접이식 패널로. group-open 화살표 회전"
+  },
+  {
+   "id": "G005",
+   "title": "매물 폼 그룹화",
+   "objective": "필수/선택 입력 그룹 분리",
+   "status": "complete",
+   "evidence": "매물폼 필수입력(단지/유형/호가/면적/수집일) 라벨 추가, 선택입력(층/동/호수/향/매물키/등급) details 접이식, CSV 별도 섹션 분리. 빌드 통과"
+  },
+  {
+   "id": "G006",
+   "title": "breadcrumb",
+   "objective": "상세 페이지 경로 표시",
+   "status": "complete",
+   "evidence": "Target 상세 헤더에 breadcrumb(대상아파트 / 단지명) 추가, Link import"
+  }
+ ]
+}
