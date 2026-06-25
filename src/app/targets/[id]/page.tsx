@@ -305,7 +305,8 @@ export default function TargetDetailPage() {
         </div>
       </div>
 
-      {/* ── 단계별 진행 동선 ── */}
+      {/* ── 단계별 진행 동선 (설정 단계에서만 노출) ── */}
+      {tab === "setup" && (
       <div className="mb-6 card p-4">
         <div className="flex items-center flex-wrap gap-y-3">
           {steps.map((step, i) => {
@@ -329,6 +330,7 @@ export default function TargetDetailPage() {
           })}
         </div>
       </div>
+      )}
 
       {/* ── 탭 ── */}
       <div className="mb-6 flex gap-1 border-b border-slate-200">
