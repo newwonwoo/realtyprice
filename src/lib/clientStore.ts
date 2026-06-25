@@ -21,10 +21,12 @@ type StoreSnapshot = {
   priceEstimates: PriceEstimate[];
 };
 
-let _cache: StoreSnapshot | null = null;
-let _loadPromise: Promise<StoreSnapshot> | null = null;
+type LoadResult = { snapshot: StoreSnapshot; source: "db" | "local" };
 
-async function _loadFromSource(): Promise<StoreSnapshot> {
+let _cache: StoreSnapshot | null = null;
+let _loadPromise: Promise<LoadResult> | null = null;
+
+async function _loadFromSource(): Promise<LoadResult> {
   try {
     const [apts, rules, compApts, txs, lstngs, invSigs, priceEsts] = await Promise.all([
       dbGet<Apartment>("apartments"),
@@ -36,34 +38,40 @@ async function _loadFromSource(): Promise<StoreSnapshot> {
       dbGet<PriceEstimate>("price_estimates"),
     ]);
     return {
-      apartments: apts,
-      comparableRules: rules.length > 0 ? rules : apts.filter((x) => x.role === "target").map((x) => defaultComparableRule(x.id)),
-      comparableApartments: compApts,
-      transactions: txs,
-      listings: lstngs,
-      inventorySignals: invSigs,
-      priceEstimates: priceEsts,
+      source: "db",
+      snapshot: {
+        apartments: apts,
+        comparableRules: rules.length > 0 ? rules : apts.filter((x) => x.role === "target").map((x) => defaultComparableRule(x.id)),
+        comparableApartments: compApts,
+        transactions: txs,
+        listings: lstngs,
+        inventorySignals: invSigs,
+        priceEstimates: priceEsts,
+      },
     };
   } catch {
     const storedApts = readStorage<Apartment[]>(STORAGE_KEYS.apartments, []);
     return {
-      apartments: storedApts,
-      comparableRules: readStorage<ComparableRule[]>(STORAGE_KEYS.comparableRules, storedApts.filter((x) => x.role === "target").map((x) => defaultComparableRule(x.id))),
-      comparableApartments: readStorage<ComparableApartment[]>(STORAGE_KEYS.comparableApartments, []),
-      transactions: readStorage<Transaction[]>(STORAGE_KEYS.transactions, []),
-      listings: readStorage<Listing[]>(STORAGE_KEYS.listings, []),
-      inventorySignals: readStorage<InventorySignal[]>(STORAGE_KEYS.inventorySignals, []),
-      priceEstimates: readStorage<PriceEstimate[]>(STORAGE_KEYS.priceEstimates, []),
+      source: "local",
+      snapshot: {
+        apartments: storedApts,
+        comparableRules: readStorage<ComparableRule[]>(STORAGE_KEYS.comparableRules, storedApts.filter((x) => x.role === "target").map((x) => defaultComparableRule(x.id))),
+        comparableApartments: readStorage<ComparableApartment[]>(STORAGE_KEYS.comparableApartments, []),
+        transactions: readStorage<Transaction[]>(STORAGE_KEYS.transactions, []),
+        listings: readStorage<Listing[]>(STORAGE_KEYS.listings, []),
+        inventorySignals: readStorage<InventorySignal[]>(STORAGE_KEYS.inventorySignals, []),
+        priceEstimates: readStorage<PriceEstimate[]>(STORAGE_KEYS.priceEstimates, []),
+      },
     };
   }
 }
 
-function _getOrLoad(): Promise<StoreSnapshot> {
-  if (_cache) return Promise.resolve(_cache);
+function _getOrLoad(): Promise<LoadResult> {
+  if (_cache) return Promise.resolve({ snapshot: _cache, source: "db" as const });
   if (!_loadPromise) {
-    _loadPromise = _loadFromSource().then((s) => {
-      _cache = s;
-      return s;
+    _loadPromise = _loadFromSource().then((r) => {
+      _cache = r.snapshot;
+      return r;
     });
   }
   return _loadPromise;
@@ -80,21 +88,37 @@ export function useRealtyStore() {
   const [inventorySignals, setInventorySignalsState] = useState<InventorySignal[]>(() => _cache?.inventorySignals ?? []);
   const [priceEstimates, setPriceEstimatesState] = useState<PriceEstimate[]>(() => _cache?.priceEstimates ?? []);
   const [ready, setReady] = useState(() => _cache !== null);
+  const [dataSource, setDataSource] = useState<"db" | "local" | null>(() => _cache ? "db" : null);
+
+  function _applySnapshot(s: StoreSnapshot, source: "db" | "local") {
+    setApartmentsState(s.apartments);
+    setComparableRulesState(s.comparableRules);
+    setComparableApartmentsState(s.comparableApartments);
+    setTransactionsState(s.transactions);
+    setListingsState(s.listings);
+    setInventorySignalsState(s.inventorySignals);
+    setPriceEstimatesState(s.priceEstimates);
+    setReady(true);
+    setDataSource(source);
+  }
 
   useEffect(() => {
     if (_cache) return; // 이미 캐시됨 — DB 재조회 불필요
-    _getOrLoad().then((s) => {
-      setApartmentsState(s.apartments);
-      setComparableRulesState(s.comparableRules);
-      setComparableApartmentsState(s.comparableApartments);
-      setTransactionsState(s.transactions);
-      setListingsState(s.listings);
-      setInventorySignalsState(s.inventorySignals);
-      setPriceEstimatesState(s.priceEstimates);
-      setReady(true);
-    });
+    _getOrLoad().then((r) => _applySnapshot(r.snapshot, r.source));
     if (!readStorage(STORAGE_KEYS.modelSettings, null)) writeStorage(STORAGE_KEYS.modelSettings, defaultModelWeights);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 다른 탭에서 데이터를 변경하면 캐시 무효화 후 재로드
+  useEffect(() => {
+    function handleStorageChange(e: StorageEvent) {
+      if (!e.key?.startsWith("realty_")) return;
+      _cache = null;
+      _loadPromise = null;
+      _getOrLoad().then((r) => _applySnapshot(r.snapshot, r.source));
+    }
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function setApartments(next: Apartment[]) {
     if (_cache) _cache.apartments = next;
@@ -137,6 +161,7 @@ export function useRealtyStore() {
 
   return {
     ready,
+    dataSource,
     apartments,
     targets,
     comparables,

@@ -52,7 +52,13 @@ export default function TargetsPage() {
 
       <TargetApartmentSearch apartments={store.apartments} onAdd={addTarget} />
 
-      <div className="card mt-6 overflow-hidden">
+      {store.dataSource === "local" && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <span className="font-semibold">오프라인 모드:</span> DB 연결 실패로 로컬 저장 데이터를 표시 중입니다.
+        </div>
+      )}
+
+      <div className="card mt-4 overflow-hidden">
         <div className="flex items-center justify-between border-b border-slate-200 p-5">
           <h2 className="text-lg font-black">등록된 대상아파트</h2>
           {store.targets.length > 0 && (

@@ -23,7 +23,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   function active(href: string) {
-    return pathname === href || pathname.startsWith(href + "/");
+    if (pathname === href) return true;
+    const hSegs = href.split("/").filter(Boolean);
+    const pSegs = pathname.split("/").filter(Boolean);
+    return hSegs.length > 0 && hSegs.every((seg, i) => pSegs[i] === seg);
   }
 
   return (
