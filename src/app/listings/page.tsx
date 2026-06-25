@@ -145,26 +145,56 @@ export default function ListingsPage() {
 
       <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
         <div className="card p-5">
-          <div className="grid gap-3 md:grid-cols-4">
-            <select className="input" value={activeApartmentId} onChange={(event) => setApartmentId(event.target.value)}>
-              <option value="">단지 선택</option>
-              {store.apartments.map((apartment) => <option key={apartment.id} value={apartment.id}>{apartment.name}</option>)}
-            </select>
-            <select className="input" value={listingType} onChange={(event) => setListingType(event.target.value as ListingType)}><option value="sale">매매</option><option value="jeonse">전세</option></select>
-            <input className="input" value={askingPrice} onChange={(event) => setAskingPrice(event.target.value)} placeholder="호가, 만원" />
-            <input className="input" value={exclusiveArea} onChange={(event) => setExclusiveArea(event.target.value)} placeholder="전용면적" />
-            <input className="input" type="date" value={capturedAt} onChange={(event) => setCapturedAt(event.target.value)} />
-            <input className="input" value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="층" />
-            <input className="input" value={buildingNo} onChange={(event) => setBuildingNo(event.target.value)} placeholder="동" />
-            <input className="input" value={unitNo} onChange={(event) => setUnitNo(event.target.value)} placeholder="호수" />
-            <input className="input" value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="향" />
-            <input className="input" value={listingKey} onChange={(event) => setListingKey(event.target.value)} placeholder="매물키" />
-            <select className="input" value={grade} onChange={(event) => setGrade(event.target.value as UnitGrade)}>{grades.map((item) => <option key={item} value={item}>{item}</option>)}</select>
-            <button className="btn-primary" onClick={addListing}>추가</button>
+          {/* 필수 입력 */}
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">필수 입력</p>
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">단지</span>
+              <select className="input mt-1" value={activeApartmentId} onChange={(event) => setApartmentId(event.target.value)}>
+                <option value="">단지 선택</option>
+                {store.apartments.map((apartment) => <option key={apartment.id} value={apartment.id}>{apartment.name}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">유형</span>
+              <select className="input mt-1" value={listingType} onChange={(event) => setListingType(event.target.value as ListingType)}><option value="sale">매매</option><option value="jeonse">전세</option></select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">호가 (만원)</span>
+              <input className="input mt-1" value={askingPrice} onChange={(event) => setAskingPrice(event.target.value)} placeholder="예: 85000" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">전용면적 (㎡)</span>
+              <input className="input mt-1" value={exclusiveArea} onChange={(event) => setExclusiveArea(event.target.value)} placeholder="84" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">수집일</span>
+              <input className="input mt-1" type="date" value={capturedAt} onChange={(event) => setCapturedAt(event.target.value)} />
+            </label>
           </div>
-          <div className="mt-4 flex flex-col gap-2 text-sm text-slate-600">
+
+          {/* 선택 입력 */}
+          <details className="group mt-4">
+            <summary className="flex cursor-pointer select-none items-center justify-between rounded-md py-1.5 text-sm font-semibold text-slate-600 hover:text-blue-600">
+              선택 입력 (층 · 동 · 호수 · 향 · 매물키 · 등급)
+              <span className="text-xs text-slate-400 transition-transform group-open:rotate-180">▾</span>
+            </summary>
+            <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-3">
+              <input className="input" value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="층" />
+              <input className="input" value={buildingNo} onChange={(event) => setBuildingNo(event.target.value)} placeholder="동" />
+              <input className="input" value={unitNo} onChange={(event) => setUnitNo(event.target.value)} placeholder="호수" />
+              <input className="input" value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="향" />
+              <input className="input" value={listingKey} onChange={(event) => setListingKey(event.target.value)} placeholder="매물키" />
+              <select className="input" value={grade} onChange={(event) => setGrade(event.target.value as UnitGrade)}>{grades.map((item) => <option key={item} value={item}>등급 {item}</option>)}</select>
+            </div>
+          </details>
+
+          <button className="btn-primary mt-4 w-full" onClick={addListing}>매물 추가</button>
+
+          <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 text-sm text-slate-600">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">CSV 일괄 업로드</p>
             <input type="file" accept=".csv" onChange={(event) => event.target.files?.[0] && uploadCsv(event.target.files[0])} />
-            <p>CSV 컬럼: apartmentName 또는 apartmentId, listingType, askingPrice, exclusiveArea, capturedAt, listingKey, floor, buildingNo, unitNo, direction, grade</p>
+            <p className="text-xs text-slate-400">컬럼: apartmentName 또는 apartmentId, listingType, askingPrice, exclusiveArea, capturedAt, listingKey, floor, buildingNo, unitNo, direction, grade</p>
             {message && <p className="font-semibold text-blue-700">{message}</p>}
           </div>
         </div>

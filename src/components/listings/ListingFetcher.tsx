@@ -6,6 +6,7 @@ import type { Listing } from "@/types/listing";
 import { normalizeToBGrade } from "@/lib/grade";
 import { useRealtyStore } from "@/lib/clientStore";
 import { formatEok } from "@/lib/format";
+import { generateSearchCandidates } from "@/lib/aptNameSearch";
 
 export type ApartmentRole = "target" | "leader" | "comparable";
 
@@ -66,6 +67,7 @@ type KbPrice = {
 
 type KbState = {
   loading: boolean;
+  searchQuery: string; // 사용자가 수정 가능한 KB 검색어
   reasonCode: string;  // ok | complex_not_found | no_area_types | no_priced_area | no_price_data | blocked | error
   reason: string;
   complexList: KbComplex[];
@@ -82,13 +84,14 @@ const ZB_HEADERS = {
   "Referer": "https://www.zigbang.com/",
 };
 
-const defaultZb = (name = ""): ZbState => ({
-  loading: false, searchQuery: name,
+// apt의 저장된 별칭 우선, 없으면 단지명
+const defaultZb = (apt?: Apartment): ZbState => ({
+  loading: false, searchQuery: apt?.zigbangSearchQuery ?? apt?.name ?? "",
   reasonCode: "", reason: "",
   complexList: [], selectedId: "", sale: [], jeonse: [],
 });
-const defaultKb = (): KbState => ({
-  loading: false, reasonCode: "", reason: "",
+const defaultKb = (apt?: Apartment): KbState => ({
+  loading: false, searchQuery: apt?.kbSearchQuery ?? apt?.name ?? "", reasonCode: "", reason: "",
   complexList: [], selectedNo: "", areaTypes: [], prices: [],
 });
 
@@ -118,26 +121,42 @@ export function ListingFetcher({ apartments }: Props) {
   const selectedEntry = apartments.find((a) => a.apartment.id === selectedAptId) ?? apartments[0];
   const apt = selectedEntry?.apartment;
 
-  const zb = zbStates[selectedAptId] ?? defaultZb(apt?.name ?? "");
-  const kb = kbStates[selectedAptId] ?? defaultKb();
+  const zb = zbStates[selectedAptId] ?? defaultZb(apt);
+  const kb = kbStates[selectedAptId] ?? defaultKb(apt);
 
   function patchZb(id: string, patch: Partial<ZbState>) {
-    setZbStates((p) => ({ ...p, [id]: { ...(p[id] ?? defaultZb()), ...patch } }));
+    setZbStates((p) => ({ ...p, [id]: { ...(p[id] ?? defaultZb(apt)), ...patch } }));
   }
   function patchKb(id: string, patch: Partial<KbState>) {
-    setKbStates((p) => ({ ...p, [id]: { ...(p[id] ?? defaultKb()), ...patch } }));
+    setKbStates((p) => ({ ...p, [id]: { ...(p[id] ?? defaultKb(apt)), ...patch } }));
+  }
+
+  // 성공한 검색어를 apt 레코드에 영구 저장
+  function saveZbAlias(aptId: string, query: string) {
+    const target = store.apartments.find((a) => a.id === aptId);
+    if (!target || target.zigbangSearchQuery === query) return;
+    store.setApartments(store.apartments.map((a) =>
+      a.id === aptId ? { ...a, zigbangSearchQuery: query, updatedAt: new Date().toISOString() } : a
+    ));
+  }
+  function saveKbAlias(aptId: string, query: string) {
+    const target = store.apartments.find((a) => a.id === aptId);
+    if (!target || target.kbSearchQuery === query) return;
+    store.setApartments(store.apartments.map((a) =>
+      a.id === aptId ? { ...a, kbSearchQuery: query, updatedAt: new Date().toISOString() } : a
+    ));
   }
 
   // ── 직방: 브라우저에서 직접 호출 (Vercel IP 차단 우회) ──────────
-  async function zbSearch(name: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string }> {
+  async function zbSearchOne(query: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string }> {
     try {
-      const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${encodeURIComponent(name)}`, {
+      const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${encodeURIComponent(query)}`, {
         headers: ZB_HEADERS,
         signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) {
         const code = res.status === 403 || res.status === 429 ? "blocked" : res.status >= 500 ? "upstream_error" : "error";
-        return { complexList: [], reasonCode: code, reason: `직방 단지검색 실패 (HTTP ${res.status}). 브라우저에서 직방이 차단됐거나 서버 오류입니다.` };
+        return { complexList: [], reasonCode: code, reason: `직방 단지검색 실패 (HTTP ${res.status}).` };
       }
       const data = await res.json();
       const items = (data?.items ?? data?.data ?? []) as Record<string, unknown>[];
@@ -149,25 +168,40 @@ export function ListingFetcher({ apartments }: Props) {
           address: String(x.address ?? x.roadAddress ?? ""),
         }))
         .filter((c) => c.complexId);
-      if (!list.length) {
-        return {
-          complexList: [],
-          reasonCode: "complex_not_found",
-          reason: `직방에서 "${name}" 단지를 찾지 못했습니다. 이름이 직방 등록명과 다르거나(특수문자·긴 부제 포함) 미등록 단지일 수 있습니다. 검색어를 짧게 줄여 재시도하세요.`,
-        };
-      }
-      return { complexList: list, reasonCode: list.length > 1 ? "disambiguation" : "ok", reason: list.length > 1 ? `유사 단지 ${list.length}곳 검색됨. 단지를 선택하세요.` : "" };
+      if (!list.length) return { complexList: [], reasonCode: "complex_not_found", reason: "" };
+      return { complexList: list, reasonCode: list.length > 1 ? "disambiguation" : "ok", reason: "" };
     } catch (err) {
       const msg = String(err);
-      const isTimeout = /timeout|aborted/i.test(msg);
-      return {
-        complexList: [],
-        reasonCode: "error",
-        reason: isTimeout
-          ? "직방 응답 시간 초과 — 브라우저 네트워크 또는 직방 서버 문제일 수 있습니다."
-          : `직방 연결 실패: ${msg}`,
-      };
+      return { complexList: [], reasonCode: /timeout|aborted/i.test(msg) ? "error" : "error", reason: msg };
     }
+  }
+
+  // 자동 재시도: 후보 검색어를 순서대로 시도, 성공하면 그 검색어를 별칭으로 저장
+  async function zbSearch(aptId: string, firstQuery: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string; usedQuery: string }> {
+    const candidates = generateSearchCandidates(firstQuery);
+    let lastResult = { complexList: [] as ZbComplex[], reasonCode: "complex_not_found", reason: "", usedQuery: firstQuery };
+
+    for (const candidate of candidates) {
+      const r = await zbSearchOne(candidate);
+      if (r.reasonCode === "blocked" || r.reasonCode === "upstream_error" || r.reasonCode === "error") {
+        // 네트워크/차단 오류면 재시도 의미 없음
+        return { ...r, usedQuery: candidate };
+      }
+      if (r.reasonCode === "ok" || r.reasonCode === "disambiguation") {
+        // 성공 → 사용된 검색어를 별칭으로 저장 (원본과 다를 때만)
+        if (candidate !== firstQuery) saveZbAlias(aptId, candidate);
+        return { ...r, usedQuery: candidate };
+      }
+      lastResult = { ...r, usedQuery: candidate };
+    }
+
+    // 모든 후보 실패
+    return {
+      complexList: [],
+      reasonCode: "complex_not_found",
+      reason: `직방에서 "${firstQuery}" 단지를 찾지 못했습니다. 자동 정제된 검색어(${candidates.slice(1).join(" → ")})로도 실패했습니다. 검색어를 직접 수정하거나 직방 앱에서 등록명을 확인하세요.`,
+      usedQuery: lastResult.usedQuery,
+    };
   }
 
   async function zbFetchListings(complexId: string, tradeType: "매매" | "전세"): Promise<ZbListing[]> {
@@ -194,12 +228,14 @@ export function ListingFetcher({ apartments }: Props) {
 
   async function fetchZigbang(complexId?: string) {
     if (!apt) return;
-    const query = (zbStates[apt.id]?.searchQuery ?? apt.name).trim() || apt.name;
+    const query = (zbStates[apt.id]?.searchQuery ?? apt.zigbangSearchQuery ?? apt.name).trim() || apt.name;
     patchZb(apt.id, { loading: true, reasonCode: "", reason: "", sale: [], jeonse: [] });
 
     let resolvedId = complexId ?? "";
     if (!resolvedId) {
-      const s = await zbSearch(query);
+      const s = await zbSearch(apt.id, query);
+      // 자동 정제로 검색어가 바뀌었으면 입력창에도 반영
+      if (s.usedQuery !== query) patchZb(apt.id, { searchQuery: s.usedQuery });
       patchZb(apt.id, { complexList: s.complexList, reasonCode: s.reasonCode, reason: s.reason });
       if (s.reasonCode !== "ok") { patchZb(apt.id, { loading: false }); return; }
       resolvedId = s.complexList[0].complexId;
@@ -227,12 +263,12 @@ export function ListingFetcher({ apartments }: Props) {
     for (let i = 0; i < apartments.length; i++) {
       const { apartment: a } = apartments[i];
       setBatchProgress(`${i + 1}/${apartments.length} — ${a.name} 수집중…`);
-      const query = (zbStates[a.id]?.searchQuery ?? a.name).trim() || a.name;
-      setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a.name)), loading: true, reasonCode: "", reason: "" } }));
+      const query = (zbStates[a.id]?.searchQuery ?? a.zigbangSearchQuery ?? a.name).trim() || a.name;
+      setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: true, reasonCode: "", reason: "" } }));
 
-      const s = await zbSearch(query);
+      const s = await zbSearch(a.id, query);
       if (s.reasonCode !== "ok" || !s.complexList.length) {
-        setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a.name)), loading: false, reasonCode: s.reasonCode, reason: s.reason, complexList: s.complexList } }));
+        setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: false, reasonCode: s.reasonCode, reason: s.reason, complexList: s.complexList } }));
         continue;
       }
       const complexId = s.complexList[0].complexId;
@@ -260,7 +296,8 @@ export function ListingFetcher({ apartments }: Props) {
       setZbStates((p) => ({
         ...p,
         [a.id]: {
-          ...(p[a.id] ?? defaultZb(a.name)), loading: false,
+          ...(p[a.id] ?? defaultZb(a)), loading: false,
+          searchQuery: s.usedQuery,
           complexList: s.complexList, sale, jeonse,
           reasonCode: total > 0 ? "ok" : "no_listings",
           reason: total > 0 ? "" : "단지 찾음. 직방 등록 매물 0건.",
@@ -299,29 +336,71 @@ export function ListingFetcher({ apartments }: Props) {
     patchZb(apt.id, { reason: `${newOnes.length}건 저장 (중복 ${imported.length - newOnes.length}건 제외)` });
   }
 
-  // ── KB시세 조회 (서버 라우트 경유) ────────────────────────────────
-  async function fetchKb(complexNo?: string) {
-    if (!apt) return;
-    patchKb(apt.id, { loading: true, reasonCode: "", reason: "" });
-    const params = new URLSearchParams();
-    if (complexNo) params.set("complexNo", complexNo);
-    else params.set("aptName", apt.name);
-    if (apt.defaultArea) params.set("area", String(apt.defaultArea));
+  // ── KB시세 조회 (서버 라우트 경유, 자동 후보 재시도) ──────────────
+  async function kbSearchOne(aptName: string, area?: number): Promise<{ data: Record<string, unknown>; ok: boolean }> {
+    const params = new URLSearchParams({ aptName });
+    if (area) params.set("area", String(area));
     try {
       const res = await fetch(`/api/kb-price?${params}`);
       const data = await res.json();
-      patchKb(apt.id, {
-        loading: false,
-        reasonCode: data.reasonCode ?? (res.ok ? "ok" : "error"),
-        reason: data.reason ?? (res.ok ? "" : "KB 조회 실패"),
-        complexList: data.complexList?.length > 1 && !complexNo ? data.complexList : [],
-        selectedNo: data.complexList?.[0]?.complexNo ?? "",
-        areaTypes: data.areaTypes ?? [],
-        prices: data.prices ?? [],
-      });
+      return { data, ok: res.ok };
     } catch (e) {
-      patchKb(apt.id, { loading: false, reasonCode: "error", reason: `KB 연결 실패: ${String(e)}` });
+      return { data: { reasonCode: "error", reason: String(e) }, ok: false };
     }
+  }
+
+  async function fetchKb(complexNo?: string) {
+    if (!apt) return;
+    patchKb(apt.id, { loading: true, reasonCode: "", reason: "" });
+
+    if (complexNo) {
+      // 단지번호로 직접 조회 (사용자가 선택)
+      const params = new URLSearchParams({ complexNo });
+      if (apt.defaultArea) params.set("area", String(apt.defaultArea));
+      try {
+        const res = await fetch(`/api/kb-price?${params}`);
+        const data = await res.json();
+        patchKb(apt.id, { loading: false, reasonCode: data.reasonCode ?? "ok", reason: data.reason ?? "", complexList: [], selectedNo: complexNo, areaTypes: data.areaTypes ?? [], prices: data.prices ?? [] });
+      } catch (e) {
+        patchKb(apt.id, { loading: false, reasonCode: "error", reason: `KB 연결 실패: ${String(e)}` });
+      }
+      return;
+    }
+
+    const firstQuery = (kbStates[apt.id]?.searchQuery ?? apt.kbSearchQuery ?? apt.name).trim() || apt.name;
+    const candidates = generateSearchCandidates(firstQuery);
+
+    for (const candidate of candidates) {
+      const { data, ok } = await kbSearchOne(candidate, apt.defaultArea);
+      const code = (data.reasonCode as string) ?? (ok ? "ok" : "error");
+
+      // 차단/오류면 중단
+      if (code === "blocked" || code === "upstream_error" || code === "error") {
+        patchKb(apt.id, { loading: false, reasonCode: code, reason: (data.reason as string) ?? "KB 조회 실패", searchQuery: candidate });
+        return;
+      }
+      // 복수 단지 → 선택 필요
+      if ((data.complexList as KbComplex[])?.length > 1) {
+        patchKb(apt.id, { loading: false, reasonCode: "disambiguation", reason: `유사 단지 ${(data.complexList as KbComplex[]).length}곳 검색됨. 단지를 선택하세요.`, complexList: data.complexList as KbComplex[], selectedNo: (data.complexList as KbComplex[])[0]?.complexNo ?? "", searchQuery: candidate });
+        return;
+      }
+      // 성공 (시세가 있든 없든 단지를 찾았으면)
+      if (code !== "complex_not_found") {
+        if (candidate !== firstQuery) {
+          saveKbAlias(apt.id, candidate);
+          patchKb(apt.id, { searchQuery: candidate });
+        }
+        patchKb(apt.id, { loading: false, reasonCode: code, reason: (data.reason as string) ?? "", complexList: [], selectedNo: (data.complexList as KbComplex[])?.[0]?.complexNo ?? "", areaTypes: (data.areaTypes as KbAreaType[]) ?? [], prices: (data.prices as { area: KbAreaType; price: KbPrice | null; reason?: string }[]) ?? [] });
+        return;
+      }
+    }
+
+    // 모든 후보 실패
+    patchKb(apt.id, {
+      loading: false,
+      reasonCode: "complex_not_found",
+      reason: `KB부동산에서 "${firstQuery}" 단지를 찾지 못했습니다. 자동 정제된 검색어(${candidates.slice(1).join(" → ")})로도 실패했습니다. KB에 미등록(신규분양·준공전)이거나 검색어를 직접 수정하세요.`,
+    });
   }
 
   if (!apt) return null;
@@ -480,8 +559,14 @@ export function ListingFetcher({ apartments }: Props) {
       {tab === "kb" && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-600 flex-1"><strong>{apt.name}</strong> KB시세 (매매·전세 일반·상한·하한)</span>
-            <button className="btn-primary text-sm px-4 py-1.5" disabled={kb.loading} onClick={() => fetchKb()}>
+            <input
+              className="input flex-1 text-sm"
+              value={kb.searchQuery ?? apt.name}
+              onChange={(e) => patchKb(apt.id, { searchQuery: e.target.value })}
+              placeholder="검색어 수정 가능 (예: 누읍휴먼시아)"
+              onKeyDown={(e) => e.key === "Enter" && fetchKb()}
+            />
+            <button className="btn-primary text-sm px-4 py-1.5 whitespace-nowrap" disabled={kb.loading} onClick={() => fetchKb()}>
               {kb.loading ? "조회중…" : "조회"}
             </button>
           </div>

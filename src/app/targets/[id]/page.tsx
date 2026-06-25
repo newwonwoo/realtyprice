@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { AppShell } from "@/components/AppShell";
@@ -25,6 +26,14 @@ const conclusionLabel: Record<string, string> = {
   price_cut_needed: "매각가 조정 필요",
   insufficient_data: "데이터 부족",
 };
+const conclusionDesc: Record<string, string> = {
+  strong_up: "상승 신호 다수, 매입 긍정적",
+  up: "상승 조건 충족",
+  neutral: "상승·하락 신호 균형",
+  weak: "약세 신호, 매입 주의",
+  price_cut_needed: "현 호가 과열, 매각 검토",
+  insufficient_data: "데이터를 보완하세요",
+};
 const conclusionColor: Record<string, string> = {
   strong_up: "text-emerald-700",
   up: "text-blue-700",
@@ -33,13 +42,14 @@ const conclusionColor: Record<string, string> = {
   price_cut_needed: "text-red-700",
   insufficient_data: "text-slate-400",
 };
+// 의미별 1색 원칙: 보합=slate(텍스트색과 일치), 약세=amber, 충돌 제거
 const conclusionBg: Record<string, string> = {
   strong_up: "bg-emerald-50 border-emerald-200",
   up: "bg-blue-50 border-blue-200",
-  neutral: "bg-amber-50 border-amber-200",
+  neutral: "bg-slate-50 border-slate-200",
   weak: "bg-amber-50 border-amber-200",
   price_cut_needed: "bg-red-50 border-red-200",
-  insufficient_data: "bg-slate-50 border-slate-200",
+  insufficient_data: "bg-slate-50 border-dashed border-slate-300",
 };
 
 export default function TargetDetailPage() {
@@ -53,6 +63,7 @@ export default function TargetDetailPage() {
   const [supplyLoading, setSupplyLoading] = useState(false);
   const [editingMoveIn, setEditingMoveIn] = useState(false);
   const [moveInInput, setMoveInInput] = useState("");
+  const [tab, setTab] = useState<"setup" | "analysis" | "model">("setup");
 
   const apartment = store.targets.find((item) => item.id === id);
   const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
@@ -148,8 +159,27 @@ export default function TargetDetailPage() {
   const currentStep = steps.findIndex((s) => !s.done);
   const allReady = steps.slice(0, 4).every((s) => s.done);
 
+  if (!store.ready) {
+    return (
+      <AppShell>
+        <div className="space-y-4">
+          <div className="h-8 w-48 animate-pulse rounded-md bg-slate-100" />
+          <div className="h-4 w-32 animate-pulse rounded-md bg-slate-100" />
+          <div className="card h-64 animate-pulse bg-slate-50" />
+        </div>
+      </AppShell>
+    );
+  }
+
   if (!apartment) {
-    return <AppShell><div className="card p-6">대상아파트를 찾을 수 없습니다.</div></AppShell>;
+    return (
+      <AppShell>
+        <div className="card p-6">
+          <p className="font-semibold text-slate-700">대상아파트를 찾을 수 없습니다.</p>
+          <a href="/targets" className="mt-3 inline-block text-sm text-blue-600 underline">대상아파트 목록으로 돌아가기</a>
+        </div>
+      </AppShell>
+    );
   }
 
   async function runEstimate() {
@@ -160,9 +190,62 @@ export default function TargetDetailPage() {
     const targetSaleListings = targetListings.filter((item) => item.listingType === "sale");
     const targetJeonseListings = targetListings.filter((item) => item.listingType === "jeonse");
     const comparableSaleListings = comparableListings.filter((item) => item.listingType === "sale");
-    // 모집공고 분양가(청약홈) 우선, 없으면 분양권 전매 실거래 중간값 fallback
     const presaleTxMedian = median(targetTransactions.filter((item) => item.transactionType === "presale").map((item) => item.price));
     const presalePrice = apartment?.originalPresalePrice ?? presaleTxMedian;
+
+    // KB 매수우위지수 + 가격전망지수 → macroSignalPrice 계산
+    // 우회 전략 3단계: ① 서버 Edge Route → ② 브라우저 직접 → ③ 0 폴백
+    let macroSignalPrice = 0;
+    try {
+      let macroData: { buyerDominance: number; priceOutlook: number } | null = null;
+
+      // 1단계: Vercel Edge Runtime 경유 (Lambda IP와 다른 엣지 IP)
+      try {
+        const r = await fetch("/api/kb-macro?weekly=true", { signal: AbortSignal.timeout(6000) });
+        if (r.ok) {
+          const j = await r.json();
+          if (j.reasonCode === "ok" && j.data) macroData = j.data;
+        }
+      } catch { /* edge route 실패 → 2단계 */ }
+
+      // 2단계: 브라우저 직접 fetch (Zigbang과 동일한 우회 패턴)
+      if (!macroData) {
+        const KB_DATA_API = "https://data-api.kbland.kr/bfmstat/weekMnthlyHuseTrnd/maktTrnd";
+        const kbHeaders = {
+          "Referer": "https://kbland.kr/",
+          "Origin": "https://kbland.kr",
+        };
+        const [buyerRes, outlookRes] = await Promise.allSettled([
+          fetch(`${KB_DATA_API}?메뉴코드=01&월간주간구분코드=02&기간=1`, { headers: kbHeaders, signal: AbortSignal.timeout(8000) }),
+          fetch(`${KB_DATA_API}?메뉴코드=05&월간주간구분코드=01&기간=1`, { headers: kbHeaders, signal: AbortSignal.timeout(8000) }),
+        ]);
+        const getVal = async (r: PromiseSettledResult<Response>) => {
+          if (r.status !== "fulfilled" || !r.value.ok) return 0;
+          try {
+            const j = await r.value.json();
+            const rows = j?.dataBody?.data as Record<string, unknown>[] | undefined;
+            return rows?.length ? Number(rows[0].지수값 ?? rows[0].indexValue ?? 0) : 0;
+          } catch { return 0; }
+        };
+        const [bd, po] = await Promise.all([getVal(buyerRes), getVal(outlookRes)]);
+        if (bd > 0 || po > 0) macroData = { buyerDominance: bd, priceOutlook: po };
+      }
+
+      // 지수 → 가격 보정
+      if (macroData) {
+        const { buyerDominance, priceOutlook } = macroData;
+        const buyerSignal = buyerDominance > 0 ? (buyerDominance - 100) / 100 : 0;
+        const outlookSignal = priceOutlook > 0 ? (priceOutlook - 100) / 100 : 0;
+        const combined = (buyerSignal + outlookSignal) / 2;
+        const anchor = targetSaleListings.length > 0
+          ? median(targetSaleListings.map((l) => l.askingPrice))
+          : (latestEstimate?.expectedSaleMid ?? 0);
+        if (anchor > 0) {
+          macroSignalPrice = Math.round(anchor * (1 + Math.min(0.05, Math.max(-0.05, combined * 0.1))));
+        }
+      }
+    } catch { /* 모든 단계 실패 — macroSignalPrice=0 */ }
+
     const result = estimatePrice({
       targetApartmentId: id,
       targetSaleTransactions: targetTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
@@ -180,6 +263,7 @@ export default function TargetDetailPage() {
       monthsOfInventory: inventorySignal?.monthsOfInventory ?? 0,
       comparableWeights,
       presalePrice,
+      macroSignalPrice,
       leaderTransactions,
       targetToLeaderRatio: isSelfLeader ? 1.0 : rule?.targetToLeaderRatio,
       regionProfile: regionProfileFromAddress(apartment?.address),
@@ -189,6 +273,7 @@ export default function TargetDetailPage() {
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
     setEstimating(false);
     setJustDone(true);
+    setTab("analysis");
     setTimeout(() => setJustDone(false), 5000);
   }
 
@@ -200,8 +285,12 @@ export default function TargetDetailPage() {
     <AppShell>
       <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
         <div>
-          <p className="text-sm font-semibold text-blue-600">Target detail</p>
-          <h1 className="text-3xl font-black">{apartment.name}</h1>
+          <nav className="flex items-center gap-1.5 text-sm text-slate-400">
+            <Link href="/targets" className="font-semibold hover:text-blue-600">대상아파트</Link>
+            <span>/</span>
+            <span className="font-semibold text-slate-600">{apartment.name}</span>
+          </nav>
+          <h1 className="mt-1.5 text-3xl font-black">{apartment.name}</h1>
           <p className="mt-2 text-slate-600">{apartment.address}</p>
         </div>
         <div className="flex flex-col gap-2 items-start sm:items-end">
@@ -243,7 +332,8 @@ export default function TargetDetailPage() {
         </div>
       </div>
 
-      {/* ── 단계별 진행 동선 ── */}
+      {/* ── 단계별 진행 동선 (설정 단계에서만 노출) ── */}
+      {tab === "setup" && (
       <div className="mb-6 card p-4">
         <div className="flex items-center flex-wrap gap-y-3">
           {steps.map((step, i) => {
@@ -267,7 +357,33 @@ export default function TargetDetailPage() {
           })}
         </div>
       </div>
+      )}
 
+      {/* ── 탭 ── */}
+      <div className="mb-6 flex gap-1 border-b border-slate-200">
+        {([
+          ["setup", "데이터 설정"],
+          ["analysis", "분석 결과"],
+          ["model", "모델 상세"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`relative -mb-px border-b-2 px-4 py-2.5 text-sm font-bold transition-colors ${
+              tab === key
+                ? "border-blue-500 text-blue-700"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {label}
+            {key === "model" && !latestEstimate && <span className="ml-1 text-xs text-slate-300">(추정 후)</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === "setup" && (
+      <>
       <AptDetailInfo apartment={apartment} />
 
       {/* ── 실거래 통합수집 ── */}
@@ -314,19 +430,21 @@ export default function TargetDetailPage() {
         </details>
       </div>
 
-      {/* ── 섹션 구분선 ── */}
-      <div className="relative my-8">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
-        <div className="relative flex justify-center"><span className="bg-slate-50 px-4 text-sm font-bold text-slate-400">분석 결과</span></div>
-      </div>
+      </>
+      )}
 
+      {tab === "analysis" && (
+      <>
       {/* ── 결과 요약 ── */}
-      <div className="grid gap-5 lg:grid-cols-4 mt-6">
+      <div className="grid gap-5 lg:grid-cols-4">
         <div className={`rounded-xl border p-5 shadow-sm ${latestEstimate ? conclusionBg[latestEstimate.conclusion] : "bg-white border-slate-200"}`}>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">결론</p>
           <p className={`mt-2 text-xl font-black ${latestEstimate ? conclusionColor[latestEstimate.conclusion] : "text-slate-300"}`}>
             {latestEstimate ? conclusionLabel[latestEstimate.conclusion] : "계산 필요"}
           </p>
+          {latestEstimate && (
+            <p className="mt-1 text-xs text-slate-500">{conclusionDesc[latestEstimate.conclusion]}</p>
+          )}
         </div>
         <div className="rounded-xl border border-l-4 border-blue-400 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 매매가</p>
@@ -350,7 +468,7 @@ export default function TargetDetailPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+      <div className="mt-6">
         <div className="card p-6 bg-gradient-to-br from-white to-blue-50/30">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
@@ -419,13 +537,33 @@ export default function TargetDetailPage() {
             <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} />
             <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
             <Summary label="하위호가 소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} title="호가 목록에서 가격 하위 30% 매물이 사라진 비율. 사라진 매물 = 판매 가능성 높음. 높을수록 상승압력 강함." />
-            <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점` : "-"} title="가격앵커 데이터 충분도 (0~100점). 실거래·호가가 많을수록 높아집니다." />
+            <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점 (${latestEstimate.confidenceScore <= 30 ? "낮음" : latestEstimate.confidenceScore <= 60 ? "중간" : "높음"})` : "-"} title="가격앵커 데이터 충분도 (0~100점). 실거래·호가가 많을수록 높아집니다." />
             <Summary label="적용 평형" value={`${latestEstimate?.selectedArea ?? effectiveArea}㎡`} />
           </div>
         </div>
+      </div>
 
-        {latestEstimate && latestEstimate.modelBreakdown.length > 0 && (
-          <div className="card p-6 lg:col-span-2">
+      <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} accent="blue" />
+        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다." accent="emerald" />
+        <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} accent="violet" />
+        <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} accent="amber" />
+        <DataCard
+          title="하위호가 소진율"
+          value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"}
+          description={inventorySignal?.conclusion === "strong_up" ? "하위 30% 가격대 매물 소진 30%↑ — 상승 신호" : "호가/매물 화면에서 하위 30% 호가 매물 소진 비율을 산출합니다."}
+          accent={inventorySignal?.conclusion === "strong_up" ? "red" : "slate"}
+          fireSignal={inventorySignal?.conclusion === "strong_up"}
+        />
+        <LocationFeaturesCard apartment={apartment} />
+        <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
+      </div>
+      </>
+      )}
+
+      {tab === "model" && (
+        latestEstimate && latestEstimate.modelBreakdown.length > 0 ? (
+          <div className="card p-6">
             <h2 className="text-xl font-black">가격추정 모델 전체</h2>
             <p className="mt-1 text-xs text-slate-500">
               평가요소별로 <b>참조값(가격·거래량 등)</b>, 측정 <b>원점수</b>, 적용 <b>가중치·배점</b>, 최종 <b>결과</b>를 분리해 표시합니다.
@@ -460,24 +598,14 @@ export default function TargetDetailPage() {
               </div>
             )}
           </div>
-        )}
-      </div>
-
-      <div className="mt-6 grid gap-5 lg:grid-cols-3">
-        <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} accent="blue" />
-        <DataCard title="실거래 입력" value={`${targetTransactions.length + comparableTransactions.length}건`} description="대상·비교단지 매매/분양권/전세 실거래를 선택 평형으로 환산합니다." accent="emerald" />
-        <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} accent="violet" />
-        <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} accent="amber" />
-        <DataCard
-          title="하위호가 소진율"
-          value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"}
-          description={inventorySignal?.conclusion === "strong_up" ? "하위 30% 가격대 매물 소진 30%↑ — 상승 신호" : "호가/매물 화면에서 하위 30% 호가 매물 소진 비율을 산출합니다."}
-          accent={inventorySignal?.conclusion === "strong_up" ? "red" : "slate"}
-          fireSignal={inventorySignal?.conclusion === "strong_up"}
-        />
-        <LocationFeaturesCard apartment={apartment} />
-        <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />
-      </div>
+        ) : (
+          <div className="card p-10 text-center">
+            <p className="text-base font-semibold text-slate-700">아직 추정 결과가 없습니다</p>
+            <p className="mt-1 text-sm text-slate-400">분석 결과 탭에서 가격추정을 먼저 실행하세요.</p>
+            <button type="button" onClick={() => setTab("analysis")} className="btn-primary mt-4 text-sm">분석 결과로 이동</button>
+          </div>
+        )
+      )}
 
     </AppShell>
   );

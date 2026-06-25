@@ -121,23 +121,31 @@ export default function ComparablesPage() {
             </div>
           </div>
 
-          {/* 2열: 필터 조건 */}
+          {/* 2열: 필터 조건 — 핵심(거리)은 항상, 나머지는 접이식 */}
           <div className="card p-5">
             <p className="text-sm font-black text-slate-700 mb-3">필터 조건</p>
-            <div className="space-y-3">
-              <NumberField label="최대 거리(km)" value={rule.maxDistanceKm} onChange={(value) => updateRule("maxDistanceKm", value)} />
-              <NumberField label="최소 입주연도" value={rule.minBuiltYear ?? ""} onChange={(value) => updateRule("minBuiltYear", value)} />
-              <NumberField label="최대 입주연도" value={rule.maxBuiltYear ?? ""} onChange={(value) => updateRule("maxBuiltYear", value)} />
-              <NumberField label="최소 세대수" value={rule.minHouseholds ?? ""} onChange={(value) => updateRule("minHouseholds", value)} />
-              <div className="grid grid-cols-2 gap-2">
-                <NumberField label="면적 하한" value={rule.areaMin} onChange={(value) => updateRule("areaMin", value)} />
-                <NumberField label="면적 상한" value={rule.areaMax} onChange={(value) => updateRule("areaMax", value)} />
+            <NumberField label="최대 거리(km)" value={rule.maxDistanceKm} onChange={(value) => updateRule("maxDistanceKm", value)} />
+            <details className="group mt-3">
+              <summary className="flex cursor-pointer select-none items-center justify-between rounded-md py-1.5 text-sm font-semibold text-slate-600 hover:text-blue-600">
+                상세 필터 (입주연도 · 세대수 · 면적 · 키워드)
+                <span className="text-xs text-slate-400 transition-transform group-open:rotate-180">▾</span>
+              </summary>
+              <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField label="최소 입주연도" value={rule.minBuiltYear ?? ""} onChange={(value) => updateRule("minBuiltYear", value)} />
+                  <NumberField label="최대 입주연도" value={rule.maxBuiltYear ?? ""} onChange={(value) => updateRule("maxBuiltYear", value)} />
+                </div>
+                <NumberField label="최소 세대수" value={rule.minHouseholds ?? ""} onChange={(value) => updateRule("minHouseholds", value)} />
+                <div className="grid grid-cols-2 gap-2">
+                  <NumberField label="면적 하한" value={rule.areaMin} onChange={(value) => updateRule("areaMin", value)} />
+                  <NumberField label="면적 상한" value={rule.areaMax} onChange={(value) => updateRule("areaMax", value)} />
+                </div>
+                <label className="block">
+                  <span className="text-sm font-semibold text-slate-700">지역 키워드</span>
+                  <input className="input mt-1" value={rule.regionKeywords.join(", ")} onChange={(event) => updateRule("regionKeywords", event.target.value)} placeholder="오산, 송도" />
+                </label>
               </div>
-              <label className="block">
-                <span className="text-sm font-semibold text-slate-700">지역 키워드</span>
-                <input className="input mt-1" value={rule.regionKeywords.join(", ")} onChange={(event) => updateRule("regionKeywords", event.target.value)} placeholder="오산, 송도" />
-              </label>
-            </div>
+            </details>
           </div>
         </div>
 

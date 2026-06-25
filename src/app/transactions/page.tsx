@@ -94,8 +94,17 @@ export default function TransactionsPage() {
         <p className="mt-2 text-slate-600">동호수 등급은 S/A/B/C/D를 B급 기준 가격으로 환산합니다.</p>
       </div>
 
+      {!store.targets.length && store.ready && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          대상아파트가 없습니다.{" "}
+          <a href="/targets" className="font-semibold underline">대상아파트 추가</a>
+          {" "}후 실거래를 입력하세요.
+        </div>
+      )}
+
       <div className="card p-5">
-        <div className="grid gap-3 md:grid-cols-4">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">필수 입력</p>
+        <div className="grid gap-3 md:grid-cols-3">
           <select className="input" value={apartmentId} onChange={(event) => setApartmentId(event.target.value)}>
             <option value="">단지 선택</option>
             {store.apartments.map((apartment) => <option key={apartment.id} value={apartment.id}>{apartment.name}</option>)}
@@ -103,22 +112,34 @@ export default function TransactionsPage() {
           <select className="input" value={transactionType} onChange={(event) => setTransactionType(event.target.value as TransactionType)}>
             <option value="sale">매매</option><option value="jeonse">전세</option><option value="presale">분양권</option><option value="monthly_rent">월세</option>
           </select>
-          <input className="input" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="가격, 만원" />
-          <input className="input" value={exclusiveArea} onChange={(event) => setExclusiveArea(event.target.value)} placeholder="전용면적" />
+          <input className="input" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="가격 (만원)" />
+          <input className="input" value={exclusiveArea} onChange={(event) => setExclusiveArea(event.target.value)} placeholder="전용면적 (㎡)" />
           <input className="input" type="date" value={contractDate} onChange={(event) => setContractDate(event.target.value)} />
-          <input className="input" value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="층" />
-          <input className="input" value={buildingNo} onChange={(event) => setBuildingNo(event.target.value)} placeholder="동" />
-          <input className="input" value={unitNo} onChange={(event) => setUnitNo(event.target.value)} placeholder="호수" />
-          <input className="input" value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="향" />
-          <select className="input" value={grade} onChange={(event) => setGrade(event.target.value as UnitGrade)}>
-            {grades.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <button className="btn-primary" onClick={addTransaction}>추가</button>
         </div>
-        <div className="mt-4 flex flex-col gap-2 text-sm text-slate-600">
+
+        <details className="group mt-4">
+          <summary className="flex cursor-pointer items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-700">
+            선택 입력 (층·동·호수·향·등급)
+            <span className="ml-auto transition-transform group-open:rotate-180">▾</span>
+          </summary>
+          <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-3">
+            <input className="input" value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="층" />
+            <input className="input" value={buildingNo} onChange={(event) => setBuildingNo(event.target.value)} placeholder="동" />
+            <input className="input" value={unitNo} onChange={(event) => setUnitNo(event.target.value)} placeholder="호수" />
+            <input className="input" value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="향" />
+            <select className="input" value={grade} onChange={(event) => setGrade(event.target.value as UnitGrade)}>
+              {grades.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </div>
+        </details>
+
+        <button className="btn-primary mt-4 w-full" onClick={addTransaction}>실거래 추가</button>
+        {message && <p className="mt-2 text-sm font-semibold text-blue-700">{message}</p>}
+
+        <div className="mt-6 border-t border-slate-100 pt-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">CSV 일괄 업로드</p>
           <input type="file" accept=".csv" onChange={(event) => event.target.files?.[0] && uploadCsv(event.target.files[0])} />
-          <p>CSV 컬럼: apartmentName 또는 apartmentId, transactionType, price, exclusiveArea, contractDate, floor, buildingNo, unitNo, direction, grade</p>
-          {message && <p className="font-semibold text-blue-700">{message}</p>}
+          <p className="mt-1 text-xs text-slate-400">컬럼: apartmentName 또는 apartmentId, transactionType, price, exclusiveArea, contractDate, floor, buildingNo, unitNo, direction, grade</p>
         </div>
       </div>
 
