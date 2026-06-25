@@ -53,33 +53,46 @@ export default function TargetsPage() {
       <TargetApartmentSearch apartments={store.apartments} onAdd={addTarget} />
 
       <div className="card mt-6 overflow-hidden">
-        <div className="border-b border-slate-200 p-5">
+        <div className="flex items-center justify-between border-b border-slate-200 p-5">
           <h2 className="text-lg font-black">등록된 대상아파트</h2>
+          {store.targets.length > 0 && (
+            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-700">{store.targets.length}개</span>
+          )}
         </div>
-        <table className="table w-full">
-          <thead>
-            <tr><th>단지명</th><th>지역</th><th>주소</th><th>브랜드</th><th>관리</th></tr>
-          </thead>
-          <tbody>
-            {store.targets.map((apartment) => (
-              <tr key={apartment.id}>
-                <td className="font-semibold">{apartment.name}</td>
-                <td>{apartment.region}</td>
-                <td>{apartment.address}</td>
-                <td>{apartment.brand ?? "-"}</td>
-                <td>
-                  <div className="flex flex-wrap gap-2">
-                    <Link className="btn-secondary" href={`/targets/${apartment.id}`}>상세</Link>
-                    <button className="btn-danger" onClick={() => deleteTarget(apartment.id)}>삭제</button>
-                  </div>
-                </td>
-              </tr>
+        {!store.targets.length && !store.ready ? (
+          <div className="space-y-2 p-5">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-10 animate-pulse rounded-md bg-slate-100" />
             ))}
-            {!store.targets.length && (
-              <tr><td colSpan={5} className="text-center text-slate-500">등록된 대상아파트가 없습니다.</td></tr>
-            )}
-          </tbody>
-        </table>
+          </div>
+        ) : !store.targets.length ? (
+          <div className="py-14 text-center">
+            <p className="text-base font-semibold text-slate-700">등록된 대상아파트가 없습니다</p>
+            <p className="mt-1 text-sm text-slate-400">위 검색창에서 단지명으로 찾아 추가하세요.</p>
+          </div>
+        ) : (
+          <table className="table w-full">
+            <thead>
+              <tr><th>단지명</th><th>지역</th><th>주소</th><th>브랜드</th><th>관리</th></tr>
+            </thead>
+            <tbody>
+              {store.targets.map((apartment) => (
+                <tr key={apartment.id}>
+                  <td className="font-semibold">{apartment.name}</td>
+                  <td>{apartment.region}</td>
+                  <td>{apartment.address}</td>
+                  <td>{apartment.brand ? apartment.brand : <span className="text-slate-300">-</span>}</td>
+                  <td>
+                    <div className="flex flex-wrap gap-2">
+                      <Link className="btn-secondary" href={`/targets/${apartment.id}`}>상세</Link>
+                      <button className="btn-danger" onClick={() => deleteTarget(apartment.id)}>삭제</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </AppShell>
   );
