@@ -151,8 +151,27 @@ export default function TargetDetailPage() {
   const currentStep = steps.findIndex((s) => !s.done);
   const allReady = steps.slice(0, 4).every((s) => s.done);
 
+  if (!store.ready) {
+    return (
+      <AppShell>
+        <div className="space-y-4">
+          <div className="h-8 w-48 animate-pulse rounded-md bg-slate-100" />
+          <div className="h-4 w-32 animate-pulse rounded-md bg-slate-100" />
+          <div className="card h-64 animate-pulse bg-slate-50" />
+        </div>
+      </AppShell>
+    );
+  }
+
   if (!apartment) {
-    return <AppShell><div className="card p-6">대상아파트를 찾을 수 없습니다.</div></AppShell>;
+    return (
+      <AppShell>
+        <div className="card p-6">
+          <p className="font-semibold text-slate-700">대상아파트를 찾을 수 없습니다.</p>
+          <a href="/targets" className="mt-3 inline-block text-sm text-blue-600 underline">대상아파트 목록으로 돌아가기</a>
+        </div>
+      </AppShell>
+    );
   }
 
   async function runEstimate() {
