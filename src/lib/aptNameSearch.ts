@@ -45,6 +45,8 @@ const KNOWN_SUFFIXES: string[] = [
   "마스터", "더힐", "더스타", "베르디움", "클래스",
   "더제니스", "더테라스", "포레", "더클래스", "파크뷰", "시티뷰",
   "루체하임", "레이크뷰", "더퍼스트", "퍼스트", "파라곤", "파크",
+  // 중흥S-클래스 계열
+  "S클래스에듀하이", "S-클래스에듀하이", "S클래스", "S-클래스",
 ].sort((a, b) => b.length - a.length);
 
 // 괄호/특수문자 제거 후 정규화
@@ -90,6 +92,9 @@ export function generateSearchCandidates(name: string): string[] {
 
   // 1. 원본 그대로
   push(name.trim());
+
+  // 1b. 하이픈을 공백으로 ("중흥S-클래스에듀하이" → "중흥S 클래스에듀하이")
+  if (name.includes("-")) push(name.replace(/-/g, " ").replace(/\s+/g, " ").trim());
 
   // 2. 특수문자 제거
   const norm = normalize(name);
