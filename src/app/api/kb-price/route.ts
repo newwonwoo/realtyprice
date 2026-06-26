@@ -186,20 +186,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // 시세제공=Y 면적 우선, 없으면 전체 면적으로 실제 데이터 조회 시도
+    // (시세제공=N이어도 신축 등에서 실제 시세 데이터가 있는 경우 있음)
     const pricedAreas = allAreas.filter((a) => a.hasPrice);
-    if (!pricedAreas.length) {
-      return NextResponse.json({
-        complexList, areaTypes: allAreas, prices: [],
-        reasonCode: "no_priced_area",
-        reason: `KB에 이 단지의 시세제공 면적이 없습니다. 전체 ${allAreas.length}개 면적 모두 시세 미산정(시세제공=N) 상태입니다. 분양 전이거나 거래가 매우 드문 단지입니다.`,
-      });
-    }
+    const candidateAreas = pricedAreas.length > 0 ? pricedAreas : allAreas;
 
     // 면적 지정 시 가장 가까운 평형, 아니면 전체
-    let selected = pricedAreas;
+    let selected = candidateAreas;
     if (targetArea) {
       const t = Number(targetArea);
-      const nearest = pricedAreas.reduce((best, a) =>
+      const nearest = candidateAreas.reduce((best, a) =>
         Math.abs(a.exclusiveArea - t) < Math.abs(best.exclusiveArea - t) ? a : best
       );
       selected = [nearest];
