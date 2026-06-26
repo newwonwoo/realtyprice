@@ -67,7 +67,7 @@ export default function TargetDetailPage() {
 
   const apartment = store.targets.find((item) => item.id === id);
   const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
-  const selectedLinks = store.comparableApartments.filter((item) => item.targetApartmentId === id && item.selected);
+  const selectedLinks = store.comparableApartments.filter((item) => item.targetApartmentId === id);
   const selectedComparableIds = selectedLinks.map((item) => item.apartmentId);
   const selectedComparables = store.apartments.filter((item) => selectedComparableIds.includes(item.id));
   const targetListings = store.listings.filter((item) => item.apartmentId === id);
