@@ -125,15 +125,21 @@ export function generateSearchCandidates(name: string): string[] {
       push(prefix + alias);                              // 지역+별칭 (prefix가 있을 때만 의미 있음)
     }
 
-    // 4e. 브랜드가 맨 앞에 올 때: suffix에서 부제를 떼어 지역명 추출
+    // 4e. 브랜드가 맨 앞에 올 때: suffix에서 지역명 추출
     if (!prefix && suffix) {
+      // 공백 포함 버전 ("e편한세상 오산세교") — 직방이 공백으로 등록한 경우
+      push(actualBrand + " " + suffix);
+      if (alias) push(alias + " " + suffix);
+
+      // 지역명만 단독 검색 ("오산세교") — disambiguation 허용
+      push(suffix);
+
       const loc = stripKnownSuffix(suffix);
       if (loc) {
         push(actualBrand + loc);                         // "래미안대치", "더샵송도"
-        if (alias) push(alias + loc);                    // 별칭+지역 "이편한세상계양"
+        if (alias) push(alias + loc);
       }
       if (suffix.length > 2) push(actualBrand + suffix.slice(0, 2)); // 지역 2글자
-      // 단지번호 제거 버전도 별칭으로
       const noNo = stripComplexNo(suffix);
       if (noNo !== suffix && alias) push(alias + noNo);
     }
