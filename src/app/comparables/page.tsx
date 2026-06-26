@@ -33,21 +33,51 @@ export default function ComparablesPage() {
     saveRule({ ...rule, [key]: nextValue, targetApartmentId: activeTargetId });
   }
 
+  // 현재 비교단지 링크들 (이 대상아파트에 해당)
+  const currentLinks = store.comparableApartments.filter((item) => item.targetApartmentId === activeTargetId);
+
+  // 가중치 합계 → 합이 100이 아닐 때 경고
+  const weightSum = currentLinks.reduce((s, l) => s + (l.compareWeight ?? 0), 0);
+
+  // 균등배분: 전체를 100/N으로 리셋
+  function distributeWeightsEvenly() {
+    const n = currentLinks.length;
+    if (!n) return;
+    const base = Math.floor(100 / n);
+    const remainder = 100 - base * n;
+    store.setComparableApartments(
+      store.comparableApartments.map((item, _, arr) => {
+        if (item.targetApartmentId !== activeTargetId) return item;
+        const idx = arr.filter((x) => x.targetApartmentId === activeTargetId).indexOf(item);
+        return { ...item, compareWeight: base + (idx < remainder ? 1 : 0), updatedAt: nowIso() };
+      })
+    );
+  }
+
   function upsertComparable(apartmentId: string, compareWeight?: number) {
     const existing = store.comparableApartments.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartmentId);
     if (existing) {
       store.setComparableApartments(store.comparableApartments.map((item) => item.id === existing.id ? { ...item, selected: true, compareWeight: compareWeight ?? item.compareWeight, updatedAt: nowIso() } : item));
       return;
     }
+    // 신규 추가 시 균등배분
+    const n = currentLinks.length + 1;
+    const base = Math.floor(100 / n);
+    const remainder = 100 - base * n;
+    const updated = store.comparableApartments.map((item, _, arr) => {
+      if (item.targetApartmentId !== activeTargetId) return item;
+      const idx = arr.filter((x) => x.targetApartmentId === activeTargetId).indexOf(item);
+      return { ...item, compareWeight: base + (idx < remainder ? 1 : 0), updatedAt: nowIso() };
+    });
     store.setComparableApartments([
-      ...store.comparableApartments,
+      ...updated,
       {
         id: `ca_${Date.now()}_${apartmentId}`,
         targetApartmentId: activeTargetId,
         apartmentId,
         selected: true,
         manualAdded: true,
-        compareWeight: compareWeight ?? 20,
+        compareWeight: compareWeight ?? base,
         createdAt: nowIso(),
         updatedAt: nowIso()
       }
@@ -250,6 +280,15 @@ export default function ComparablesPage() {
         <div className="card overflow-hidden">
           <div className="border-b border-slate-200 p-5">
             <h2 className="text-lg font-black">{activeTarget ? activeTarget.name : "대상아파트 없음"}</h2>
+          </div>
+          <div className="px-5 py-3 flex items-center gap-3 border-b border-slate-100">
+            <span className="text-sm text-slate-600">
+              가중치 합계: <span className={weightSum === 100 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>{weightSum}</span>
+              {weightSum !== 100 && <span className="text-amber-500 text-xs ml-1">(합이 100이 아닙니다 — 상대 비율로 자동 환산됩니다)</span>}
+            </span>
+            {currentLinks.length > 0 && (
+              <button className="btn-secondary text-xs px-3 py-1" onClick={distributeWeightsEvenly}>균등배분</button>
+            )}
           </div>
           <table className="table w-full">
             <thead><tr><th>단지명</th><th>지역</th><th>입주</th><th>세대수</th><th>가중치</th><th>삭제</th></tr></thead>
