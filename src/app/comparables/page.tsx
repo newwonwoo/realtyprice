@@ -20,6 +20,7 @@ function isPublicHousing(name: string) {
 export default function ComparablesPage() {
   const store = useRealtyStore();
   const [targetId, setTargetId] = useState("");
+  const [removedNotice, setRemovedNotice] = useState<string[]>([]);
   const activeTargetId = targetId || store.targets[0]?.id || "";
   const activeTarget = store.targets.find((target) => target.id === activeTargetId);
   const rule = useMemo(
@@ -38,14 +39,18 @@ export default function ComparablesPage() {
     saveRule({ ...rule, [key]: nextValue, targetApartmentId: activeTargetId });
   }
 
-  // 공공임대 비교단지 자동 제거
+  // 공공임대 비교단지 자동 제거 + 사용자 알림
   useEffect(() => {
-    const publicIds = store.apartments.filter((a) => isPublicHousing(a.name)).map((a) => a.id);
-    if (!publicIds.length) return;
+    const publicApts = store.apartments.filter((a) => isPublicHousing(a.name));
+    if (!publicApts.length) return;
+    const publicIds = publicApts.map((a) => a.id);
     const toRemove = store.comparableApartments.filter((l) => publicIds.includes(l.apartmentId));
     if (!toRemove.length) return;
+    setRemovedNotice(publicApts.map((a) => a.name));
     store.setComparableApartments(store.comparableApartments.filter((l) => !publicIds.includes(l.apartmentId)));
     store.setApartments(store.apartments.filter((a) => !publicIds.includes(a.id)));
+    const timer = setTimeout(() => setRemovedNotice([]), 8000);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTargetId]);
 
@@ -150,6 +155,22 @@ export default function ComparablesPage() {
 
   return (
     <AppShell>
+      {/* 공공임대 자동 제거 알림 */}
+      {removedNotice.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 shadow-lg text-sm">
+          <p className="font-semibold text-amber-800">공공임대 단지 자동 제거됨</p>
+          <p className="text-amber-700 mt-1">{removedNotice.join(", ")}</p>
+        </div>
+      )}
+      {/* 가중치 합계 sticky 배너 */}
+      {currentLinks.length > 0 && weightSum !== 100 && (
+        <div className="sticky top-0 z-40 flex items-center justify-between gap-3 bg-amber-50 border-b border-amber-200 px-5 py-2 text-sm">
+          <span className="text-amber-800 font-semibold">
+            ⚠️ 가중치 합계 {weightSum} — 100이 아닙니다 (상대 비율로 자동 환산됨)
+          </span>
+          <button className="btn-secondary text-xs px-3 py-1 whitespace-nowrap" onClick={distributeWeightsEvenly}>균등배분</button>
+        </div>
+      )}
       <div className="mb-8">
         <p className="text-sm font-semibold text-blue-600">Comparables</p>
         <h1 className="text-3xl font-black">비교단지 관리</h1>
