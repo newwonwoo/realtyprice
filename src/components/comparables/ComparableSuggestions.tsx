@@ -146,8 +146,14 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       const items: AptSearchResult[] = json.items ?? [];
       d.rawCount = items.length;
 
-      // 1차: 입지 유사도 + 세대수 −20% 하한 필터 (비교단지가 대상의 80% 미만이면 제외, +는 허용)
-      const afterName = items.filter((item) => item.name !== target.name && item.name !== target.shortName);
+      // 1차: 공공임대 브랜드 제외 (민간 시세 비교 불가)
+      const PUBLIC_BRANDS = ["휴먼시아", "뜨란채", "천년나무", "안단테", "주공그린빌", "주공", "행복주택", "임대", "LH", "SH"];
+      const afterPublic = items.filter((item) =>
+        !PUBLIC_BRANDS.some((b) => item.name.includes(b))
+      );
+
+      // 2차: 이름·유사도·세대수 필터
+      const afterName = afterPublic.filter((item) => item.name !== target.name && item.name !== target.shortName);
       d.afterNameFilter = afterName.length;
       const afterHousehold = afterName.filter((item) => {
         if (target.households && item.households) return item.households >= target.households * HOUSEHOLD_FLOOR;
