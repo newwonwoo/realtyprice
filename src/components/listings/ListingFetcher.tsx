@@ -127,10 +127,10 @@ async function kbBrowserCollect(aptName: string, complexNo: string | undefined, 
   if (!allAreas.length) return { complexNo: resolvedNo, complexList, areaTypes: [], prices: [], reasonCode: "no_area_types", reason: "KB에 면적 정보가 아직 등록되지 않았습니다." };
 
   const priced = allAreas.filter((a) => a.hasPrice);
-  if (!priced.length) return { complexNo: resolvedNo, complexList, areaTypes: allAreas, prices: [], reasonCode: "no_priced_area", reason: `KB 시세제공 면적이 없습니다 (전체 ${allAreas.length}개 면적 시세 미산정).` };
-
-  let selected = priced;
-  if (area) { const t = Number(area); selected = [priced.reduce((b, a) => Math.abs(a.exclusiveArea - t) < Math.abs(b.exclusiveArea - t) ? a : b)]; }
+  // 시세제공=Y 없으면 전체 면적으로 실제 데이터 조회 시도
+  const candidateAreas = priced.length > 0 ? priced : allAreas;
+  let selected = candidateAreas;
+  if (area) { const t = Number(area); selected = [candidateAreas.reduce((b, a) => Math.abs(a.exclusiveArea - t) < Math.abs(b.exclusiveArea - t) ? a : b)]; }
 
   const prices = await Promise.all(selected.map(async (a) => {
     const pData = await kbBrowserFetch(`${KB_BASE}/land-price/price/BasePrcInfoNew?단지기본일련번호=${resolvedNo}&면적일련번호=${a.areaNo}`);
