@@ -109,13 +109,23 @@ const REGION_WEIGHT_MULTIPLIERS: Record<RegionProfile, Partial<Record<keyof Mode
   default: {},
 };
 
+function renormalize(weights: ModelWeights, origSum: number): ModelWeights {
+  const newSum = Object.values(weights).reduce((s, v) => s + (v ?? 0), 0);
+  if (newSum === 0) return weights;
+  const factor = origSum / newSum;
+  const out: ModelWeights = {} as ModelWeights;
+  (Object.keys(weights) as (keyof ModelWeights)[]).forEach((k) => { out[k] = (weights[k] ?? 0) * factor; });
+  return out;
+}
+
 export function applyRegionProfile(weights: ModelWeights, profile: RegionProfile): ModelWeights {
   const mult = REGION_WEIGHT_MULTIPLIERS[profile];
+  const origSum = Object.values(weights).reduce((s, v) => s + (v ?? 0), 0);
   const out = { ...weights };
   (Object.keys(mult) as (keyof ModelWeights)[]).forEach((k) => {
     out[k] = (out[k] ?? 0) * (mult[k] ?? 1);
   });
-  return out;
+  return renormalize(out, origSum);
 }
 
 // ── 공급절벽 모드 (Supply Cliff Override) ────────────────────────────────
@@ -135,11 +145,12 @@ const SUPPLY_CLIFF_MULTIPLIERS: Partial<Record<keyof ModelWeights, number>> = {
 };
 
 export function applySupplyCliff(weights: ModelWeights): ModelWeights {
+  const origSum = Object.values(weights).reduce((s, v) => s + (v ?? 0), 0);
   const out = { ...weights };
   (Object.keys(SUPPLY_CLIFF_MULTIPLIERS) as (keyof ModelWeights)[]).forEach((k) => {
     out[k] = (out[k] ?? 0) * (SUPPLY_CLIFF_MULTIPLIERS[k] ?? 1);
   });
-  return out;
+  return renormalize(out, origSum);
 }
 
 export function calculateJeonseFloorPrice(expectedJeonsePrice: number, jeonseRatio: number) {

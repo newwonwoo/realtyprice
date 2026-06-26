@@ -351,6 +351,7 @@ export function ListingFetcher({ apartments }: Props) {
     setBatchRunning(true);
     const today = new Date().toISOString().slice(0, 10);
     const allImported: Listing[] = [];
+    try {
 
     for (let i = 0; i < apartments.length; i++) {
       const { apartment: a } = apartments[i];
@@ -430,7 +431,7 @@ export function ListingFetcher({ apartments }: Props) {
               grade: "B" as const,
               adjustedAskingPrice: normalizeToBGrade(price.saleGeneral, "B"),
               source: "kb" as const,
-              listingKey: `kb_${a.id}_${area.areaNo}_sale_${today}`,
+              listingKey: `kb_${a.id}_${area.areaNo}_sale`,
               capturedAt: today,
               status: "active" as const,
               memo: `KB시세 ${price.baseDate} (상한${formatEok(price.saleUpper)}/하한${formatEok(price.saleLower)})`,
@@ -446,7 +447,7 @@ export function ListingFetcher({ apartments }: Props) {
               grade: "B" as const,
               adjustedAskingPrice: normalizeToBGrade(price.jeonseGeneral, "B"),
               source: "kb" as const,
-              listingKey: `kb_${a.id}_${area.areaNo}_jeonse_${today}`,
+              listingKey: `kb_${a.id}_${area.areaNo}_jeonse`,
               capturedAt: today,
               status: "active" as const,
               memo: `KB전세시세 ${price.baseDate} (상한${formatEok(price.jeonseUpper)}/하한${formatEok(price.jeonseLower)})`,
@@ -464,7 +465,11 @@ export function ListingFetcher({ apartments }: Props) {
     const newOnes = allImported.filter((l) => !existingKeys.has(l.listingKey));
     if (newOnes.length > 0) store.setListings([...newOnes, ...store.listings]);
     setBatchProgress(`완료 — ${newOnes.length}건 신규 저장 (중복 ${allImported.length - newOnes.length}건 제외)`);
-    setBatchRunning(false);
+    } catch (e) {
+      setBatchProgress(`수집 중 오류 발생: ${String(e)}`);
+    } finally {
+      setBatchRunning(false);
+    }
   }
 
   function importZigbang(listings: ZbListing[], type: "sale" | "jeonse") {
@@ -588,7 +593,7 @@ export function ListingFetcher({ apartments }: Props) {
         apartmentId: apt.id, listingType: "sale",
         exclusiveArea: area.exclusiveArea, askingPrice: price.saleGeneral,
         grade: "B", adjustedAskingPrice: normalizeToBGrade(price.saleGeneral, "B"),
-        source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_sale_${today}`,
+        source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_sale`,
         capturedAt: today, status: "active",
         memo: `KB시세 ${price.baseDate}`,
       });
@@ -597,7 +602,7 @@ export function ListingFetcher({ apartments }: Props) {
         apartmentId: apt.id, listingType: "jeonse",
         exclusiveArea: area.exclusiveArea, askingPrice: price.jeonseGeneral,
         grade: "B", adjustedAskingPrice: normalizeToBGrade(price.jeonseGeneral, "B"),
-        source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_jeonse_${today}`,
+        source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_jeonse`,
         capturedAt: today, status: "active",
         memo: `KB전세시세 ${price.baseDate}`,
       });

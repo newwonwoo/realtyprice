@@ -29,6 +29,7 @@ async function fetchPage(url: string, params: URLSearchParams): Promise<MolitTra
   const res = await fetch(`${url}?${params.toString()}`, {
     headers: { Accept: "application/json" },
     next: { revalidate: 0 },
+    signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) return [];
   const data = await res.json();
