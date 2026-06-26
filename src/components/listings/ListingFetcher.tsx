@@ -352,47 +352,110 @@ export function ListingFetcher({ apartments }: Props) {
 
     for (let i = 0; i < apartments.length; i++) {
       const { apartment: a } = apartments[i];
-      setBatchProgress(`${i + 1}/${apartments.length} — ${a.name} 수집중…`);
+      setBatchProgress(`${i + 1}/${apartments.length} — ${a.name} 직방 수집중…`);
       const query = (zbStates[a.id]?.searchQuery ?? a.zigbangSearchQuery ?? a.name).trim() || a.name;
       setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: true, reasonCode: "", reason: "" } }));
 
       const s = await zbSearch(a.id, query);
       if (s.reasonCode !== "ok" || !s.complexList.length) {
         setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: false, reasonCode: s.reasonCode, reason: s.reason, complexList: s.complexList } }));
-        continue;
-      }
-      const complexId = s.complexList[0].complexId;
-      const [sale, jeonse] = await Promise.all([zbFetchListings(complexId, "매매"), zbFetchListings(complexId, "전세")]);
+      } else {
+        const complexId = s.complexList[0].complexId;
+        const [sale, jeonse] = await Promise.all([zbFetchListings(complexId, "매매"), zbFetchListings(complexId, "전세")]);
 
-      const toListing = (ls: ZbListing[], type: "sale" | "jeonse"): Listing[] =>
-        ls.map((l) => ({
-          id: `listing_zb_${a.id}_${l.itemId}`,
-          apartmentId: a.id,
-          listingType: type,
-          exclusiveArea: l.area,
-          askingPrice: l.price,
-          floor: l.floor || undefined,
-          grade: "B" as const,
-          adjustedAskingPrice: normalizeToBGrade(l.price, "B"),
-          source: "manual" as const,
-          listingKey: `zb_${a.id}_${l.itemId}`,
-          capturedAt: today,
-          status: "active" as const,
-          memo: l.description || undefined,
+        const toListing = (ls: ZbListing[], type: "sale" | "jeonse"): Listing[] =>
+          ls.map((l) => ({
+            id: `listing_zb_${a.id}_${l.itemId}`,
+            apartmentId: a.id,
+            listingType: type,
+            exclusiveArea: l.area,
+            askingPrice: l.price,
+            floor: l.floor || undefined,
+            grade: "B" as const,
+            adjustedAskingPrice: normalizeToBGrade(l.price, "B"),
+            source: "manual" as const,
+            listingKey: `zb_${a.id}_${l.itemId}`,
+            capturedAt: today,
+            status: "active" as const,
+            memo: l.description || undefined,
+          }));
+
+        allImported.push(...toListing(sale, "sale"), ...toListing(jeonse, "jeonse"));
+        const total = sale.length + jeonse.length;
+        setZbStates((p) => ({
+          ...p,
+          [a.id]: {
+            ...(p[a.id] ?? defaultZb(a)), loading: false,
+            searchQuery: s.usedQuery,
+            complexList: s.complexList, sale, jeonse,
+            reasonCode: total > 0 ? "ok" : "no_listings",
+            reason: total > 0 ? "" : "단지 찾음. 직방 등록 매물 0건.",
+          },
         }));
+      }
 
-      allImported.push(...toListing(sale, "sale"), ...toListing(jeonse, "jeonse"));
-      const total = sale.length + jeonse.length;
-      setZbStates((p) => ({
-        ...p,
-        [a.id]: {
-          ...(p[a.id] ?? defaultZb(a)), loading: false,
-          searchQuery: s.usedQuery,
-          complexList: s.complexList, sale, jeonse,
-          reasonCode: total > 0 ? "ok" : "no_listings",
-          reason: total > 0 ? "" : "단지 찾음. 직방 등록 매물 0건.",
-        },
-      }));
+      // KB 시세 수집 → store.listings에 저장 (가격 모델이 읽을 수 있도록)
+      setBatchProgress(`${i + 1}/${apartments.length} — ${a.name} KB시세 수집중…`);
+      const kbQuery = (kbStates[a.id]?.searchQuery ?? a.kbSearchQuery ?? a.name).trim() || a.name;
+      setKbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultKb(a)), loading: true } }));
+      const kbCandidates = generateSearchCandidates(kbQuery);
+      let kbDone = false;
+      for (const candidate of kbCandidates) {
+        const { data, ok } = await kbSearchOne(candidate, a.defaultArea);
+        const code = (data.reasonCode as string) ?? (ok ? "ok" : "error");
+        if (code === "blocked" || code === "upstream_error" || code === "error") {
+          setKbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultKb(a)), loading: false, reasonCode: code, reason: (data.reason as string) ?? "" } }));
+          kbDone = true; break;
+        }
+        if (code === "complex_not_found") continue;
+        // 단지 찾음 (시세 있든 없든)
+        if (candidate !== kbQuery) saveKbAlias(a.id, candidate);
+        const prices = (data.prices as { area: KbAreaType; price: KbPrice | null }[]) ?? [];
+        setKbStates((p) => ({
+          ...p,
+          [a.id]: { ...(p[a.id] ?? defaultKb(a)), loading: false, searchQuery: candidate, reasonCode: code, reason: (data.reason as string) ?? "", areaTypes: (data.areaTypes as KbAreaType[]) ?? [], prices },
+        }));
+        // KB 시세를 Listing으로 변환하여 저장
+        for (const { area, price } of prices) {
+          if (!price) continue;
+          if (price.saleGeneral > 0) {
+            allImported.push({
+              id: `listing_kb_${a.id}_${area.areaNo}_sale`,
+              apartmentId: a.id,
+              listingType: "sale",
+              exclusiveArea: area.exclusiveArea,
+              askingPrice: price.saleGeneral,
+              grade: "B" as const,
+              adjustedAskingPrice: normalizeToBGrade(price.saleGeneral, "B"),
+              source: "kb" as const,
+              listingKey: `kb_${a.id}_${area.areaNo}_sale_${today}`,
+              capturedAt: today,
+              status: "active" as const,
+              memo: `KB시세 ${price.baseDate} (상한${formatEok(price.saleUpper)}/하한${formatEok(price.saleLower)})`,
+            });
+          }
+          if (price.jeonseGeneral > 0) {
+            allImported.push({
+              id: `listing_kb_${a.id}_${area.areaNo}_jeonse`,
+              apartmentId: a.id,
+              listingType: "jeonse",
+              exclusiveArea: area.exclusiveArea,
+              askingPrice: price.jeonseGeneral,
+              grade: "B" as const,
+              adjustedAskingPrice: normalizeToBGrade(price.jeonseGeneral, "B"),
+              source: "kb" as const,
+              listingKey: `kb_${a.id}_${area.areaNo}_jeonse_${today}`,
+              capturedAt: today,
+              status: "active" as const,
+              memo: `KB전세시세 ${price.baseDate} (상한${formatEok(price.jeonseUpper)}/하한${formatEok(price.jeonseLower)})`,
+            });
+          }
+        }
+        kbDone = true; break;
+      }
+      if (!kbDone) {
+        setKbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultKb(a)), loading: false, reasonCode: "complex_not_found", reason: `KB에서 "${kbQuery}" 미발견` } }));
+      }
     }
 
     const existingKeys = new Set(store.listings.map((l: Listing) => l.listingKey));
@@ -705,27 +768,66 @@ export function ListingFetcher({ apartments }: Props) {
           )}
 
           {kb.prices.length > 0 && (
-            <div className="rounded-lg border divide-y text-sm">
-              {kb.prices.map(({ area, price, reason }) => (
-                <div key={area.areaNo} className="px-4 py-3">
-                  <p className="font-semibold text-slate-700 mb-2">{area.typeName} ({area.exclusiveArea}㎡)</p>
-                  {price ? (
-                    <>
-                      <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-slate-600">
-                        <span>매매 일반</span><span className="font-semibold text-slate-800">{formatEok(price.saleGeneral)}</span>
-                        <span>매매 상한</span><span>{formatEok(price.saleUpper)}</span>
-                        <span>매매 하한</span><span>{formatEok(price.saleLower)}</span>
-                        <span>전세 일반</span><span className="font-semibold text-slate-800">{formatEok(price.jeonseGeneral)}</span>
-                        <span>전세 상한</span><span>{formatEok(price.jeonseUpper)}</span>
-                        <span>전세 하한</span><span>{formatEok(price.jeonseLower)}</span>
-                      </div>
-                      <p className="mt-2 text-xs text-slate-400">기준일: {price.baseDate}</p>
-                    </>
-                  ) : (
-                    <p className="text-xs text-amber-600">{reason || "이 면적 시세 없음"}</p>
-                  )}
-                </div>
-              ))}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-sm font-semibold text-slate-700">KB 시세</p>
+                <button
+                  className="btn-secondary text-xs px-3 py-1"
+                  onClick={() => {
+                    if (!apt) return;
+                    const today = new Date().toISOString().slice(0, 10);
+                    const imported: Listing[] = [];
+                    for (const { area, price } of kb.prices) {
+                      if (!price) continue;
+                      if (price.saleGeneral > 0) imported.push({
+                        id: `listing_kb_${apt.id}_${area.areaNo}_sale`,
+                        apartmentId: apt.id, listingType: "sale",
+                        exclusiveArea: area.exclusiveArea, askingPrice: price.saleGeneral,
+                        grade: "B", adjustedAskingPrice: normalizeToBGrade(price.saleGeneral, "B"),
+                        source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_sale_${today}`,
+                        capturedAt: today, status: "active",
+                        memo: `KB시세 ${price.baseDate}`,
+                      });
+                      if (price.jeonseGeneral > 0) imported.push({
+                        id: `listing_kb_${apt.id}_${area.areaNo}_jeonse`,
+                        apartmentId: apt.id, listingType: "jeonse",
+                        exclusiveArea: area.exclusiveArea, askingPrice: price.jeonseGeneral,
+                        grade: "B", adjustedAskingPrice: normalizeToBGrade(price.jeonseGeneral, "B"),
+                        source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_jeonse_${today}`,
+                        capturedAt: today, status: "active",
+                        memo: `KB전세시세 ${price.baseDate}`,
+                      });
+                    }
+                    const existingKeys = new Set(store.listings.map((l) => l.listingKey));
+                    const newOnes = imported.filter((l) => !existingKeys.has(l.listingKey));
+                    store.setListings([...newOnes, ...store.listings]);
+                  }}
+                >
+                  저장
+                </button>
+              </div>
+              <div className="rounded-lg border divide-y text-sm">
+                {kb.prices.map(({ area, price, reason }) => (
+                  <div key={area.areaNo} className="px-4 py-3">
+                    <p className="font-semibold text-slate-700 mb-2">{area.typeName} ({area.exclusiveArea}㎡)</p>
+                    {price ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-slate-600">
+                          <span>매매 일반</span><span className="font-semibold text-slate-800">{formatEok(price.saleGeneral)}</span>
+                          <span>매매 상한</span><span>{formatEok(price.saleUpper)}</span>
+                          <span>매매 하한</span><span>{formatEok(price.saleLower)}</span>
+                          <span>전세 일반</span><span className="font-semibold text-slate-800">{formatEok(price.jeonseGeneral)}</span>
+                          <span>전세 상한</span><span>{formatEok(price.jeonseUpper)}</span>
+                          <span>전세 하한</span><span>{formatEok(price.jeonseLower)}</span>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-400">기준일: {price.baseDate}</p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-amber-600">{reason || "이 면적 시세 없음"}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
