@@ -211,7 +211,9 @@ export function ListingFetcher({ apartments }: Props) {
   // ── 직방: 브라우저에서 직접 호출 (Vercel IP 차단 우회) ──────────
   async function zbSearchOne(query: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string }> {
     try {
-      const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${encodeURIComponent(query)}`, {
+      // 하이픈은 URL 안전문자 — encodeURIComponent가 %2D로 변환하면 Zigbang이 못 찾음
+      const zbQ = encodeURIComponent(query).replace(/%2D/gi, "-");
+      const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${zbQ}`, {
         headers: ZB_HEADERS,
         signal: AbortSignal.timeout(8000),
       });
@@ -248,8 +250,8 @@ export function ListingFetcher({ apartments }: Props) {
   }
 
   // 자동 재시도: 후보 검색어를 순서대로 시도, 성공하면 그 검색어를 별칭으로 저장
-  async function zbSearch(aptId: string, firstQuery: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string; usedQuery: string }> {
-    const candidates = generateSearchCandidates(firstQuery);
+  async function zbSearch(aptId: string, firstQuery: string, region?: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string; usedQuery: string }> {
+    const candidates = generateSearchCandidates(firstQuery, region);
     let lastResult = { complexList: [] as ZbComplex[], reasonCode: "complex_not_found", reason: "", usedQuery: firstQuery };
 
     for (const candidate of candidates) {
@@ -320,7 +322,7 @@ export function ListingFetcher({ apartments }: Props) {
 
     let resolvedId = complexId ?? "";
     if (!resolvedId) {
-      const s = await zbSearch(apt.id, query);
+      const s = await zbSearch(apt.id, query, apt.region);
       // 자동 정제로 검색어가 바뀌었으면 입력창에도 반영
       if (s.usedQuery !== query) patchZb(apt.id, { searchQuery: s.usedQuery });
       patchZb(apt.id, { complexList: s.complexList, reasonCode: s.reasonCode, reason: s.reason });
@@ -353,7 +355,7 @@ export function ListingFetcher({ apartments }: Props) {
       const query = (zbStates[a.id]?.searchQuery ?? a.zigbangSearchQuery ?? a.name).trim() || a.name;
       setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: true, reasonCode: "", reason: "" } }));
 
-      const s = await zbSearch(a.id, query);
+      const s = await zbSearch(a.id, query, a.region);
       if (s.reasonCode !== "ok" || !s.complexList.length) {
         setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: false, reasonCode: s.reasonCode, reason: s.reason, complexList: s.complexList } }));
       } else {
@@ -395,7 +397,7 @@ export function ListingFetcher({ apartments }: Props) {
       setBatchProgress(`${i + 1}/${apartments.length} — ${a.name} KB시세 수집중…`);
       const kbQuery = (kbStates[a.id]?.searchQuery ?? a.kbSearchQuery ?? a.name).trim() || a.name;
       setKbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultKb(a)), loading: true } }));
-      const kbCandidates = generateSearchCandidates(kbQuery);
+      const kbCandidates = generateSearchCandidates(kbQuery, a.region);
       let kbDone = false;
       for (const candidate of kbCandidates) {
         const { data, ok } = await kbSearchOne(candidate, a.defaultArea);
@@ -532,7 +534,7 @@ export function ListingFetcher({ apartments }: Props) {
     }
 
     const firstQuery = (kbStates[apt.id]?.searchQuery ?? apt.kbSearchQuery ?? apt.name).trim() || apt.name;
-    const candidates = generateSearchCandidates(firstQuery);
+    const candidates = generateSearchCandidates(firstQuery, apt.region);
 
     for (const candidate of candidates) {
       const { data, ok } = await kbSearchOne(candidate, apt.defaultArea);

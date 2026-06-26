@@ -82,8 +82,10 @@ function stripKnownSuffix(text: string): string | null {
  *
  * 예: "e편한세상계양더프리미어" →
  *   ["e편한세상계양더프리미어", "e편한세상", "e편한세상계양", "이편한세상계양", ...]
+ *
+ * @param regionHint 아파트 주소/지역 (예: "경기도 오산시" → "오산" 추출해 지역+브랜드 후보 추가)
  */
-export function generateSearchCandidates(name: string): string[] {
+export function generateSearchCandidates(name: string, regionHint?: string): string[] {
   const candidates: string[] = [];
   const push = (c: string | null | undefined) => {
     const s = c?.trim();
@@ -153,6 +155,22 @@ export function generateSearchCandidates(name: string): string[] {
     if (prefix) {
       const cleanPrefix = stripKnownSuffix(prefix);     // "사가정센트럴" → "사가정"
       if (cleanPrefix) push(cleanPrefix + actualBrand); // "사가정아이파크"
+    }
+
+    // 4g. regionHint: 지역명을 앞에 붙여서 추가 후보 생성
+    // (예: 오산 + 중흥 → "오산중흥", "오산중흥S클래스에듀하이")
+    if (regionHint) {
+      // "경기도 오산시" → ["오산시", "오산"] 추출
+      const regionTokens = regionHint
+        .replace(/경기도|서울특별시|인천광역시|경기|서울/g, "")
+        .split(/\s+/)
+        .map((t) => t.replace(/(시|군|구)$/, "").trim())
+        .filter((t) => t.length >= 2);
+      for (const loc of regionTokens) {
+        push(loc + actualBrand);              // "오산중흥"
+        if (suffix) push(loc + actualBrand + suffix); // "오산중흥S클래스에듀하이"
+        if (alias) push(loc + alias);
+      }
     }
 
     break; // 가장 긴 브랜드 1개만 사용
