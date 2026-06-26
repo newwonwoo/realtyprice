@@ -84,6 +84,70 @@ const ZB_HEADERS = {
   "Referer": "https://www.zigbang.com/",
 };
 
+// ── KB 브라우저 직접 호출 (사용자 한국 IP 사용 — Vercel 서버 IP 차단 우회) ──
+// 서버 라우트(/api/kb-price)와 동일 파싱. CORS로 막히면 throw → 호출부에서 서버 폴백.
+const KB_BASE = "https://api.kbland.kr";
+const kbNum = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+type KbCollectResult = {
+  reasonCode: string; reason?: string; complexNo?: string;
+  complexList: KbComplex[]; areaTypes: KbAreaType[];
+  prices: { area: KbAreaType; price: KbPrice | null; reason?: string }[];
+};
+
+async function kbBrowserFetch(url: string): Promise<unknown> {
+  // throw on network/CORS — 호출부가 잡아서 서버 폴백
+  const res = await fetch(url, { headers: { "Accept": "application/json, text/plain, */*", "webService": "1" }, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) {
+    const e = new Error(`HTTP ${res.status}`); (e as Error & { httpStatus?: number }).httpStatus = res.status; throw e;
+  }
+  return res.json();
+}
+
+async function kbBrowserCollect(aptName: string, complexNo: string | undefined, area?: number): Promise<KbCollectResult> {
+  let resolvedNo = complexNo ?? "";
+  let complexList: KbComplex[] = [];
+
+  if (!resolvedNo) {
+    const sData = await kbBrowserFetch(`${KB_BASE}/land-complex/serch/intgraSerch?검색설정명=SRC_NTOTAL&검색키워드=${encodeURIComponent(aptName)}&출력갯수=50&페이지설정값=1`);
+    const items = ((sData as Record<string, unknown>)?.dataBody as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+    const rows = ((items?.data as Record<string, unknown>)?.HSCM as Record<string, unknown>)?.data as Record<string, unknown>[] ?? [];
+    complexList = rows.map((x) => ({ complexNo: String(x.COMPLEX_NO ?? ""), name: String(x.HSCM_NM ?? ""), address: String(x.BUBADDR ?? "") })).filter((c) => c.complexNo);
+    if (!complexList.length) return { reasonCode: "complex_not_found", reason: `KB부동산에서 "${aptName}" 단지를 찾지 못했습니다.`, complexList: [], areaTypes: [], prices: [] };
+    if (complexList.length > 1 && !complexNo) return { reasonCode: "disambiguation", complexList, areaTypes: [], prices: [] };
+    resolvedNo = complexList[0].complexNo;
+  }
+
+  const aData = await kbBrowserFetch(`${KB_BASE}/land-complex/complex/mpriByType?단지기본일련번호=${resolvedNo}`);
+  const aItems = ((aData as Record<string, unknown>)?.dataBody as Record<string, unknown>)?.data as Record<string, unknown>[] ?? [];
+  const allAreas: KbAreaType[] = aItems.map((x) => ({
+    areaNo: String(x.면적일련번호 ?? ""), exclusiveArea: kbNum(x.전용면적), supplyArea: kbNum(x.공급면적),
+    typeName: String(x.주택형타입내용 ?? ""), hasPrice: String(x.시세제공여부 ?? "") === "1",
+  })).filter((a) => a.areaNo);
+  if (!allAreas.length) return { complexNo: resolvedNo, complexList, areaTypes: [], prices: [], reasonCode: "no_area_types", reason: "KB에 면적 정보가 아직 등록되지 않았습니다." };
+
+  const priced = allAreas.filter((a) => a.hasPrice);
+  if (!priced.length) return { complexNo: resolvedNo, complexList, areaTypes: allAreas, prices: [], reasonCode: "no_priced_area", reason: `KB 시세제공 면적이 없습니다 (전체 ${allAreas.length}개 면적 시세 미산정).` };
+
+  let selected = priced;
+  if (area) { const t = Number(area); selected = [priced.reduce((b, a) => Math.abs(a.exclusiveArea - t) < Math.abs(b.exclusiveArea - t) ? a : b)]; }
+
+  const prices = await Promise.all(selected.map(async (a) => {
+    const pData = await kbBrowserFetch(`${KB_BASE}/land-price/price/BasePrcInfoNew?단지기본일련번호=${resolvedNo}&면적일련번호=${a.areaNo}`);
+    const series = ((pData as Record<string, unknown>)?.dataBody as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+    const r = (series?.시세 as Record<string, unknown>[]) ?? [];
+    if (!r.length) return { area: a, price: null as KbPrice | null, reason: "KB에 해당 면적 시세 데이터가 없습니다." };
+    const latest = r[0];
+    return { area: a, price: {
+      baseDate: String(latest.시세기준년월일 ?? latest.기준년월일 ?? ""),
+      saleGeneral: kbNum(latest.매매일반거래가), saleUpper: kbNum(latest.매매상한가), saleLower: kbNum(latest.매매하한가),
+      jeonseGeneral: kbNum(latest.전세일반거래가), jeonseUpper: kbNum(latest.전세상한가), jeonseLower: kbNum(latest.전세하한가),
+    } as KbPrice };
+  }));
+  const hasAny = prices.some((p) => p.price !== null);
+  return { complexNo: resolvedNo, complexList, areaTypes: allAreas, prices, reasonCode: hasAny ? "ok" : "no_price_data", reason: hasAny ? undefined : "KB 시세 데이터가 없습니다." };
+}
+
 // apt의 저장된 별칭 우선, 없으면 단지명
 const defaultZb = (apt?: Apartment): ZbState => ({
   loading: false, searchQuery: apt?.zigbangSearchQuery ?? apt?.name ?? "",
@@ -171,8 +235,18 @@ export function ListingFetcher({ apartments }: Props) {
       if (!list.length) return { complexList: [], reasonCode: "complex_not_found", reason: "" };
       return { complexList: list, reasonCode: list.length > 1 ? "disambiguation" : "ok", reason: "" };
     } catch (err) {
-      const msg = String(err);
-      return { complexList: [], reasonCode: /timeout|aborted/i.test(msg) ? "error" : "error", reason: msg };
+      // 브라우저 직접 실패(CORS/네트워크) → 서버 라우트(icn1) 폴백
+      try {
+        const res = await fetch(`/api/zigbang-listings?aptName=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        const list = (data?.complexList ?? []) as ZbComplex[];
+        if (data?.reasonCode && data.reasonCode !== "ok" && data.reasonCode !== "disambiguation" && !list.length) {
+          return { complexList: [], reasonCode: data.reasonCode, reason: data.reason ?? String(err) };
+        }
+        return { complexList: list, reasonCode: list.length > 1 ? "disambiguation" : list.length ? "ok" : "complex_not_found", reason: data?.reason ?? "" };
+      } catch (e2) {
+        return { complexList: [], reasonCode: "error", reason: `직방 브라우저·서버 양쪽 모두 실패: ${String(e2)}` };
+      }
     }
   }
 
@@ -210,7 +284,7 @@ export function ListingFetcher({ apartments }: Props) {
         `${ZB_BASE}/v2/complex/${complexId}/items?tradeType=${encodeURIComponent(tradeType)}&serviceType=아파트`,
         { headers: ZB_HEADERS, signal: AbortSignal.timeout(8000) }
       );
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const items = (data?.items ?? data?.data ?? []) as Record<string, unknown>[];
       return items.map((a) => ({
@@ -222,7 +296,23 @@ export function ListingFetcher({ apartments }: Props) {
         description: String(a.description ?? a.memo ?? ""),
       }));
     } catch {
-      return [];
+      // 브라우저 직접 실패 → 서버 라우트(icn1) 폴백
+      try {
+        const type = tradeType === "매매" ? "sale" : "jeonse";
+        const res = await fetch(`/api/zigbang-listings?complexId=${encodeURIComponent(complexId)}&type=${type}`);
+        const data = await res.json();
+        const arr = (type === "sale" ? data?.saleListings : data?.jeonseListings) ?? [];
+        return (arr as Record<string, unknown>[]).map((a) => ({
+          itemId: String(a.itemId ?? a.id ?? ""),
+          tradeType: String(a.tradeType ?? tradeType),
+          price: Number(a.price ?? 0),
+          area: Number(a.area ?? a.supplyArea ?? 0),
+          floor: Number(a.floor ?? 0),
+          description: String(a.description ?? a.memo ?? ""),
+        }));
+      } catch {
+        return [];
+      }
     }
   }
 
@@ -336,16 +426,23 @@ export function ListingFetcher({ apartments }: Props) {
     patchZb(apt.id, { reason: `${newOnes.length}건 저장 (중복 ${imported.length - newOnes.length}건 제외)` });
   }
 
-  // ── KB시세 조회 (서버 라우트 경유, 자동 후보 재시도) ──────────────
-  async function kbSearchOne(aptName: string, area?: number): Promise<{ data: Record<string, unknown>; ok: boolean }> {
-    const params = new URLSearchParams({ aptName });
-    if (area) params.set("area", String(area));
+  // ── KB시세 조회: 브라우저 직접(한국 가정용 IP) 우선 → 실패 시 서버 라우트 폴백 ──
+  // 브라우저가 CORS/네트워크로 throw하면 서버(icn1) 경유로 재시도. 둘 다 막히면 차단 확정.
+  async function kbSearchOne(aptName: string, area?: number): Promise<{ data: Record<string, unknown>; ok: boolean; via?: string }> {
     try {
-      const res = await fetch(`/api/kb-price?${params}`);
-      const data = await res.json();
-      return { data, ok: res.ok };
-    } catch (e) {
-      return { data: { reasonCode: "error", reason: String(e) }, ok: false };
+      const data = await kbBrowserCollect(aptName, undefined, area) as unknown as Record<string, unknown>;
+      return { data, ok: true, via: "browser" };
+    } catch {
+      // 브라우저 직접 실패(CORS/차단/네트워크) → 서버 라우트 폴백
+      const params = new URLSearchParams({ aptName });
+      if (area) params.set("area", String(area));
+      try {
+        const res = await fetch(`/api/kb-price?${params}`);
+        const data = await res.json();
+        return { data, ok: res.ok, via: "server" };
+      } catch (e) {
+        return { data: { reasonCode: "error", reason: `KB 브라우저·서버 양쪽 모두 실패: ${String(e)}` }, ok: false };
+      }
     }
   }
 
@@ -354,7 +451,14 @@ export function ListingFetcher({ apartments }: Props) {
     patchKb(apt.id, { loading: true, reasonCode: "", reason: "" });
 
     if (complexNo) {
-      // 단지번호로 직접 조회 (사용자가 선택)
+      // 단지번호로 직접 조회 (사용자가 선택) — 브라우저 직접 우선, 실패 시 서버 폴백
+      try {
+        const data = await kbBrowserCollect("", complexNo, apt.defaultArea);
+        patchKb(apt.id, { loading: false, reasonCode: data.reasonCode ?? "ok", reason: data.reason ?? "", complexList: [], selectedNo: complexNo, areaTypes: data.areaTypes ?? [], prices: data.prices ?? [] });
+        return;
+      } catch {
+        // 브라우저 실패 → 서버 폴백
+      }
       const params = new URLSearchParams({ complexNo });
       if (apt.defaultArea) params.set("area", String(apt.defaultArea));
       try {
@@ -362,7 +466,7 @@ export function ListingFetcher({ apartments }: Props) {
         const data = await res.json();
         patchKb(apt.id, { loading: false, reasonCode: data.reasonCode ?? "ok", reason: data.reason ?? "", complexList: [], selectedNo: complexNo, areaTypes: data.areaTypes ?? [], prices: data.prices ?? [] });
       } catch (e) {
-        patchKb(apt.id, { loading: false, reasonCode: "error", reason: `KB 연결 실패: ${String(e)}` });
+        patchKb(apt.id, { loading: false, reasonCode: "error", reason: `KB 브라우저·서버 양쪽 모두 실패: ${String(e)}` });
       }
       return;
     }
