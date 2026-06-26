@@ -33,10 +33,10 @@ export default function ComparablesPage() {
     saveRule({ ...rule, [key]: nextValue, targetApartmentId: activeTargetId });
   }
 
-  function upsertComparable(apartmentId: string, selected: boolean, compareWeight?: number) {
+  function upsertComparable(apartmentId: string, compareWeight?: number) {
     const existing = store.comparableApartments.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartmentId);
     if (existing) {
-      store.setComparableApartments(store.comparableApartments.map((item) => item.id === existing.id ? { ...item, selected, compareWeight: compareWeight ?? item.compareWeight, updatedAt: nowIso() } : item));
+      store.setComparableApartments(store.comparableApartments.map((item) => item.id === existing.id ? { ...item, selected: true, compareWeight: compareWeight ?? item.compareWeight, updatedAt: nowIso() } : item));
       return;
     }
     store.setComparableApartments([
@@ -45,7 +45,7 @@ export default function ComparablesPage() {
         id: `ca_${Date.now()}_${apartmentId}`,
         targetApartmentId: activeTargetId,
         apartmentId,
-        selected,
+        selected: true,
         manualAdded: true,
         compareWeight: compareWeight ?? 20,
         createdAt: nowIso(),
@@ -59,11 +59,11 @@ export default function ComparablesPage() {
     if (!store.apartments.some((a) => a.id === apt.id)) {
       store.setApartments([...store.apartments, apt]);
     }
-    upsertComparable(apt.id, true);
+    upsertComparable(apt.id);
   }
 
   const existingComparableIds = new Set(store.apartments.map((a) => a.id));
-  const selectedCount = store.comparableApartments.filter((item) => item.targetApartmentId === activeTargetId && item.selected).length;
+  const selectedCount = store.comparableApartments.filter((item) => item.targetApartmentId === activeTargetId).length;
 
   // 대장아파트 자동 지정: 대상이 바뀌고 대장이 미설정이면 하드코딩 테이블에서 즉시 적용
   const suggestedLeader = activeTarget ? findLeaderForAddress(activeTarget.address ?? activeTarget.region ?? "") : undefined;
@@ -236,10 +236,9 @@ export default function ComparablesPage() {
         {/* 비교단지 일괄 실거래 수집 */}
         {store.comparables.length > 0 && (
           <BulkTransactionFetcher
-            apartments={store.comparables.filter((a) => {
-              const link = store.comparableApartments.find((l) => l.targetApartmentId === activeTargetId && l.apartmentId === a.id);
-              return !!link?.selected;
-            })}
+            apartments={store.comparables.filter((a) =>
+              store.comparableApartments.some((l) => l.targetApartmentId === activeTargetId && l.apartmentId === a.id)
+            )}
             existingTransactions={store.transactions}
             onImport={(newTxs) => {
               if (newTxs.length > 0) store.setTransactions([...store.transactions, ...newTxs]);
@@ -253,19 +252,18 @@ export default function ComparablesPage() {
             <h2 className="text-lg font-black">{activeTarget ? activeTarget.name : "대상아파트 없음"}</h2>
           </div>
           <table className="table w-full">
-            <thead><tr><th>선택</th><th>단지명</th><th>지역</th><th>입주</th><th>세대수</th><th>가중치</th><th>삭제</th></tr></thead>
+            <thead><tr><th>단지명</th><th>지역</th><th>입주</th><th>세대수</th><th>가중치</th><th>삭제</th></tr></thead>
             <tbody>
               {store.comparables.map((apartment) => {
                 const link = store.comparableApartments.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartment.id);
                 return (
                   <tr key={apartment.id}>
-                    <td><input type="checkbox" checked={!!link?.selected} onChange={(event) => upsertComparable(apartment.id, event.target.checked)} /></td>
                     <td className="font-semibold">{apartment.name}</td>
                     <td>{apartment.region}</td>
                     <td>{apartment.builtYear ?? "-"}</td>
                     <td>{apartment.households ?? "-"}</td>
                     <td>
-                      <input className="input max-w-24" type="number" min="0" max="100" value={link?.compareWeight ?? 20} onChange={(event) => upsertComparable(apartment.id, link?.selected ?? false, Number(event.target.value))} />
+                      <input className="input max-w-24" type="number" min="0" max="100" value={link?.compareWeight ?? 20} onChange={(event) => upsertComparable(apartment.id, Number(event.target.value))} />
                     </td>
                     <td>
                       <button
@@ -280,7 +278,7 @@ export default function ComparablesPage() {
                 );
               })}
               {!store.comparables.length && (
-                <tr><td colSpan={7} className="text-center text-slate-500">비교단지가 없습니다. 자동추천 또는 대상아파트 검색으로 추가하세요.</td></tr>
+                <tr><td colSpan={6} className="text-center text-slate-500">비교단지가 없습니다. 자동추천 또는 대상아파트 검색으로 추가하세요.</td></tr>
               )}
             </tbody>
           </table>
