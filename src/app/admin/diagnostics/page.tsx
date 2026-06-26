@@ -41,25 +41,67 @@ async function testZigbangBrowser(): Promise<Omit<ClientCheck, "name">> {
   }
 }
 
-async function testKbBrowser(): Promise<Omit<ClientCheck, "name">> {
+// KB 브라우저 직접 (사용자 가정용 IP) — CORS 막히면 Failed to fetch
+async function testKbBrowserDirect(): Promise<Omit<ClientCheck, "name">> {
+  try {
+    const res = await fetch(
+      "https://api.kbland.kr/land-complex/serch/intgraSerch?검색설정명=SRC_NTOTAL&검색키워드=래미안&출력갯수=5&페이지설정값=1",
+      { headers: { "Accept": "application/json", "webService": "1" }, signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 429)
+        return { status: "error", message: `차단됨 (HTTP ${res.status})` };
+      return { status: "warn", message: `HTTP ${res.status}` };
+    }
+    const d = await res.json().catch(() => ({})) as Record<string, unknown>;
+    const cnt = ((((d?.dataBody as Record<string, unknown>)?.data as Record<string, unknown>)?.data as Record<string, unknown>)?.HSCM as Record<string, unknown>)?.data;
+    return { status: "ok", message: `브라우저 직접 정상 · 검색결과 ${(cnt as unknown[])?.length ?? 0}건 (가정용 IP·CORS 통과)` };
+  } catch (err) {
+    const msg = String(err);
+    if (/failed to fetch|cors|networkerror/i.test(msg))
+      return { status: "error", message: "CORS 차단 — KB가 브라우저 직접 호출을 막음", detail: msg };
+    if (/timeout|aborted/i.test(msg))
+      return { status: "error", message: "응답 시간 초과 (8초)", detail: msg };
+    return { status: "error", message: "요청 실패", detail: msg };
+  }
+}
+
+// KB 서버 경유 (Vercel icn1 IP)
+async function testKbServer(): Promise<Omit<ClientCheck, "name">> {
   try {
     const res = await fetch("/api/kb-price?aptName=래미안&area=84", { signal: AbortSignal.timeout(12000) });
     const d = await res.json().catch(() => ({})) as Record<string, unknown>;
     const code = String(d?.reasonCode ?? "");
     if (code === "ok") {
       const cnt = (d?.prices as unknown[])?.length ?? 0;
-      return { status: "ok", message: `Vercel→KB 정상 · ${cnt}개 면적 시세 조회됨` };
+      return { status: "ok", message: `Vercel(서울)→KB 정상 · ${cnt}개 면적 시세 조회됨` };
     }
     if (code === "blocked")
-      return { status: "error", message: "Vercel 서버 IP가 KB부동산에 차단됨 (403/429)", detail: String(d?.reason ?? "") };
+      return { status: "error", message: "Vercel 서울 IP가 KB에 차단됨 (데이터센터 IP 차단)", detail: String(d?.reason ?? "") };
     if (code === "upstream_error")
       return { status: "warn", message: "KB 서버 오류 (5xx)", detail: String(d?.reason ?? "") };
     if (code === "complex_not_found")
       return { status: "warn", message: "단지 검색 결과 없음 (API는 작동 중)", detail: String(d?.reason ?? "") };
     return { status: "warn", message: `reasonCode: ${code}`, detail: String(d?.reason ?? "") };
   } catch (err) {
-    const msg = String(err);
-    return { status: "error", message: "요청 실패", detail: msg };
+    return { status: "error", message: "요청 실패", detail: String(err) };
+  }
+}
+
+// 직방 서버 경유 (Vercel icn1 IP)
+async function testZigbangServer(): Promise<Omit<ClientCheck, "name">> {
+  try {
+    const res = await fetch("/api/zigbang-listings?aptName=래미안", { signal: AbortSignal.timeout(12000) });
+    const d = await res.json().catch(() => ({})) as Record<string, unknown>;
+    const code = String(d?.reasonCode ?? "");
+    const cnt = (d?.complexList as unknown[])?.length ?? 0;
+    if (code === "ok" || code === "disambiguation" || cnt > 0)
+      return { status: "ok", message: `Vercel(서울)→직방 정상 · 단지 ${cnt}곳 검색됨` };
+    if (code === "blocked")
+      return { status: "error", message: "Vercel 서울 IP가 직방에 차단됨 (데이터센터 IP 차단)", detail: String(d?.reason ?? "") };
+    return { status: "warn", message: `reasonCode: ${code}`, detail: String(d?.reason ?? "") };
+  } catch (err) {
+    return { status: "error", message: "요청 실패", detail: String(err) };
   }
 }
 
@@ -95,8 +137,10 @@ const STATUS_BG = {
 };
 
 const CLIENT_CHECK_NAMES: Record<string, string> = {
-  zb: "직방 API (브라우저 직접)",
-  kb: "KB부동산 API (Vercel 서버 경유)",
+  zbBrowser: "직방 — 브라우저 직접 (가정용 IP)",
+  zbServer: "직방 — Vercel 서버 경유 (서울 IP)",
+  kbBrowser: "KB — 브라우저 직접 (가정용 IP)",
+  kbServer: "KB — Vercel 서버 경유 (서울 IP)",
 };
 
 export default function DiagnosticsPage() {
@@ -104,8 +148,10 @@ export default function DiagnosticsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clientChecks, setClientChecks] = useState<Record<string, ClientCheck>>({
-    zb: { name: CLIENT_CHECK_NAMES.zb, status: "idle", message: "" },
-    kb: { name: CLIENT_CHECK_NAMES.kb, status: "idle", message: "" },
+    zbBrowser: { name: CLIENT_CHECK_NAMES.zbBrowser, status: "idle", message: "" },
+    zbServer: { name: CLIENT_CHECK_NAMES.zbServer, status: "idle", message: "" },
+    kbBrowser: { name: CLIENT_CHECK_NAMES.kbBrowser, status: "idle", message: "" },
+    kbServer: { name: CLIENT_CHECK_NAMES.kbServer, status: "idle", message: "" },
   });
   const [clientRunning, setClientRunning] = useState(false);
 
@@ -125,14 +171,17 @@ export default function DiagnosticsPage() {
 
   async function runClientChecks() {
     setClientRunning(true);
+    setClientChecks((prev) => Object.fromEntries(
+      Object.entries(prev).map(([k, v]) => [k, { ...v, status: "running" as const, message: "테스트 중…" }])
+    ));
+    const [zbB, zbS, kbB, kbS] = await Promise.all([
+      testZigbangBrowser(), testZigbangServer(), testKbBrowserDirect(), testKbServer(),
+    ]);
     setClientChecks({
-      zb: { name: CLIENT_CHECK_NAMES.zb, status: "running", message: "테스트 중…" },
-      kb: { name: CLIENT_CHECK_NAMES.kb, status: "running", message: "테스트 중…" },
-    });
-    const [zb, kb] = await Promise.all([testZigbangBrowser(), testKbBrowser()]);
-    setClientChecks({
-      zb: { name: CLIENT_CHECK_NAMES.zb, ...zb },
-      kb: { name: CLIENT_CHECK_NAMES.kb, ...kb },
+      zbBrowser: { name: CLIENT_CHECK_NAMES.zbBrowser, ...zbB },
+      zbServer: { name: CLIENT_CHECK_NAMES.zbServer, ...zbS },
+      kbBrowser: { name: CLIENT_CHECK_NAMES.kbBrowser, ...kbB },
+      kbServer: { name: CLIENT_CHECK_NAMES.kbServer, ...kbS },
     });
     setClientRunning(false);
   }
