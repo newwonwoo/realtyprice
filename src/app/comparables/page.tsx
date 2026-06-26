@@ -12,6 +12,11 @@ import { ComparableSuggestions } from "@/components/comparables/ComparableSugges
 import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
 import { BulkTransactionFetcher } from "@/components/comparables/BulkTransactionFetcher";
 
+const PUBLIC_BRANDS = ["휴먼시아", "뜨란채", "천년나무", "안단테", "주공그린빌", "주공", "행복주택", "임대아파트", "LH", "SH"];
+function isPublicHousing(name: string) {
+  return PUBLIC_BRANDS.some((b) => name.includes(b));
+}
+
 export default function ComparablesPage() {
   const store = useRealtyStore();
   const [targetId, setTargetId] = useState("");
@@ -33,6 +38,17 @@ export default function ComparablesPage() {
     saveRule({ ...rule, [key]: nextValue, targetApartmentId: activeTargetId });
   }
 
+  // 공공임대 비교단지 자동 제거
+  useEffect(() => {
+    const publicIds = store.apartments.filter((a) => isPublicHousing(a.name)).map((a) => a.id);
+    if (!publicIds.length) return;
+    const toRemove = store.comparableApartments.filter((l) => publicIds.includes(l.apartmentId));
+    if (!toRemove.length) return;
+    store.setComparableApartments(store.comparableApartments.filter((l) => !publicIds.includes(l.apartmentId)));
+    store.setApartments(store.apartments.filter((a) => !publicIds.includes(a.id)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTargetId]);
+
   // 현재 비교단지 링크들 (이 대상아파트에 해당)
   const currentLinks = store.comparableApartments.filter((item) => item.targetApartmentId === activeTargetId);
 
@@ -45,11 +61,13 @@ export default function ComparablesPage() {
     if (!n) return;
     const base = Math.floor(100 / n);
     const remainder = 100 - base * n;
+    let idxC = 0;
     store.setComparableApartments(
-      store.comparableApartments.map((item, _, arr) => {
+      store.comparableApartments.map((item) => {
         if (item.targetApartmentId !== activeTargetId) return item;
-        const idx = arr.filter((x) => x.targetApartmentId === activeTargetId).indexOf(item);
-        return { ...item, compareWeight: base + (idx < remainder ? 1 : 0), updatedAt: nowIso() };
+        const w = base + (idxC < remainder ? 1 : 0);
+        idxC++;
+        return { ...item, compareWeight: w, updatedAt: nowIso() };
       })
     );
   }
@@ -64,10 +82,12 @@ export default function ComparablesPage() {
     const n = currentLinks.length + 1;
     const base = Math.floor(100 / n);
     const remainder = 100 - base * n;
-    const updated = store.comparableApartments.map((item, _, arr) => {
+    let idxCounter = 0;
+    const updated = store.comparableApartments.map((item) => {
       if (item.targetApartmentId !== activeTargetId) return item;
-      const idx = arr.filter((x) => x.targetApartmentId === activeTargetId).indexOf(item);
-      return { ...item, compareWeight: base + (idx < remainder ? 1 : 0), updatedAt: nowIso() };
+      const w = base + (idxCounter < remainder ? 1 : 0);
+      idxCounter++;
+      return { ...item, compareWeight: w, updatedAt: nowIso() };
     });
     store.setComparableApartments([
       ...updated,

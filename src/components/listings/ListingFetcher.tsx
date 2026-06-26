@@ -211,7 +211,9 @@ export function ListingFetcher({ apartments }: Props) {
   // ── 직방: 브라우저에서 직접 호출 (Vercel IP 차단 우회) ──────────
   async function zbSearchOne(query: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string }> {
     try {
-      const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${encodeURIComponent(query)}`, {
+      // 하이픈은 URL 안전문자 — encodeURIComponent가 %2D로 변환하면 Zigbang이 못 찾음
+      const zbQ = encodeURIComponent(query).replace(/%2D/gi, "-");
+      const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${zbQ}`, {
         headers: ZB_HEADERS,
         signal: AbortSignal.timeout(8000),
       });
@@ -248,8 +250,8 @@ export function ListingFetcher({ apartments }: Props) {
   }
 
   // 자동 재시도: 후보 검색어를 순서대로 시도, 성공하면 그 검색어를 별칭으로 저장
-  async function zbSearch(aptId: string, firstQuery: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string; usedQuery: string }> {
-    const candidates = generateSearchCandidates(firstQuery);
+  async function zbSearch(aptId: string, firstQuery: string, region?: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string; usedQuery: string }> {
+    const candidates = generateSearchCandidates(firstQuery, region);
     let lastResult = { complexList: [] as ZbComplex[], reasonCode: "complex_not_found", reason: "", usedQuery: firstQuery };
 
     for (const candidate of candidates) {
@@ -320,7 +322,7 @@ export function ListingFetcher({ apartments }: Props) {
 
     let resolvedId = complexId ?? "";
     if (!resolvedId) {
-      const s = await zbSearch(apt.id, query);
+      const s = await zbSearch(apt.id, query, apt.region);
       // 자동 정제로 검색어가 바뀌었으면 입력창에도 반영
       if (s.usedQuery !== query) patchZb(apt.id, { searchQuery: s.usedQuery });
       patchZb(apt.id, { complexList: s.complexList, reasonCode: s.reasonCode, reason: s.reason });
@@ -339,6 +341,9 @@ export function ListingFetcher({ apartments }: Props) {
       reasonCode: total > 0 ? "ok" : "no_listings",
       reason: total > 0 ? "" : "단지는 찾았으나 직방에 현재 등록 매물이 0건입니다. 분양권·신축 입주 전이거나 실제 매물이 없는 상태일 수 있습니다.",
     });
+    // 수집 즉시 자동 저장
+    if (sale.length > 0) importZigbang(sale, "sale");
+    if (jeonse.length > 0) importZigbang(jeonse, "jeonse");
   }
 
   // 전체 일괄 수집 → 자동 저장
@@ -353,7 +358,7 @@ export function ListingFetcher({ apartments }: Props) {
       const query = (zbStates[a.id]?.searchQuery ?? a.zigbangSearchQuery ?? a.name).trim() || a.name;
       setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: true, reasonCode: "", reason: "" } }));
 
-      const s = await zbSearch(a.id, query);
+      const s = await zbSearch(a.id, query, a.region);
       if (s.reasonCode !== "ok" || !s.complexList.length) {
         setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: false, reasonCode: s.reasonCode, reason: s.reason, complexList: s.complexList } }));
       } else {
@@ -395,7 +400,7 @@ export function ListingFetcher({ apartments }: Props) {
       setBatchProgress(`${i + 1}/${apartments.length} — ${a.name} KB시세 수집중…`);
       const kbQuery = (kbStates[a.id]?.searchQuery ?? a.kbSearchQuery ?? a.name).trim() || a.name;
       setKbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultKb(a)), loading: true } }));
-      const kbCandidates = generateSearchCandidates(kbQuery);
+      const kbCandidates = generateSearchCandidates(kbQuery, a.region);
       let kbDone = false;
       for (const candidate of kbCandidates) {
         const { data, ok } = await kbSearchOne(candidate, a.defaultArea);
@@ -515,6 +520,7 @@ export function ListingFetcher({ apartments }: Props) {
       try {
         const data = await kbBrowserCollect("", complexNo, apt.defaultArea);
         patchKb(apt.id, { loading: false, reasonCode: data.reasonCode ?? "ok", reason: data.reason ?? "", complexList: [], selectedNo: complexNo, areaTypes: data.areaTypes ?? [], prices: data.prices ?? [] });
+        if ((data.reasonCode ?? "ok") === "ok") saveKbToStore(data.prices);
         return;
       } catch {
         // 브라우저 실패 → 서버 폴백
@@ -525,6 +531,7 @@ export function ListingFetcher({ apartments }: Props) {
         const res = await fetch(`/api/kb-price?${params}`);
         const data = await res.json();
         patchKb(apt.id, { loading: false, reasonCode: data.reasonCode ?? "ok", reason: data.reason ?? "", complexList: [], selectedNo: complexNo, areaTypes: data.areaTypes ?? [], prices: data.prices ?? [] });
+        if ((data.reasonCode ?? "ok") === "ok") saveKbToStore(data.prices);
       } catch (e) {
         patchKb(apt.id, { loading: false, reasonCode: "error", reason: `KB 브라우저·서버 양쪽 모두 실패: ${String(e)}` });
       }
@@ -532,7 +539,7 @@ export function ListingFetcher({ apartments }: Props) {
     }
 
     const firstQuery = (kbStates[apt.id]?.searchQuery ?? apt.kbSearchQuery ?? apt.name).trim() || apt.name;
-    const candidates = generateSearchCandidates(firstQuery);
+    const candidates = generateSearchCandidates(firstQuery, apt.region);
 
     for (const candidate of candidates) {
       const { data, ok } = await kbSearchOne(candidate, apt.defaultArea);
@@ -554,7 +561,10 @@ export function ListingFetcher({ apartments }: Props) {
           saveKbAlias(apt.id, candidate);
           patchKb(apt.id, { searchQuery: candidate });
         }
-        patchKb(apt.id, { loading: false, reasonCode: code, reason: (data.reason as string) ?? "", complexList: [], selectedNo: (data.complexList as KbComplex[])?.[0]?.complexNo ?? "", areaTypes: (data.areaTypes as KbAreaType[]) ?? [], prices: (data.prices as { area: KbAreaType; price: KbPrice | null; reason?: string }[]) ?? [] });
+        const fetchedPrices = (data.prices as { area: KbAreaType; price: KbPrice | null; reason?: string }[]) ?? [];
+        patchKb(apt.id, { loading: false, reasonCode: code, reason: (data.reason as string) ?? "", complexList: [], selectedNo: (data.complexList as KbComplex[])?.[0]?.complexNo ?? "", areaTypes: (data.areaTypes as KbAreaType[]) ?? [], prices: fetchedPrices });
+        // 조회 즉시 자동 저장 (state 업데이트 전이므로 prices 직접 전달)
+        if (code === "ok") saveKbToStore(fetchedPrices);
         return;
       }
     }
@@ -567,11 +577,11 @@ export function ListingFetcher({ apartments }: Props) {
     });
   }
 
-  function saveKbToStore() {
+  function saveKbToStore(prices?: { area: KbAreaType; price: KbPrice | null }[]) {
     if (!apt) return;
     const today = new Date().toISOString().slice(0, 10);
     const imported: Listing[] = [];
-    for (const { area, price } of kb.prices) {
+    for (const { area, price } of (prices ?? kb.prices)) {
       if (!price) continue;
       if (price.saleGeneral > 0) imported.push({
         id: `listing_kb_${apt.id}_${area.areaNo}_sale`,
@@ -700,7 +710,7 @@ export function ListingFetcher({ apartments }: Props) {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-slate-600">매매 {zb.sale.length}건</span>
-                <button className="btn-secondary text-xs px-2 py-0.5" onClick={() => importZigbang(zb.sale, "sale")}>저장</button>
+                <span className="text-xs text-emerald-600">자동저장됨</span>
               </div>
               <div className="max-h-36 overflow-y-auto rounded border divide-y text-xs">
                 {zb.sale.map((l) => (
@@ -718,7 +728,7 @@ export function ListingFetcher({ apartments }: Props) {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-slate-600">전세 {zb.jeonse.length}건</span>
-                <button className="btn-secondary text-xs px-2 py-0.5" onClick={() => importZigbang(zb.jeonse, "jeonse")}>저장</button>
+                <span className="text-xs text-emerald-600">자동저장됨</span>
               </div>
               <div className="max-h-36 overflow-y-auto rounded border divide-y text-xs">
                 {zb.jeonse.map((l) => (
@@ -789,7 +799,7 @@ export function ListingFetcher({ apartments }: Props) {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-slate-600">{kb.prices.filter(p => p.price).length}개 면적 시세</span>
-                <button className="btn-secondary text-xs px-2 py-0.5" onClick={saveKbToStore}>저장</button>
+                <span className="text-xs text-emerald-600">자동저장됨</span>
               </div>
               <div className="rounded border divide-y text-xs">
                 {kb.prices.map(({ area, price, reason }) => (
