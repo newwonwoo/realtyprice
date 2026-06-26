@@ -10,7 +10,7 @@ import type { Transaction } from "@/types/transaction";
 function isAuthorized(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // 미설정이면 개발 환경으로 간주
+  if (!secret) { console.error("CRON_SECRET is not set — blocking request"); return false; }
   return auth === `Bearer ${secret}`;
 }
 
@@ -83,7 +83,7 @@ async function collectOne(apt: AptRow, today: string): Promise<{ listings: Listi
   for (const candidate of candidates) {
     const zbQ = encodeURIComponent(candidate).replace(/%2D/gi, "-");
     const s = await zbFetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${zbQ}`);
-    if (!s.ok) break;
+    if (!s.ok) { if (s.status === 429) break; else continue; }
     const list = zbParseComplexes(s.data);
     if (list.length >= 1) { zbComplexId = list[0].complexId; break; }
   }
@@ -106,7 +106,7 @@ async function collectOne(apt: AptRow, today: string): Promise<{ listings: Listi
   const kbCandidates = generateSearchCandidates(kbQuery, region);
   kbLoop: for (const candidate of kbCandidates) {
     const s = await kbFetch(`${KB_BASE}/land-complex/serch/intgraSerch?검색설정명=SRC_NTOTAL&검색키워드=${encodeURIComponent(candidate)}&출력갯수=50&페이지설정값=1`);
-    if (!s.ok) break;
+    if (!s.ok) continue;
     const items = ((s.data as Record<string, unknown>)?.dataBody as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
     const rows = ((items?.data as Record<string, unknown>)?.HSCM as Record<string, unknown>)?.data as Record<string, unknown>[] ?? [];
     const complexList = rows.map((x) => ({ complexNo: String(x.COMPLEX_NO ?? "") })).filter((c) => c.complexNo);
@@ -131,8 +131,8 @@ async function collectOne(apt: AptRow, today: string): Promise<{ listings: Listi
       const saleGeneral = Number(latest.매매일반거래가 ?? 0);
       const jeonseGeneral = Number(latest.전세일반거래가 ?? 0);
       const baseDate = String(latest.시세기준년월일 ?? latest.기준년월일 ?? "");
-      if (saleGeneral > 0) listings.push({ id: `listing_kb_${apt.id}_${area.areaNo}_sale`, apartmentId: apt.id, listingType: "sale", exclusiveArea: area.exclusiveArea, askingPrice: saleGeneral, grade: "B", adjustedAskingPrice: normalizeToBGrade(saleGeneral, "B"), source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_sale_${today}`, capturedAt: today, status: "active", memo: `KB시세 ${baseDate}` });
-      if (jeonseGeneral > 0) listings.push({ id: `listing_kb_${apt.id}_${area.areaNo}_jeonse`, apartmentId: apt.id, listingType: "jeonse", exclusiveArea: area.exclusiveArea, askingPrice: jeonseGeneral, grade: "B", adjustedAskingPrice: normalizeToBGrade(jeonseGeneral, "B"), source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_jeonse_${today}`, capturedAt: today, status: "active", memo: `KB전세시세 ${baseDate}` });
+      if (saleGeneral > 0) listings.push({ id: `listing_kb_${apt.id}_${area.areaNo}_sale`, apartmentId: apt.id, listingType: "sale", exclusiveArea: area.exclusiveArea, askingPrice: saleGeneral, grade: "B", adjustedAskingPrice: normalizeToBGrade(saleGeneral, "B"), source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_sale`, capturedAt: today, status: "active", memo: `KB시세 ${baseDate}` });
+      if (jeonseGeneral > 0) listings.push({ id: `listing_kb_${apt.id}_${area.areaNo}_jeonse`, apartmentId: apt.id, listingType: "jeonse", exclusiveArea: area.exclusiveArea, askingPrice: jeonseGeneral, grade: "B", adjustedAskingPrice: normalizeToBGrade(jeonseGeneral, "B"), source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_jeonse`, capturedAt: today, status: "active", memo: `KB전세시세 ${baseDate}` });
     }
     break kbLoop;
   }
@@ -203,7 +203,7 @@ async function collectTransactions(apts: AptRow[], serviceKey: string, today: st
       // 매매
       const saleItems = await fetchMolitPage(SALE_API, baseParams);
       for (const x of saleItems) {
-        if (!String(x.aptNm ?? "").includes(aptName.slice(0, 4))) continue;
+        if (!String(x.aptNm ?? "").replace(/\s/g, "").includes(aptName.replace(/\s/g, ""))) continue;
         const price = Number(String(x.dealAmount ?? "").replace(/,/g, ""));
         const cd = `${x.dealYear}-${String(x.dealMonth).padStart(2, "0")}-${String(x.dealDay).padStart(2, "0")}`;
         const id = `tx_molit_${apt.id}_sale_${cd}_${x.floor}_${price}`;
@@ -214,7 +214,7 @@ async function collectTransactions(apts: AptRow[], serviceKey: string, today: st
       const rentParams = new URLSearchParams({ ...Object.fromEntries(baseParams), });
       const rentItems = await fetchMolitPage(RENT_API, rentParams);
       for (const x of rentItems) {
-        if (!String(x.aptNm ?? "").includes(aptName.slice(0, 4))) continue;
+        if (!String(x.aptNm ?? "").replace(/\s/g, "").includes(aptName.replace(/\s/g, ""))) continue;
         const deposit = Number(String(x.deposit ?? "").replace(/,/g, ""));
         const rent = Number(String(x.monthlyRent ?? "0").replace(/,/g, ""));
         const cd = `${x.dealYear}-${String(x.dealMonth).padStart(2, "0")}-${String(x.dealDay).padStart(2, "0")}`;
@@ -267,9 +267,13 @@ export async function GET(req: NextRequest) {
   const allNewListings: Listing[] = [];
 
   for (const apt of apts) {
-    const { listings, log } = await collectOne(apt, today);
-    logs.push(log);
-    allNewListings.push(...listings);
+    try {
+      const { listings, log } = await collectOne(apt, today);
+      logs.push(log);
+      allNewListings.push(...listings);
+    } catch (e) {
+      logs.push(`${apt.name}: 수집 실패 — ${String(e)}`);
+    }
   }
 
   // 기존 오늘치 키 조회 (중복 제거)

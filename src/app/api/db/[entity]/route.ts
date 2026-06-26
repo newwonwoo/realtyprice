@@ -53,7 +53,7 @@ export async function GET(
   }
   try {
     await ensureDb();
-    const result = await sql.query(`SELECT data FROM ${entity} ORDER BY 1`);
+    const result = await sql.query(`SELECT data FROM ${entity} ORDER BY updated_at DESC`);
     const items = result.rows.map((r) => r.data as Record<string, unknown>);
     return NextResponse.json({ items });
   } catch (err) {

@@ -24,6 +24,8 @@ type StoreSnapshot = {
 type LoadResult = { snapshot: StoreSnapshot; source: "db" | "local" };
 
 let _cache: StoreSnapshot | null = null;
+let _cacheAt = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000;
 let _loadPromise: Promise<LoadResult> | null = null;
 
 async function _loadFromSource(): Promise<LoadResult> {
@@ -67,14 +69,23 @@ async function _loadFromSource(): Promise<LoadResult> {
 }
 
 function _getOrLoad(): Promise<LoadResult> {
-  if (_cache) return Promise.resolve({ snapshot: _cache, source: "db" as const });
+  const now = Date.now();
+  if (_cache && now - _cacheAt < CACHE_TTL_MS) return Promise.resolve({ snapshot: _cache, source: "db" as const });
   if (!_loadPromise) {
     _loadPromise = _loadFromSource().then((r) => {
       _cache = r.snapshot;
+      _cacheAt = Date.now();
+      _loadPromise = null;
       return r;
     });
   }
   return _loadPromise;
+}
+
+export function invalidateStoreCache() {
+  _cache = null;
+  _cacheAt = 0;
+  _loadPromise = null;
 }
 
 // ── Hook ──────────────────────────────────────────────────────────

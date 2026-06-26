@@ -1,5 +1,8 @@
 {
   "regions": ["icn1"],
+  "functions": {
+    "src/app/api/cron/collect-listings/route.ts": { "maxDuration": 300 }
+  },
   "crons": [
     {
       "path": "/api/cron/collect-listings",
