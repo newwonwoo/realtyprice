@@ -57,7 +57,8 @@ export async function GET(
     const items = result.rows.map((r) => r.data as Record<string, unknown>);
     return NextResponse.json({ items });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(`[db/${entity}]`, err);
+    return NextResponse.json({ error: "서버 오류" }, { status: 500 });
   }
 }
 
@@ -97,7 +98,8 @@ export async function POST(
     }
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(`[db/${entity}]`, err);
+    return NextResponse.json({ error: "서버 오류" }, { status: 500 });
   }
 }
 
@@ -115,6 +117,7 @@ export async function DELETE(
     await sql.query(`DELETE FROM ${entity} WHERE id = $1`, [id]);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    console.error(`[db/${entity}]`, err);
+    return NextResponse.json({ error: "서버 오류" }, { status: 500 });
   }
 }

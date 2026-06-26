@@ -178,6 +178,7 @@ export function ListingFetcher({ apartments }: Props) {
 
   const [zbStates, setZbStates] = useState<Record<string, ZbState>>({});
   const [kbStates, setKbStates] = useState<Record<string, KbState>>({});
+  const [batchResult, setBatchResult] = useState<{ success: number; fail: number; failNames: string[] } | null>(null);
 
   const selectedEntry = apartments.find((a) => a.apartment.id === selectedAptId) ?? apartments[0];
   const apt = selectedEntry?.apartment;
@@ -349,8 +350,11 @@ export function ListingFetcher({ apartments }: Props) {
   // 전체 일괄 수집 → 자동 저장
   async function fetchAndImportAll() {
     setBatchRunning(true);
+    setBatchResult(null);
     const today = new Date().toISOString().slice(0, 10);
     const allImported: Listing[] = [];
+    const failNames: string[] = [];
+    let successCount = 0;
     try {
 
     for (let i = 0; i < apartments.length; i++) {
@@ -458,13 +462,18 @@ export function ListingFetcher({ apartments }: Props) {
       }
       if (!kbDone) {
         setKbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultKb(a)), loading: false, reasonCode: "complex_not_found", reason: `KB에서 "${kbQuery}" 미발견` } }));
+        failNames.push(a.name);
+      } else {
+        successCount++;
       }
     }
 
     const existingKeys = new Set(store.listings.map((l: Listing) => l.listingKey));
     const newOnes = allImported.filter((l) => !existingKeys.has(l.listingKey));
     if (newOnes.length > 0) store.setListings([...newOnes, ...store.listings]);
-    setBatchProgress(`완료 — ${newOnes.length}건 신규 저장 (중복 ${allImported.length - newOnes.length}건 제외)`);
+    const result = { success: successCount, fail: failNames.length, failNames };
+    setBatchResult(result);
+    setBatchProgress(`완료 — 성공 ${successCount}개 / 실패 ${failNames.length}개 · ${newOnes.length}건 신규 저장`);
     } catch (e) {
       setBatchProgress(`수집 중 오류 발생: ${String(e)}`);
     } finally {
@@ -612,7 +621,12 @@ export function ListingFetcher({ apartments }: Props) {
     store.setListings([...newOnes, ...store.listings]);
   }
 
-  if (!apt) return null;
+  if (!apt) return (
+    <div className="card p-10 text-center text-slate-400">
+      <p className="text-lg font-semibold mb-2">등록된 단지가 없습니다</p>
+      <p className="text-sm">먼저 <a href="/targets" className="text-blue-600 underline">대상아파트</a>를 추가한 후 매물을 수집하세요.</p>
+    </div>
+  );
 
   const listingCount = store.listings.filter((l) => l.apartmentId === apt.id).length;
 
@@ -628,11 +642,17 @@ export function ListingFetcher({ apartments }: Props) {
           {batchRunning ? "수집중…" : `전체 수집 (${apartments.length}개 단지 · 직방+KB)`}
         </button>
         {batchProgress && (
-          <span className={`text-sm ${batchRunning ? "text-blue-600" : "text-emerald-700 font-semibold"}`}>
+          <span className={`text-sm ${batchRunning ? "text-blue-600" : batchResult && batchResult.fail > 0 ? "text-amber-700 font-semibold" : "text-emerald-700 font-semibold"}`}>
             {batchProgress}
           </span>
         )}
       </div>
+      {batchResult && batchResult.fail > 0 && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="font-semibold">KB 미발견 단지:</span> {batchResult.failNames.join(", ")}
+          <span className="ml-2 text-amber-600">(검색어를 수동으로 수정하거나 KB 미등록 단지일 수 있습니다)</span>
+        </div>
+      )}
 
       {/* 단지 선택 */}
       <div className="flex flex-wrap gap-2">

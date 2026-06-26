@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { normalizeToBGrade } from "@/lib/grade";
-import { generateSearchCandidates } from "@/lib/aptNameSearch";
+import { generateSearchCandidates, isSameComplex } from "@/lib/aptNameSearch";
 import { findSggCode } from "@/data/regionCodes";
 import type { Listing, InventorySignal } from "@/types/listing";
 import type { Transaction } from "@/types/transaction";
@@ -85,7 +85,9 @@ async function collectOne(apt: AptRow, today: string): Promise<{ listings: Listi
     const s = await zbFetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${zbQ}`);
     if (!s.ok) { if (s.status === 429) break; else continue; }
     const list = zbParseComplexes(s.data);
-    if (list.length >= 1) { zbComplexId = list[0].complexId; break; }
+    const matched = list.filter((c) => isSameComplex(aptName, c.name));
+    const pick = matched.length > 0 ? matched[0] : list[0];
+    if (pick) { zbComplexId = pick.complexId; break; }
   }
 
   if (zbComplexId) {
@@ -129,10 +131,16 @@ async function collectOne(apt: AptRow, today: string): Promise<{ listings: Listi
       if (!r.length) continue;
       const latest = r[0];
       const saleGeneral = Number(latest.매매일반거래가 ?? 0);
+      const saleUpper = Number(latest.매매상한가 ?? 0);
+      const saleLower = Number(latest.매매하한가 ?? 0);
+      const salePrice = saleGeneral > 0 ? saleGeneral : (saleUpper > 0 && saleLower > 0 ? Math.round((saleUpper + saleLower) / 2) : 0);
       const jeonseGeneral = Number(latest.전세일반거래가 ?? 0);
+      const jeonseUpper = Number(latest.전세상한가 ?? 0);
+      const jeonseLower = Number(latest.전세하한가 ?? 0);
+      const jeonsePrice = jeonseGeneral > 0 ? jeonseGeneral : (jeonseUpper > 0 && jeonseLower > 0 ? Math.round((jeonseUpper + jeonseLower) / 2) : 0);
       const baseDate = String(latest.시세기준년월일 ?? latest.기준년월일 ?? "");
-      if (saleGeneral > 0) listings.push({ id: `listing_kb_${apt.id}_${area.areaNo}_sale`, apartmentId: apt.id, listingType: "sale", exclusiveArea: area.exclusiveArea, askingPrice: saleGeneral, grade: "B", adjustedAskingPrice: normalizeToBGrade(saleGeneral, "B"), source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_sale`, capturedAt: today, status: "active", memo: `KB시세 ${baseDate}` });
-      if (jeonseGeneral > 0) listings.push({ id: `listing_kb_${apt.id}_${area.areaNo}_jeonse`, apartmentId: apt.id, listingType: "jeonse", exclusiveArea: area.exclusiveArea, askingPrice: jeonseGeneral, grade: "B", adjustedAskingPrice: normalizeToBGrade(jeonseGeneral, "B"), source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_jeonse`, capturedAt: today, status: "active", memo: `KB전세시세 ${baseDate}` });
+      if (salePrice > 0) listings.push({ id: `listing_kb_${apt.id}_${area.areaNo}_sale`, apartmentId: apt.id, listingType: "sale", exclusiveArea: area.exclusiveArea, askingPrice: salePrice, grade: "B", adjustedAskingPrice: normalizeToBGrade(salePrice, "B"), source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_sale`, capturedAt: today, status: "active", memo: `KB시세 ${baseDate}` });
+      if (jeonsePrice > 0) listings.push({ id: `listing_kb_${apt.id}_${area.areaNo}_jeonse`, apartmentId: apt.id, listingType: "jeonse", exclusiveArea: area.exclusiveArea, askingPrice: jeonsePrice, grade: "B", adjustedAskingPrice: normalizeToBGrade(jeonsePrice, "B"), source: "kb", listingKey: `kb_${apt.id}_${area.areaNo}_jeonse`, capturedAt: today, status: "active", memo: `KB전세시세 ${baseDate}` });
     }
     break kbLoop;
   }
