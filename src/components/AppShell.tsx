@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, AlertTriangle } from "lucide-react";
+import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 
 const mainNav: [string, string][] = [
   ["① 대상아파트", "/targets"],
@@ -24,11 +25,30 @@ const subNav: [string, string][] = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [keyMissing, setKeyMissing] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // 경로 변경 시 모바일 메뉴 자동 닫기
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  // data.go.kr 키 유무 감지 — 없으면 자동수집 전부 비활성 → 전역 안내
+  useEffect(() => {
+    const keys = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, []);
+    const hasKey = keys.some((k) => k.provider === "data_go_kr" && (k.value ?? "").trim().length > 0);
+    setKeyMissing(!hasKey);
+    if (typeof window !== "undefined") {
+      setBannerDismissed(window.sessionStorage.getItem("apikey_banner_dismissed") === "1");
+    }
+  }, [pathname]);
+
+  function dismissBanner() {
+    setBannerDismissed(true);
+    if (typeof window !== "undefined") window.sessionStorage.setItem("apikey_banner_dismissed", "1");
+  }
+
+  const showKeyBanner = keyMissing && !bannerDismissed && pathname !== "/settings/api";
 
   function active(href: string) {
     if (pathname === href) return true;
@@ -121,6 +141,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="lg:pl-56">
+        {showKeyBanner && (
+          <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2.5 text-sm text-amber-800">
+            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-amber-500" />
+            <p className="flex-1">
+              <b>국토부·부동산원 API 키가 없어 자동수집이 비활성 상태입니다.</b> 실거래·호가·단지검색이 동작하지 않습니다.{" "}
+              <Link href="/settings/api" className="font-bold text-amber-900 underline">API 키 설정으로 이동</Link>
+              <span className="text-amber-600"> (data.go.kr 발급 후 등록, 승인까지 보통 1~2일)</span>
+            </p>
+            <button onClick={dismissBanner} aria-label="배너 닫기" className="flex-shrink-0 rounded p-0.5 text-amber-500 hover:bg-amber-100">
+              <X size={16} />
+            </button>
+          </div>
+        )}
         <div className="px-5 py-8">{children}</div>
       </main>
     </div>

@@ -343,7 +343,17 @@ export default function ComparablesPage() {
                     <td>{apartment.builtYear ?? "-"}</td>
                     <td>{apartment.households ?? "-"}</td>
                     <td>
-                      <input className="input max-w-24" type="number" min="0" max="100" value={link?.compareWeight ?? 20} onChange={(event) => upsertComparable(apartment.id, Number(event.target.value))} />
+                      {(() => {
+                        const w = link?.compareWeight ?? 20;
+                        const share = weightSum > 0 ? Math.round((w / weightSum) * 100) : 0;
+                        return (
+                          <div className="flex items-center gap-2 min-w-[180px]">
+                            <input type="range" min="0" max="100" value={w} className="flex-1 accent-blue-600" onChange={(e) => upsertComparable(apartment.id, Number(e.target.value))} />
+                            <input className="input w-14 text-center" type="number" min="0" max="100" value={w} onChange={(e) => upsertComparable(apartment.id, Number(e.target.value))} />
+                            <span className="text-xs text-slate-400 w-10 text-right tabular-nums">{share}%</span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td>
                       <button

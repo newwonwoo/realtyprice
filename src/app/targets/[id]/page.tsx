@@ -8,6 +8,9 @@ import { ExternalLinks } from "@/components/targets/ExternalLinks";
 import { UnifiedTransactionFetcher } from "@/components/targets/UnifiedTransactionFetcher";
 import { ListingFetcher, type ApartmentWithRole } from "@/components/listings/ListingFetcher";
 import { AptDetailInfo } from "@/components/targets/AptDetailInfo";
+import { SignalWaterfall } from "@/components/charts/SignalWaterfall";
+import { PriceTimeline } from "@/components/charts/PriceTimeline";
+import { UpsideGauge } from "@/components/charts/UpsideGauge";
 import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultModelWeights } from "@/lib/seed";
@@ -51,6 +54,9 @@ const conclusionBg: Record<string, string> = {
   price_cut_needed: "bg-red-50 border-red-200",
   insufficient_data: "bg-slate-50 border-dashed border-slate-300",
 };
+// 상승점수 구간색: 0-39 약세(red) / 40-69 중립(amber) / 70-100 강세(emerald)
+const upsideScoreColor = (s: number) => (s >= 70 ? "text-emerald-700" : s >= 40 ? "text-amber-600" : "text-red-600");
+const upsideScoreHex = (s: number) => (s >= 70 ? "#10b981" : s >= 40 ? "#f59e0b" : "#ef4444");
 
 export default function TargetDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -64,6 +70,9 @@ export default function TargetDetailPage() {
   const [editingMoveIn, setEditingMoveIn] = useState(false);
   const [moveInInput, setMoveInInput] = useState("");
   const [tab, setTab] = useState<"setup" | "analysis" | "model">("setup");
+
+  // 입주시점(없으면 현재) 공급압력이 희소(+3% 이상)면 공급절벽 모드 권장
+  const supplyCliffRecommended = (supplyVolume?.targetMoveInPriceImpactPct ?? supplyVolume?.priceImpactPct ?? 0) >= 3;
 
   const apartment = store.targets.find((item) => item.id === id);
   const latestEstimate = store.priceEstimates.find((item) => item.targetApartmentId === id);
@@ -439,29 +448,37 @@ export default function TargetDetailPage() {
       <div className="grid gap-5 lg:grid-cols-4">
         <div className={`rounded-xl border p-5 shadow-sm ${latestEstimate ? conclusionBg[latestEstimate.conclusion] : "bg-white border-slate-200"}`}>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">결론</p>
-          <p className={`mt-2 text-xl font-black ${latestEstimate ? conclusionColor[latestEstimate.conclusion] : "text-slate-300"}`}>
-            {latestEstimate ? conclusionLabel[latestEstimate.conclusion] : "계산 필요"}
-          </p>
+          {latestEstimate ? (
+            <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-black ${conclusionBg[latestEstimate.conclusion]} ${conclusionColor[latestEstimate.conclusion]}`}>
+              {conclusionLabel[latestEstimate.conclusion]}
+            </span>
+          ) : (
+            <p className="mt-2 text-xl font-black text-slate-300">계산 필요</p>
+          )}
           {latestEstimate && (
-            <p className="mt-1 text-xs text-slate-500">{conclusionDesc[latestEstimate.conclusion]}</p>
+            <p className="mt-2 text-xs text-slate-500">{conclusionDesc[latestEstimate.conclusion]}</p>
           )}
         </div>
         <div className="rounded-xl border border-l-4 border-blue-400 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 매매가</p>
-          <p className="mt-2 text-xl font-black text-blue-800">{latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"}</p>
+          <p className="mt-1 text-4xl font-black tabular-nums text-blue-800">{latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"}</p>
+          {latestEstimate && (
+            <p className="mt-1 text-xs text-slate-400 tabular-nums">{formatEok(latestEstimate.expectedSaleMin)} ~ {formatEok(latestEstimate.expectedSaleMax)}</p>
+          )}
         </div>
         <div className="rounded-xl border border-l-4 border-emerald-400 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">권장 매각호가</p>
-          <p className="mt-2 text-xl font-black text-emerald-800">{latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"}</p>
+          <p className="mt-1 text-2xl font-black tabular-nums text-emerald-800">{latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"}</p>
+          <p className="mt-1 text-xs text-slate-400">빠르게 팔릴 호가</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" title="거래속도·MOI 수급·전세가율·대장앵커·비교단지·입주물량 합산 (0~100점)">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">상승가능성 점수</p>
-          <p className="mt-2 text-xl font-black text-slate-950">{latestEstimate ? `${latestEstimate.upsideScore}점` : "-"}</p>
+          <p className={`mt-1 text-2xl font-black tabular-nums ${latestEstimate ? upsideScoreColor(latestEstimate.upsideScore) : "text-slate-950"}`}>{latestEstimate ? `${latestEstimate.upsideScore}점` : "-"}</p>
           {latestEstimate && (
             <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
               <div
-                className="h-1.5 rounded-full bg-blue-400 transition-all"
-                style={{ width: `${Math.min(100, latestEstimate.upsideScore)}%` }}
+                className="h-1.5 rounded-full transition-all"
+                style={{ width: `${Math.min(100, latestEstimate.upsideScore)}%`, backgroundColor: upsideScoreHex(latestEstimate.upsideScore) }}
               />
             </div>
           )}
@@ -481,16 +498,23 @@ export default function TargetDetailPage() {
                   {areaOptions.length ? areaOptions.map((area) => <option key={area} value={area}>{area}㎡</option>) : <option value={effectiveArea}>{effectiveArea}㎡</option>}
                 </select>
               </label>
-              <label
-                title="향후 2년 공급량이 정상 수요의 절반 미만인 구조적 공급절벽 지역에 적용. 입지 비중을 낮추고 전세 소진·호가 lock-in 가중을 강화합니다."
-                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${supplyCliffMode ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-500"}`}
-              >
-                <input type="checkbox" className="sr-only" checked={supplyCliffMode} onChange={(e) => setSupplyCliffMode(e.target.checked)} />
-                <span className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${supplyCliffMode ? "bg-orange-400" : "bg-slate-200"}`}>
-                  <span className={`block h-3 w-3 rounded-full bg-white shadow transition-transform ${supplyCliffMode ? "translate-x-3" : "translate-x-0"}`} />
-                </span>
-                공급절벽 모드
-              </label>
+              <div className="flex flex-col gap-1">
+                <label
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${supplyCliffMode ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-500"}`}
+                >
+                  <input type="checkbox" className="sr-only" checked={supplyCliffMode} onChange={(e) => setSupplyCliffMode(e.target.checked)} />
+                  <span className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${supplyCliffMode ? "bg-orange-400" : "bg-slate-200"}`}>
+                    <span className={`block h-3 w-3 rounded-full bg-white shadow transition-transform ${supplyCliffMode ? "translate-x-3" : "translate-x-0"}`} />
+                  </span>
+                  공급절벽 모드
+                  {supplyCliffRecommended && !supplyCliffMode && (
+                    <button type="button" onClick={(e) => { e.preventDefault(); setSupplyCliffMode(true); }} className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700 hover:bg-orange-200">
+                      공급절벽 감지 · 켜기
+                    </button>
+                  )}
+                </label>
+                <span className="text-[10px] leading-tight text-slate-400 max-w-[200px]">켜면 입지 비중↓, 전세 소진·호가 lock-in을 상방요인으로 가중</span>
+              </div>
             <button
               className={`relative min-w-[140px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all ${!allReady ? "opacity-70" : ""}`}
               onClick={runEstimate}
@@ -532,16 +556,36 @@ export default function TargetDetailPage() {
           )}
 
           <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <Summary label="예상 하단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMin) : "-"} />
-            <Summary label="예상 상단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMax) : "-"} />
-            <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} />
-            <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} />
-            <Summary label="하위호가 소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} title="호가 목록에서 가격 하위 30% 매물이 사라진 비율. 사라진 매물 = 판매 가능성 높음. 높을수록 상승압력 강함." />
-            <Summary label="신뢰도" value={latestEstimate ? `${latestEstimate.confidenceScore}점 (${latestEstimate.confidenceScore <= 30 ? "낮음" : latestEstimate.confidenceScore <= 60 ? "중간" : "높음"})` : "-"} title="가격앵커 데이터 충분도 (0~100점). 실거래·호가가 많을수록 높아집니다." />
+            <Summary label="예상 하단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMin) : "-"} subtitle="예상가 -3%" />
+            <Summary label="예상 상단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMax) : "-"} subtitle="예상가 +3%" />
+            <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} subtitle="이 밑으로는 손절 자제선" />
+            <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} subtitle="전세 실거래·호가 기반" />
+            <Summary label="하위호가 소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} subtitle="하위 30% 매물 소진 비율 (높을수록 상승압력)" title="호가 목록에서 가격 하위 30% 매물이 사라진 비율. 사라진 매물 = 판매 가능성 높음. 높을수록 상승압력 강함." />
+            <Summary
+              label="신뢰도"
+              value={latestEstimate ? `${latestEstimate.confidenceScore}점 (${latestEstimate.confidenceScore <= 30 ? "낮음" : latestEstimate.confidenceScore <= 60 ? "중간" : "높음"})` : "-"}
+              subtitle="데이터 충분도 (0~100)"
+              detail={latestEstimate ? `실거래 ${targetTransactions.length + comparableTransactions.length}건 · 비교호가 ${comparableListings.length}건 · 대장앵커 ${latestEstimate.leaderApartmentAnchorPrice > 0 ? "반영됨" : "미설정"}. 실거래·호가가 많고 대장이 설정될수록 높아집니다.` : undefined}
+            />
             <Summary label="적용 평형" value={`${latestEstimate?.selectedArea ?? effectiveArea}㎡`} />
           </div>
         </div>
       </div>
+
+      {latestEstimate && (
+        <div className="mt-6 grid gap-5 lg:grid-cols-3">
+          <div className="card p-5 lg:col-span-2">
+            <h3 className="text-base font-black text-slate-800">실거래 · 호가 · 예상가 추이</h3>
+            <p className="mb-3 mt-0.5 text-xs text-slate-500">실거래(진한 점) · 현재 호가(회색 점) · 예상가 밴드(파란 음영)와 권장호가·방어선을 한눈에.</p>
+            <PriceTimeline estimate={latestEstimate} transactions={[...targetTransactions, ...comparableTransactions]} listings={[...targetListings, ...comparableListings]} />
+          </div>
+          <div className="card p-5">
+            <h3 className="text-base font-black text-slate-800">상승가능성 · 신뢰도</h3>
+            <p className="mb-3 mt-0.5 text-xs text-slate-500">점수대별 색과 신호별 적립 구성.</p>
+            <UpsideGauge estimate={latestEstimate} />
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         <DataCard title="선택 비교단지" value={`${selectedComparables.length}개`} description={selectedComparables.map((item) => item.shortName ?? item.name).join(", ") || "비교단지를 선택하세요."} accent="blue" />
@@ -574,6 +618,10 @@ export default function TargetDetailPage() {
             <div className="mt-5 flex items-baseline justify-between">
               <h3 className="text-base font-black text-slate-700">① 예상가 앵커 (가중평균 → 예상가)</h3>
               <p className="text-sm font-bold text-slate-500">예상가 <span className="text-xl text-slate-900">{formatEok(latestEstimate.expectedSaleMid)}</span></p>
+            </div>
+            <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+              <p className="mb-1 text-xs font-semibold text-slate-500">신호별 기여도 — 대상 실거래 앵커에서 각 신호가 예상가를 얼마나 올리고(파랑) 내렸는지(빨강)</p>
+              <SignalWaterfall estimate={latestEstimate} />
             </div>
             <ModelTable factors={latestEstimate.modelBreakdown.filter((f) => f.group === "price")} resultHeader="환산가" />
 
@@ -611,11 +659,19 @@ export default function TargetDetailPage() {
   );
 }
 
-function Summary({ label, value, title }: { label: string; value: string; title?: string }) {
+function Summary({ label, value, title, subtitle, detail }: { label: string; value: string; title?: string; subtitle?: string; detail?: string }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" title={title}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" title={!detail ? title : undefined}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+        {detail && (
+          <button onClick={() => setOpen((v) => !v)} className="text-[11px] font-semibold text-blue-600 hover:underline">근거 {open ? "▲" : "▼"}</button>
+        )}
+      </div>
+      <p className="mt-2 text-2xl font-black tabular-nums text-slate-950">{value}</p>
+      {subtitle && <p className="mt-1 text-xs text-slate-400">{subtitle}</p>}
+      {detail && open && <p className="mt-2 rounded bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-600">{detail}</p>}
     </div>
   );
 }
