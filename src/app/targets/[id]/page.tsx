@@ -85,6 +85,7 @@ export default function TargetDetailPage() {
   const comparableListings = store.listings.filter((item) => selectedComparableIds.includes(item.apartmentId));
   const comparableWeights = Object.fromEntries(selectedLinks.map((item) => [item.apartmentId, item.compareWeight || 1]));
   const inventorySignal = store.inventorySignals.find((item) => item.apartmentId === id);
+  const moi = inventorySignal?.monthsOfInventory ?? 0; // 매물 회전속도(재고소진월수)
   const rule = store.comparableRules.find((item) => item.targetApartmentId === id);
   const isSelfLeader = rule?.leaderApartmentId === id;
   const leaderApartment = isSelfLeader
@@ -268,8 +269,8 @@ export default function TargetDetailPage() {
       comparableLocationAdjustments: comparableGradeAnalysis.adjustments,
       comparableMarketPressureRate: comparableGradeAnalysis.marketPressureRate,
       weights,
-      lowPriceAbsorptionRate: inventorySignal?.lowPriceAbsorptionRate ?? 0,
       monthsOfInventory: inventorySignal?.monthsOfInventory ?? 0,
+      turnoverAnnualized: inventorySignal?.turnoverAnnualized,
       comparableWeights,
       presalePrice,
       macroSignalPrice,
@@ -469,7 +470,7 @@ export default function TargetDetailPage() {
         <div className="rounded-xl border border-l-4 border-emerald-400 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">권장 매각호가</p>
           <p className="mt-1 text-2xl font-black tabular-nums text-emerald-800">{latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"}</p>
-          <p className="mt-1 text-xs text-slate-400">빠르게 팔릴 호가</p>
+          <p className="mt-1 text-xs text-slate-400">{moi > 0 && moi < 3 ? "예상가 +4~5% 상향 제시호가 (빠른 회전)" : "예상가 +3% 상향 제시호가"}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">상승가능성 점수</p>
@@ -560,7 +561,7 @@ export default function TargetDetailPage() {
             <Summary label="예상 상단" value={latestEstimate ? formatEok(latestEstimate.expectedSaleMax) : "-"} subtitle="예상가 +3%" />
             <Summary label="방어가격" value={latestEstimate ? formatEok(latestEstimate.defensePrice) : "-"} subtitle="이 밑으로는 손절 자제선" />
             <Summary label="예상 전세가" value={latestEstimate ? formatEok(latestEstimate.expectedJeonseMid) : "-"} subtitle="전세 실거래·호가 기반" />
-            <Summary label="하위호가 소진율" value={latestEstimate ? formatPercent(latestEstimate.lowPriceAbsorptionRate) : formatPercent(inventorySignal?.lowPriceAbsorptionRate)} subtitle="하위 30% 매물 소진 비율 (높을수록 상승압력)" title="호가 목록에서 가격 하위 30% 매물이 사라진 비율. 사라진 매물 = 판매 가능성 높음. 높을수록 상승압력 강함." />
+            <Summary label="매물 회전속도(MOI)" value={moi > 0 ? `${moi}개월` : "-"} subtitle="활성매물 ÷ 월거래 — 낮을수록 매도자우위(빠른 소진)" title="MOI(재고소진월수) = 활성 매물수 ÷ 월 실거래속도. 낮을수록 매물이 빠르게 소진(매도자 우위·상승압력). 6개월=균형(NAR)." />
             <Summary
               label="신뢰도"
               value={latestEstimate ? `${latestEstimate.confidenceScore}점 (${latestEstimate.confidenceScore <= 30 ? "낮음" : latestEstimate.confidenceScore <= 60 ? "중간" : "높음"})` : "-"}
@@ -593,11 +594,16 @@ export default function TargetDetailPage() {
         <DataCard title="비교단지 호가" value={`${comparableListings.length}건`} description={matchingComparableListingCount ? `선택 평형 직접 매칭 ${matchingComparableListingCount}건` : "동일 평형이 없으면 ㎡당가로 환산합니다."} accent="violet" />
         <DataCard title="상·하급지 보정" value={`${Math.round(comparableGradeAnalysis.marketPressureRate * 100)}%`} description={comparableGradeAnalysis.summary} accent="amber" />
         <DataCard
-          title="하위호가 소진율"
-          value={inventorySignal ? formatPercent(inventorySignal.lowPriceAbsorptionRate) : "-"}
-          description={inventorySignal?.conclusion === "strong_up" ? "하위 30% 가격대 매물 소진 30%↑ — 상승 신호" : "호가/매물 화면에서 하위 30% 호가 매물 소진 비율을 산출합니다."}
-          accent={inventorySignal?.conclusion === "strong_up" ? "red" : "slate"}
-          fireSignal={inventorySignal?.conclusion === "strong_up"}
+          title="매물 회전속도(MOI)"
+          value={moi > 0 ? `${moi}개월` : "-"}
+          description={
+            moi <= 0 ? "활성매물 ÷ 월거래로 산출. 실거래·매물 수집 후 표시됩니다."
+            : moi < 3 ? "3개월 미만 — 빠른 소진(매도자 우위·상승압력)"
+            : moi <= 6 ? "3~6개월 — 균형 시장"
+            : "6개월 초과 — 적체(매수자 우위·하방압력)"
+          }
+          accent={moi > 0 && moi < 3 ? "red" : "slate"}
+          fireSignal={moi > 0 && moi < 3}
         />
         <LocationFeaturesCard apartment={apartment} />
         <SupplyVolumeCard apartment={apartment} data={supplyVolume} loading={supplyLoading} onRefresh={fetchSupplyVolume} latestEstimate={latestEstimate} />

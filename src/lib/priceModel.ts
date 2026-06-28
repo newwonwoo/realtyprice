@@ -69,7 +69,7 @@ function deriveJeonseRatio(saleTransactions: Transaction[], jeonseTransactions: 
 // ── 지역 레짐(regime) 판별 및 가중치 프로파일 ───────────────────────────
 // 서울 중심지와 경기·수도권 외곽은 상승 동인이 다릅니다(첨부 리서치).
 //  - 서울: 대장아파트 신고가 리딩 / 상급지 압력 / 호가밴드 정렬이 선행
-//  - 경기: 분양권 프리미엄 / 전세갭(실수요 매수전환) / 저가매물 소진이 동력
+//  - 경기: 분양권 프리미엄 / 전세갭(실수요 매수전환) / 매물 회전속도(MOI)가 동력
 // ⚠️ 아래 배수는 실증 계수가 아니라 리서치 기반 휴리스틱(prior)입니다. 추후 보정 대상.
 export type RegionProfile = "seoul" | "gyeonggi" | "default";
 
@@ -138,7 +138,7 @@ const SUPPLY_CLIFF_MULTIPLIERS: Partial<Record<keyof ModelWeights, number>> = {
   comparableMarketPressure: 0.6,  // 비교단지 압력 약화 (시장 기준점 희박)
   adjustedComparableSale: 0.75,   // 공급절벽 이전 과거 거래 신뢰도 하락
   jeonseFloorPrice: 1.6,          // 전세 소진/갭 — 주도 신호
-  inventorySignal: 1.7,           // 저가매물 소진 — 주도 신호
+  inventorySignal: 1.7,           // 매물 회전속도(MOI) — 주도 신호
   askingPrice: 1.5,               // 호가 lock-in
   comparableAskingPrice: 1.4,
   presalePremium: 1.3,            // 분양권 프리미엄 강화 (신규 공급 희소)
@@ -158,8 +158,29 @@ export function calculateJeonseFloorPrice(expectedJeonsePrice: number, jeonseRat
   return expectedJeonsePrice / jeonseRatio;
 }
 
-export function calculateRecommendedAskingPrice(expectedSaleMid: number, lowPriceAbsorptionRate: number) {
-  return Math.round(expectedSaleMid * (lowPriceAbsorptionRate >= 0.3 ? 1.05 : 1.03));
+// 권장 매각호가 — 매물 회전속도(MOI) 구간 기반 상향 제시호가.
+// 근거(검증 통과분, 2026-06 학술회의):
+//  · MOI=가격 선행지표(낮을수록 매도자우위·상방): Gordon(2025) Richmond Fed EB 25-11
+//    (months supply 10개월 lead 상관 -0.60, 실업률·금리보다 예측력 우수).
+//  · 임계 벤치마크: 6개월=균형, 0~3 매도자우위, 6+ 매수자우위 (NAR 통용).
+//    한국 적체는 실거래 6~12개월 선행 하방(코리아퓨처 2024 등).
+//  · 단독판정 경고: 같은 MOI가 매도자 호가경직(공급측)일 수 있음
+//    (Genesove-Mayer 2001 QJE; Stein 1995 QJE) → ×1.05 상방은 turnover 동반강세(AND)일 때만.
+//  · (폐기) 저가소진율: 2-스냅샷은 재등록·중복·허위 selection bias + 얇은표본 노이즈, 직접실증 미발견.
+// 주의: 단지 단위 MOI라 시장전체 US 임계와 스케일이 다를 수 있음 — 보수적 가드레일, 추후 한국 데이터로 재캘리브레이션.
+export function calculateRecommendedAskingPrice(
+  expectedSaleMid: number,
+  monthsOfInventory: number,
+  turnoverHealthy = false,
+) {
+  const moi = monthsOfInventory;
+  let mult: number;
+  if (moi <= 0) mult = 1.03;            // 계산불가 → 안전 기본
+  else if (moi < 3) mult = turnoverHealthy ? 1.05 : 1.04; // 강한 매도자우위 (상방은 회전 동반강세일 때만 최대)
+  else if (moi < 6) mult = 1.03;        // 중립~약매도자
+  else if (moi <= 9) mult = 1.00;       // 약매수자
+  else mult = 0.98;                     // 매수자우위
+  return Math.round(expectedSaleMid * mult);
 }
 
 export function calculateDefensePrice(expectedSaleMid: number) {
@@ -188,7 +209,8 @@ export function estimatePrice(params: {
   comparableLocationAdjustments?: Record<string, number>;
   comparableMarketPressureRate?: number;
   weights: ModelWeights;
-  lowPriceAbsorptionRate?: number;
+  lowPriceAbsorptionRate?: number; // (deprecated) 저가소진율 — 산식 미사용, 하위호환 위해 유지
+  turnoverAnnualized?: number;     // 연 거래회전율(%) — 권장호가 AND 게이트용 (한국 정상밴드 ≈5%)
   comparableWeights?: Record<string, number>;
   presalePrice?: number;
   macroSignalPrice?: number;
@@ -512,7 +534,7 @@ export function estimatePrice(params: {
         priceFactor("비교단지 현재 호가", "가격 — 비교단지 매물 호가", comparableAskingPrice, weights.comparableAskingPrice ?? 0),
         priceFactor("대상단지 현재 호가", "가격 — 대상단지 매물 호가", saleAskingPrice, weights.askingPrice ?? 0),
         priceFactor("전세기반 하방가", "가격 — 전세 실거래가(보증금) ÷ 전세가율", jeonseFloorPrice, weights.jeonseFloorPrice ?? 0),
-        priceFactor("매물 소진 반영가", "매물 수 — 저가매물 소진율(스냅샷)", inventorySignalPriceEffect, weights.inventorySignal ?? 0),
+        priceFactor("매물 회전속도 반영가", "매물 회전 — MOI(활성매물 ÷ 월판매속도)", inventorySignalPriceEffect, weights.inventorySignal ?? 0),
         priceFactor("분양가 프리미엄", "가격 — 분양가 대비 실거래 시세비율", presalePremiumPrice, weights.presalePremium ?? 0),
         priceFactor("대장아파트 앵커", "가격 — 대장 실거래 환산가 × 비율", leaderApartmentAnchorPrice, leaderApartmentAnchorPrice > 0 ? (weights.leaderApartmentAnchor ?? 0) : 0),
         priceFactor("대상 입지 보정", "입지 점수 — 역세권·학군 등", locationPremiumPrice, locationPremiumPrice > 0 ? (weights.locationPremium ?? 0) : 0),
@@ -547,12 +569,12 @@ export function estimatePrice(params: {
     comparableAskingPrice > 0 ? "비교단지 현재 호가를 선택 평형 기준으로 반영했습니다." : null,
     saleAskingPrice > 0 ? "현재 매매호가를 반영했습니다." : null,
     jeonseFloorPrice > 0 ? `전세기반 하방가를 반영했습니다. (전세가율 ${Math.round(jeonseRatio * 100)}% ${jeonseRatio !== 0.65 ? "실측" : "기본값"})` : null,
-    lowPriceAbsorptionRate >= 0.15 ? "저가매물 소진율을 상승 신호로 반영했습니다." : null,
+    moiForPrice > 0 && moiForPrice < 3 ? `매물 회전속도가 빠릅니다 (MOI ${moiForPrice}개월 — 매도자우위).` : null,
     leaderApartmentAnchorPrice > 0 ? "인근 대장아파트 실거래가 앵커를 반영했습니다." : null,
     locationPremiumPrice > 0 && locationPremiumRate !== 0 ? `대상 자체 입지 보정률 ${Math.round(locationPremiumRate * 100)}%를 반영했습니다.` : null,
     comparableMarketPressurePrice > 0 && comparableMarketPressureRate !== 0 ? `비교단지 상·하급지 압력 ${Math.round(comparableMarketPressureRate * 100)}%를 반영했습니다.` : null,
     regionProfile === "seoul" ? "서울 레짐: 대장 신고가·상급지 압력·호가 리딩 가중을 강조했습니다." : null,
-    regionProfile === "gyeonggi" ? "경기·수도권 레짐: 분양권 프리미엄·전세갭·저가매물 소진 가중을 강조했습니다." : null,
+    regionProfile === "gyeonggi" ? "경기·수도권 레짐: 분양권 프리미엄·전세갭·매물 회전속도 가중을 강조했습니다." : null,
     volumeMomentumScore >= 6 ? `거래 속도가 빠릅니다 (최근2주 ${raw14}건·1개월 ${raw30}건·3개월 ${raw90}건, 대장 가중반영, +${volumeMomentumScore}점).` : null,
     jeonseSupplyDemandScore > 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 수요 우위 신호.` : jeonseSupplyDemandScore < 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 공급 여력 있음.` : null,
     supplyCliffMode ? "공급절벽 모드 ON: 입지 비중을 낮추고 전세 소진·호가 lock-in 중심으로 가중치를 재편했습니다." : null,
@@ -594,7 +616,7 @@ export function estimatePrice(params: {
     expectedJeonseMin: Math.round(expectedJeonseMid * 0.97),
     expectedJeonseMid,
     expectedJeonseMax: Math.round(expectedJeonseMid * 1.03),
-    recommendedAskingPrice: calculateRecommendedAskingPrice(expectedSaleMid, lowPriceAbsorptionRate),
+    recommendedAskingPrice: calculateRecommendedAskingPrice(expectedSaleMid, moiForPrice, (params.turnoverAnnualized ?? 0) >= 5),
     defensePrice: calculateDefensePrice(expectedSaleMid),
     upsideScore,
     modelBreakdown,

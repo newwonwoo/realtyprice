@@ -5,7 +5,7 @@ import Papa from "papaparse";
 import { AppShell } from "@/components/AppShell";
 import { useRealtyStore } from "@/lib/clientStore";
 import { normalizeToBGrade } from "@/lib/grade";
-import { calculateInventorySignal, getLowPriceListings } from "@/lib/inventory";
+import { calculateInventorySignal } from "@/lib/inventory";
 import { formatEok, formatPercent } from "@/lib/format";
 import type { Listing, ListingType } from "@/types/listing";
 import type { UnitGrade } from "@/types/transaction";
@@ -40,9 +40,8 @@ export default function ListingsPage() {
   const liveSignal = useMemo(
     () => calculateInventorySignal(activeApartmentId, snapshot.current, activeTransactions, {
       households: activeApartment?.households,
-      previousListings: snapshot.previous,
     }),
-    [activeApartmentId, snapshot.current, snapshot.previous, activeTransactions, activeApartment?.households]
+    [activeApartmentId, snapshot.current, activeTransactions, activeApartment?.households]
   );
 
   function addListing() {
@@ -120,8 +119,6 @@ export default function ListingsPage() {
     store.setInventorySignals([liveSignal, ...store.inventorySignals.filter((item) => item.apartmentId !== activeApartmentId)]);
     setMessage("매물소진 신호(MOI)를 저장했습니다.");
   }
-
-  const lowPriceListings = getLowPriceListings(snapshot.previous);
 
   return (
     <AppShell>
@@ -241,11 +238,10 @@ export default function ListingsPage() {
             <Metric label="실거래 집계기간" value={`${liveSignal.transactionWindowMonths ?? 6}개월`} />
           </div>
 
-          {/* 보조 확인용: 스냅샷 소진율 (2개 스냅샷 있을 때만) */}
+          {/* 보조 확인용: 스냅샷 매물 증감 (2개 스냅샷 있을 때만) */}
           {snapshot.previous.length > 0 && (
             <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-              <span className="font-semibold">스냅샷 보조지표</span> · 전일 {snapshot.previous.length}건 → 금일 {snapshot.current.length}건
-              {" · "}저가소진율 {formatPercent(snapshot.lowPriceAbsorptionRate)}
+              <span className="font-semibold">스냅샷 매물 증감</span> · 전일 {snapshot.previous.length}건 → 금일 {snapshot.current.length}건
             </div>
           )}
 
@@ -270,7 +266,6 @@ export default function ListingsPage() {
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-sm text-slate-500">전일 저가매물 기준: {lowPriceListings.length}건</p>
     </AppShell>
   );
 }
@@ -286,8 +281,6 @@ function buildSnapshot(listings: Listing[], apartmentId: string) {
   const currentKeys = new Set(current.map((item) => item.listingKey ?? item.id));
   const newCount = current.filter((item) => !previousKeys.has(item.listingKey ?? item.id)).length;
   const disappearedCount = previous.filter((item) => !currentKeys.has(item.listingKey ?? item.id)).length;
-  const lowPriceListings = getLowPriceListings(previous);
-  const lowPriceAbsorptionRate = lowPriceListings.length ? lowPriceListings.filter((item) => !currentKeys.has(item.listingKey ?? item.id)).length / lowPriceListings.length : 0;
 
   return {
     previous,
@@ -295,7 +288,6 @@ function buildSnapshot(listings: Listing[], apartmentId: string) {
     newCount,
     disappearedCount,
     absorptionRate: previous.length ? disappearedCount / previous.length : 0,
-    lowPriceAbsorptionRate
   };
 }
 
