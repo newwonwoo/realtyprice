@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql, initDb } from "@/lib/db";
 import { normalizeToBGrade } from "@/lib/grade";
 import { generateSearchCandidates, isSameComplex } from "@/lib/aptNameSearch";
+import { calculateInventorySignal } from "@/lib/inventory";
 import { findSggCode } from "@/data/regionCodes";
 import type { Listing, InventorySignal } from "@/types/listing";
 import type { Transaction } from "@/types/transaction";
@@ -148,29 +149,6 @@ async function collectOne(apt: AptRow, today: string): Promise<{ listings: Listi
   return { listings, log: `${apt.name}: 직방${zbComplexId ? "✓" : "✗"} KB${listings.some((l) => l.source === "kb") ? "✓" : "✗"} (${listings.length}건)` };
 }
 
-function calcInventorySignal(aptId: string, today: string, todayListings: Listing[], prevListings: Listing[]): InventorySignal {
-  const todaySale = todayListings.filter((l) => l.listingType === "sale" && l.source !== "kb");
-  const prevSale = prevListings.filter((l) => l.listingType === "sale" && l.source !== "kb");
-  const prevKeys = new Set(prevSale.map((l) => l.listingKey));
-  const todayKeys = new Set(todaySale.map((l) => l.listingKey));
-  const disappeared = prevSale.filter((l) => !todayKeys.has(l.listingKey)).length;
-  const newOnes = todaySale.filter((l) => !prevKeys.has(l.listingKey)).length;
-  const prices = todaySale.map((l) => l.askingPrice).filter((p) => p > 0).sort((a, b) => a - b);
-  const avg = prices.length ? Math.round(prices.reduce((s, p) => s + p, 0) / prices.length) : 0;
-  const median = prices.length ? prices[Math.floor(prices.length / 2)] : 0;
-  const bottom = prices[0] ?? 0;
-  const absorptionRate = prevSale.length > 0 ? Math.round((disappeared / prevSale.length) * 100) : 0;
-  const lowThr = avg * 0.95;
-  const lowPrice = todaySale.filter((l) => l.askingPrice < lowThr).length;
-  const lowPricePrev = prevSale.filter((l) => l.askingPrice < lowThr).length;
-  const lowPriceDisappeared = Math.max(0, lowPricePrev - todaySale.filter((l) => l.askingPrice < lowThr && prevKeys.has(l.listingKey!)).length);
-  const lowPriceAbsorptionRate = lowPricePrev > 0 ? Math.round((lowPriceDisappeared / lowPricePrev) * 100) : 0;
-  const signalScore = Math.min(100, absorptionRate + lowPriceAbsorptionRate);
-  const conclusion: InventorySignal["conclusion"] = signalScore >= 30 ? "strong_up" : signalScore >= 15 ? "up" : signalScore >= 5 ? "neutral" : "down";
-  const now = new Date().toISOString();
-  return { id: `inv_${aptId}_${today}`, apartmentId: aptId, signalDate: today, totalListingCount: todaySale.length, newListingCount: newOnes, disappearedListingCount: disappeared, lowPriceListingCount: lowPrice, lowPriceDisappearedCount: lowPriceDisappeared, absorptionRate, lowPriceAbsorptionRate, bottomPrice: bottom, avgAskingPrice: avg, medianAskingPrice: median, signalScore, conclusion, createdAt: now };
-}
-
 // ── 국토부 실거래 수집 ──
 const SALE_API = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev";
 const RENT_API = "https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent";
@@ -262,15 +240,6 @@ export async function GET(req: NextRequest) {
     data: typeof r.data === "string" ? JSON.parse(r.data) : (r.data as Record<string, unknown>),
   }));
 
-  // 오늘 이전 마지막 직방 매물 스냅샷 (소진율 계산용)
-  const prevResult = await sql.query(
-    "SELECT DISTINCT ON (apartment_id, data->>'listingKey') data FROM listings WHERE data->>'capturedAt' < $1 AND data->>'source' != 'kb' ORDER BY apartment_id, data->>'listingKey', data->>'capturedAt' DESC",
-    [today]
-  );
-  const prevListings: Listing[] = prevResult.rows.map((r: { data: unknown }) =>
-    typeof r.data === "string" ? JSON.parse(r.data) : (r.data as Listing)
-  );
-
   const logs: string[] = [];
   const allNewListings: Listing[] = [];
 
@@ -300,27 +269,39 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // InventorySignal 계산·저장
-  const signals: InventorySignal[] = [];
-  for (const apt of apts) {
-    const todayL = allNewListings.filter((l) => l.apartmentId === apt.id);
-    const prevL = prevListings.filter((l) => l.apartmentId === apt.id);
-    if (!todayL.filter((l) => l.source !== "kb").length) continue;
-    const sig = calcInventorySignal(apt.id, today, todayL, prevL);
-    signals.push(sig);
-    await sql.query(
-      "INSERT INTO inventory_signals (id, apartment_id, data) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
-      [sig.id, sig.apartmentId, JSON.stringify(sig)]
-    );
-  }
-
-  // 국토부 실거래 수집 (MOLIT_SERVICE_KEY 환경변수 필요)
+  // 국토부 실거래 먼저 수집 (MOI 산출에 월판매속도 필요 — 신호보다 먼저)
   let txLog = "실거래: MOLIT_SERVICE_KEY 미설정 — 건너뜀";
   const molitKey = process.env.MOLIT_SERVICE_KEY;
   if (molitKey) {
     const txResult = await collectTransactions(apts, molitKey, today);
     txLog = txResult.log;
     logs.push(txLog);
+  }
+
+  // InventorySignal 계산·저장 — MOI(회전속도) 기반 (저가소진율 폐기)
+  // DB에서 각 단지 실거래 로드 → calculateInventorySignal로 일관 산출
+  const txRes = await sql.query(
+    "SELECT apartment_id, data FROM transactions WHERE apartment_id = ANY($1)",
+    [apts.map((a) => a.id)]
+  );
+  const txByApt = new Map<string, Transaction[]>();
+  for (const r of txRes.rows as { apartment_id: string; data: unknown }[]) {
+    const t = (typeof r.data === "string" ? JSON.parse(r.data) : r.data) as Transaction;
+    if (!txByApt.has(r.apartment_id)) txByApt.set(r.apartment_id, []);
+    txByApt.get(r.apartment_id)!.push(t);
+  }
+
+  const signals: InventorySignal[] = [];
+  for (const apt of apts) {
+    const todayL = allNewListings.filter((l) => l.apartmentId === apt.id && l.source !== "kb");
+    if (!todayL.length) continue;
+    const households = Number(apt.data.households ?? 0) || undefined;
+    const sig = calculateInventorySignal(apt.id, todayL, txByApt.get(apt.id) ?? [], { households });
+    signals.push(sig);
+    await sql.query(
+      "INSERT INTO inventory_signals (id, apartment_id, data) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
+      [sig.id, sig.apartmentId, JSON.stringify(sig)]
+    );
   }
 
   return NextResponse.json({ ok: true, date: today, collected: newOnes.length, signals: signals.length, txLog, logs });

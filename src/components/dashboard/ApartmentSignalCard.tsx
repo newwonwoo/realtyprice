@@ -30,7 +30,7 @@ export function ApartmentSignalCard({ apartment, estimate }: { apartment: Apartm
         <Metric label="권장 매각호가" value={estimate ? formatEok(estimate.recommendedAskingPrice) : "-"} />
         <Metric label="예상 전세가" value={estimate ? formatEok(estimate.expectedJeonseMid) : "-"} />
         <Metric label="상승가능성" value={estimate ? `${estimate.upsideScore}점` : "-"} />
-        <Metric label="저가소진율" value={estimate ? formatPercent(estimate.lowPriceAbsorptionRate) : "-"} />
+        <Metric label="신뢰도" value={estimate ? `${estimate.confidenceScore}점` : "-"} />
         <Metric label="방어가격" value={estimate ? formatEok(estimate.defensePrice) : "-"} />
       </div>
       <div className="mt-5 flex justify-end">

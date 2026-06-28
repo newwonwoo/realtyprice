@@ -11,7 +11,8 @@ import { useEffect, useState } from "react";
 export default function DashboardPage() {
   const store = useRealtyStore();
   const expectedSales = store.priceEstimates.map((estimate) => estimate.expectedSaleMid).filter(Boolean);
-  const strongSignals = store.inventorySignals.filter((signal) => signal.lowPriceAbsorptionRate >= 0.3).length;
+  // 매물 회전속도 강세(MOI<3, 매도자우위) 단지 수 — 저가소진율 폐기 후 MOI 기준
+  const strongSignals = store.inventorySignals.filter((signal) => (signal.monthsOfInventory ?? 0) > 0 && (signal.monthsOfInventory ?? 0) < 3).length;
   const [hasApiKey, setHasApiKey] = useState(false);
 
   useEffect(() => {
@@ -67,7 +68,7 @@ export default function DashboardPage() {
         <Summary label="대상아파트" value={`${store.targets.length}개`} />
         <Summary label="가격추정 완료" value={`${store.priceEstimates.length}개`} />
         <Summary label="중앙 예상 매매가" value={formatEok(median(expectedSales))} />
-        <Summary label="강한 저가소진 신호" value={`${strongSignals}개`} helper={formatPercent(0.3)} />
+        <Summary label="빠른 매물회전(매도자우위)" value={`${strongSignals}개`} helper="MOI<3개월" />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -135,7 +136,7 @@ function buildSteps(store: any, hasApiKey: boolean): Step[] {
     {
       label: "⑤ 호가/매물 수집",
       detail: listingCount
-        ? `${listingCount}건 수집됨 — 매물소진율 산출 가능`
+        ? `${listingCount}건 수집됨 — 매물 회전속도(MOI) 산출 가능`
         : "대상아파트 페이지에서 직방 호가 전체 수집 (대상·대장·비교단지) · MOI 산출",
       done: listingCount > 0,
       href: "/listings",
