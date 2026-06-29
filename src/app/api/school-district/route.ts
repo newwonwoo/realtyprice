@@ -23,6 +23,19 @@ export type SchoolDistrictResult = {
   distanceM?: number;     // 아파트 → 학교 직선거리(m), aptLat/aptLng 제공 시
 };
 
+// 주소에서 시/군/구 핵심 토큰 추출 (지역 게이팅용)
+// "경기도 오산시 원동" → ["오산"], "서울특별시 용산구 …" → ["용산"], "경기도 고양시 덕양구" → ["고양","덕양"]
+function regionTokens(address: string): string[] {
+  if (!address) return [];
+  return address
+    .split(/\s+/)
+    .map((t) => {
+      const m = t.match(/^(.+?)(특별시|광역시|시|군|구)$/);
+      return m ? m[1] : "";
+    })
+    .filter((t) => t.length >= 2);
+}
+
 // 두 좌표 간 직선거리 (Haversine, 단위: m)
 function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -45,22 +58,31 @@ export async function GET(req: NextRequest) {
 
   const data = getData();
 
-  // 1순위: 아파트 좌표 기반 — 학교까지 직선거리 계산 후 가장 가까운 배정학교
-  // (aptLat/aptLng 없으면 이름/주소 매칭으로 fallback)
+  // 지역 게이팅: 단지 주소의 시/군/구 토큰. 이름 부분일치가 다른 지역(예: 오산 단지인데
+  // 용산구 "센트럴파크")으로 오매칭되는 것을 막는다.
+  const apRegion = regionTokens(address);
+  const regionOk = (r: RawRecord) =>
+    apRegion.length === 0 || apRegion.some((tok) => r.d.replace(/\s/g, "").includes(tok));
 
   let match: RawRecord | null = null;
 
-  // 1-1. 단지명 정확 매칭
+  // 1-1. 단지명 정확 매칭 (지역 일치 우선, 없으면 전역)
   if (aptName) {
     const nameNorm = aptName.replace(/\s/g, "");
-    match = data.find((r) => r.a.replace(/\s/g, "") === nameNorm) ?? null;
+    const exact = data.filter((r) => r.a.replace(/\s/g, "") === nameNorm);
+    match = exact.find(regionOk) ?? (apRegion.length === 0 ? exact[0] : null) ?? null;
 
-    // 1-2. 포함 매칭
+    // 1-2. 포함 매칭 — 반드시 같은 지역 + 너무 짧은(일반적) 단지명 제외(3자 이상)
     if (!match) {
-      match = data.find((r) =>
-        r.a.replace(/\s/g, "").includes(nameNorm) ||
-        nameNorm.includes(r.a.replace(/\s/g, ""))
-      ) ?? null;
+      const partial = data.filter((r) => {
+        if (!regionOk(r)) return false;
+        const ra = r.a.replace(/\s/g, "");
+        if (ra.length < 3) return false;
+        return ra.includes(nameNorm) || nameNorm.includes(ra);
+      });
+      // 가장 구체적인(긴) 단지명 우선
+      partial.sort((a, b) => b.a.replace(/\s/g, "").length - a.a.replace(/\s/g, "").length);
+      match = partial[0] ?? null;
     }
   }
 

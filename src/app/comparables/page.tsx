@@ -7,15 +7,11 @@ import { defaultComparableRule } from "@/lib/seed";
 import { nowIso } from "@/lib/format";
 import { autoLeaderRatio } from "@/lib/locationScore";
 import { findLeaderForAddress, LEADER_APARTMENTS } from "@/lib/leaderApartments";
+import { isPublicHousing } from "@/lib/publicHousing";
 import type { Apartment, ComparableRule } from "@/types/apartment";
 import { ComparableSuggestions } from "@/components/comparables/ComparableSuggestions";
 import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
 import { BulkTransactionFetcher } from "@/components/comparables/BulkTransactionFetcher";
-
-const PUBLIC_BRANDS = ["휴먼시아", "뜨란채", "천년나무", "안단테", "주공그린빌", "주공", "행복주택", "임대아파트", "LH", "SH"];
-function isPublicHousing(name: string) {
-  return PUBLIC_BRANDS.some((b) => name.includes(b));
-}
 
 export default function ComparablesPage() {
   const store = useRealtyStore();
@@ -40,19 +36,21 @@ export default function ComparablesPage() {
   }
 
   // 공공임대 비교단지 자동 제거 + 사용자 알림
+  // store 데이터가 바뀔 때마다 검사(대상 전환 없이 DB 로드·추천 추가로 새어든 휴먼시아도 잡는다).
+  // 제거 후엔 공공임대가 0개 → early return 되므로 무한루프 없음. 대상(target)은 보호.
   useEffect(() => {
-    const publicApts = store.apartments.filter((a) => isPublicHousing(a.name));
+    const targetIds = new Set(store.targets.map((t) => t.id));
+    const publicApts = store.apartments.filter((a) => isPublicHousing(a.name) && !targetIds.has(a.id));
     if (!publicApts.length) return;
-    const publicIds = publicApts.map((a) => a.id);
-    const toRemove = store.comparableApartments.filter((l) => publicIds.includes(l.apartmentId));
-    if (!toRemove.length) return;
+    const publicIds = new Set(publicApts.map((a) => a.id));
     setRemovedNotice(publicApts.map((a) => a.name));
-    store.setComparableApartments(store.comparableApartments.filter((l) => !publicIds.includes(l.apartmentId)));
-    store.setApartments(store.apartments.filter((a) => !publicIds.includes(a.id)));
+    const linksToRemove = store.comparableApartments.filter((l) => publicIds.has(l.apartmentId));
+    if (linksToRemove.length) store.setComparableApartments(store.comparableApartments.filter((l) => !publicIds.has(l.apartmentId)));
+    store.setApartments(store.apartments.filter((a) => !publicIds.has(a.id)));
     const timer = setTimeout(() => setRemovedNotice([]), 8000);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTargetId]);
+  }, [store.apartments, store.comparableApartments, store.targets]);
 
   // 현재 비교단지 링크들 (이 대상아파트에 해당)
   const currentLinks = store.comparableApartments.filter((item) => item.targetApartmentId === activeTargetId);
@@ -143,9 +141,12 @@ export default function ComparablesPage() {
 
   useEffect(() => {
     if (!activeTarget || !suggestedLeader) return;
-    const id = `leader_${suggestedLeader.region.replace(/\s/g, "_")}_${suggestedLeader.name.replace(/\s/g, "_")}`;
+    // 이미 대장이 지정돼 있으면(자동·수동 무관) 절대 건드리지 않는다.
+    // 예전엔 여기서 매 대상전환마다 추천 대장을 store에 유령 재삽입해서, 사용자가 수동 지정한
+    // 대장과 충돌하며 칩이 "꼬였다". editable 존중: 비어있을 때만 1회 자동지정.
+    if (rule.leaderApartmentId) return;
 
-    // store에 없으면 항상 재추가 (페이지 재로드 후 store 초기화 대응)
+    const id = `leader_${suggestedLeader.region.replace(/\s/g, "_")}_${suggestedLeader.name.replace(/\s/g, "_")}`;
     const existing = store.apartments.find((a) => a.id === id);
     const leaderApt: Apartment = existing ?? {
       id,
@@ -160,8 +161,6 @@ export default function ComparablesPage() {
     };
     if (!existing) store.setApartments([...store.apartments, leaderApt]);
 
-    // rule 미설정일 때만 자동 지정
-    if (rule.leaderApartmentId) return;
     const ratio = autoLeaderRatio(activeTarget, leaderApt, store.transactions, activeTarget.defaultArea);
     saveRule({ ...rule, leaderApartmentId: id, targetToLeaderRatio: ratio, targetApartmentId: activeTargetId });
   // eslint-disable-next-line react-hooks/exhaustive-deps
