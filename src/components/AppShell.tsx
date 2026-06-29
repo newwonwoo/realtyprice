@@ -6,18 +6,20 @@ import { useEffect, useState } from "react";
 import { Menu, X, AlertTriangle } from "lucide-react";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 
+// 메인 동선: 대상아파트 상세페이지 한 곳에서 비교단지·실거래·호가·추정을 모두 처리한다.
 const mainNav: [string, string][] = [
-  ["① 대상아파트", "/targets"],
-  ["② 비교단지", "/comparables"],
-  ["③ 호가/매물", "/listings"],
-  ["④ 대시보드", "/dashboard"],
+  ["대상아파트", "/targets"],
+  ["대시보드", "/dashboard"],
 ];
 
+// 일괄/고급 도구 + 설정 — 여러 단지를 한 번에 처리하거나 환경을 설정할 때만 사용.
 const subNav: [string, string][] = [
+  ["비교단지 (일괄)", "/comparables"],
+  ["호가/매물 (일괄)", "/listings"],
+  ["실거래 (일괄·수동)", "/transactions"],
   ["API 키 설정", "/settings/api"],
   ["모델 가중치", "/settings/model"],
   ["백업/복원", "/backup"],
-  ["실거래 수동입력", "/transactions"],
   ["사용 매뉴얼", "/help"],
   ["시스템 진단", "/admin/diagnostics"],
 ];
