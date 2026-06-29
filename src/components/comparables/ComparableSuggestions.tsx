@@ -65,6 +65,15 @@ function haversineM(aLat: number, aLng: number, bLat: number, bLng: number): num
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+// 주소에서 행정동(읍/면/동) 토큰 추출 — 없으면 가/리 폴백, 그래도 없으면 null
+function extractDong(address: string): string | null {
+  const parts = (address ?? "").split(" ").filter(Boolean);
+  const primary = parts.find((p) => /(읍|면|동)$/.test(p) && !/^\d/.test(p));
+  if (primary) return primary;
+  const fallback = parts.find((p) => /(가|리)$/.test(p) && p.length >= 2);
+  return fallback ?? null;
+}
+
 // 대상 대비 상대 입지등급 (diff = 비교단지 - 대상)
 function tierFromDiff(diff: number): { label: string; cls: string } {
   if (diff >= 8) return { label: "상급지", cls: "bg-purple-100 text-purple-700" };
@@ -90,6 +99,9 @@ type Diag = {
   refCoordSource: string;
   distApplied: boolean;
   after1km: number;
+  dongApplied: boolean;        // 행정동 필터 적용 여부
+  targetDong: string;          // 대상 행정동
+  afterDongFilter: number;     // 행정동 필터 후
   finalCount: number;
 };
 
@@ -109,6 +121,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
   const [distApplied, setDistApplied] = useState(false); // 1km 필터 적용 여부
+  const [excludeOtherDong, setExcludeOtherDong] = useState(false); // 행정동 다르면 제외
   const [debugMode, setDebugMode] = useState(false);
   const [diag, setDiag] = useState<Diag | null>(null);
 
@@ -134,7 +147,8 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       regionKeyword, searchHttp: 0, rawCount: 0, afterNameFilter: 0, afterHouseholdFilter: 0,
       droppedByHousehold: 0, afterSimilarity: 0, rankedCount: 0, vworldKeyPresent: false,
       targetGeocoded: false, candidateGeocodeOk: 0, candidateGeocodeFail: 0, geocodeSampleErrors: [],
-      refCoordSource: "없음", distApplied: false, after1km: 0, finalCount: 0,
+      refCoordSource: "없음", distApplied: false, after1km: 0,
+      dongApplied: false, targetDong: "", afterDongFilter: 0, finalCount: 0,
     };
     try {
       const params = new URLSearchParams({ serviceKey, keyword: regionKeyword });
@@ -247,6 +261,21 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       }
       d.distApplied = canDistance;
       d.after1km = filtered.length;
+
+      // 행정동 필터 (옵션): 거리 안이어도 대상과 행정동이 다르면 제외
+      // 동 추출 실패 후보는 보수적으로 유지(과도 제외 방지)
+      const targetDong = extractDong(target.address ?? target.region ?? "");
+      d.targetDong = targetDong ?? "(추출실패)";
+      const dongApplied = excludeOtherDong && !!targetDong;
+      if (dongApplied) {
+        filtered = filtered.filter((item) => {
+          const dong = extractDong(item.address);
+          return dong === null || dong === targetDong;
+        });
+      }
+      d.dongApplied = dongApplied;
+      d.afterDongFilter = filtered.length;
+
       filtered = filtered.slice(0, 25);
       d.finalCount = filtered.length;
       setDistMap(newDistMap);
@@ -254,7 +283,11 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       setDiag({ ...d });
 
       if (!filtered.length) {
-        setError(canDistance ? "반경 1km 이내 유사 비교단지 후보를 찾지 못했습니다." : "유사한 비교단지 후보를 찾지 못했습니다.");
+        setError(
+          dongApplied
+            ? `같은 행정동(${targetDong}) 내 유사 비교단지 후보를 찾지 못했습니다. '행정동 다르면 제외'를 끄면 인근 다른 동도 포함됩니다.`
+            : canDistance ? "반경 1km 이내 유사 비교단지 후보를 찾지 못했습니다." : "유사한 비교단지 후보를 찾지 못했습니다."
+        );
         return;
       }
       setSuggestions(filtered);
@@ -317,6 +350,10 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
           {loading ? "추천 단지 검색 중…" : "비교단지 자동추천 (공공데이터)"}
         </button>
         <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap cursor-pointer">
+          <input type="checkbox" checked={excludeOtherDong} onChange={(e) => setExcludeOtherDong(e.target.checked)} />
+          행정동 다르면 제외
+        </label>
+        <label className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap cursor-pointer">
           <input type="checkbox" checked={debugMode} onChange={(e) => setDebugMode(e.target.checked)} />
           진단
         </label>
@@ -332,6 +369,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
               <p className="text-xs text-slate-500">
                 {target.region} · 입지등급(상/동/하급지) 분류 · 세대수 −20% 이상만
                 {distApplied ? " · 반경 1km 이내(VWorld 좌표, 키 없으면 배정초교 좌표)" : " · 거리기준 미적용(좌표 확보 실패)"}
+                {excludeOtherDong ? " · 같은 행정동만" : ""}
               </p>
             </div>
             <button className="text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>✕</button>
@@ -427,7 +465,8 @@ function DiagPanel({ diag }: { diag: Diag }) {
       {diag.geocodeSampleErrors.map((e, i) => <Row key={i} k={`지오코딩 오류 ${i + 1}`} v={e} warn />)}
       <div className="my-1 border-t border-amber-200" />
       <Row k={`⑥ 1km 필터 ${diag.distApplied ? "적용" : "미적용"} 후`} v={diag.after1km} warn={diag.after1km === 0 && diag.rankedCount > 0} />
-      <Row k="⑦ 최종 표시" v={diag.finalCount} warn={diag.finalCount === 0} />
+      <Row k={`⑦ 행정동 필터 ${diag.dongApplied ? `적용(${diag.targetDong})` : "미적용"} 후`} v={diag.afterDongFilter} warn={diag.dongApplied && diag.afterDongFilter === 0 && diag.after1km > 0} />
+      <Row k="⑧ 최종 표시" v={diag.finalCount} warn={diag.finalCount === 0} />
     </div>
   );
 }

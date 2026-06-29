@@ -1,31 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Papa from "papaparse";
 import { AppShell } from "@/components/AppShell";
 import { useRealtyStore } from "@/lib/clientStore";
-import { normalizeToBGrade } from "@/lib/grade";
 import { calculateInventorySignal } from "@/lib/inventory";
 import { formatEok, formatPercent } from "@/lib/format";
-import type { Listing, ListingType } from "@/types/listing";
-import type { UnitGrade } from "@/types/transaction";
+import type { Listing } from "@/types/listing";
 import { ListingFetcher, type ApartmentWithRole } from "@/components/listings/ListingFetcher";
-
-const grades: UnitGrade[] = ["S", "A", "B", "C", "D", "UNKNOWN"];
 
 export default function ListingsPage() {
   const store = useRealtyStore();
   const [apartmentId, setApartmentId] = useState("");
-  const [listingType, setListingType] = useState<ListingType>("sale");
-  const [askingPrice, setAskingPrice] = useState("");
-  const [exclusiveArea, setExclusiveArea] = useState("84");
-  const [floor, setFloor] = useState("");
-  const [buildingNo, setBuildingNo] = useState("");
-  const [unitNo, setUnitNo] = useState("");
-  const [direction, setDirection] = useState("");
-  const [grade, setGrade] = useState<UnitGrade>("B");
-  const [capturedAt, setCapturedAt] = useState(new Date().toISOString().slice(0, 10));
-  const [listingKey, setListingKey] = useState("");
   const [message, setMessage] = useState("");
   const activeApartmentId = apartmentId || store.targets[0]?.id || store.apartments[0]?.id || "";
 
@@ -44,69 +29,6 @@ export default function ListingsPage() {
     [activeApartmentId, snapshot.current, activeTransactions, activeApartment?.households]
   );
 
-  function addListing() {
-    if (!activeApartmentId || !askingPrice || Number.isNaN(Number(askingPrice))) {
-      setMessage("단지와 숫자 호가를 입력하세요.");
-      return;
-    }
-    const price = Number(askingPrice);
-    const listing: Listing = {
-      id: `listing_${Date.now()}`,
-      apartmentId: activeApartmentId,
-      listingType,
-      exclusiveArea: Number(exclusiveArea || 84),
-      askingPrice: price,
-      floor: floor ? Number(floor) : undefined,
-      buildingNo: buildingNo || undefined,
-      unitNo: unitNo || undefined,
-      direction: direction || undefined,
-      grade,
-      adjustedAskingPrice: normalizeToBGrade(price, grade),
-      source: "manual",
-      listingKey: listingKey || `manual_${activeApartmentId}_${buildingNo}_${unitNo}_${price}`,
-      capturedAt,
-      status: "active"
-    };
-    store.setListings([listing, ...store.listings]);
-    setAskingPrice("");
-    setListingKey("");
-    setMessage("매물을 추가했습니다.");
-  }
-
-  function uploadCsv(file: File) {
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (result) => {
-        const rows = result.data.map((row) => {
-          const apartment = store.apartments.find((item) => item.name === row.apartmentName || item.shortName === row.apartmentName || item.id === row.apartmentId);
-          const gradeValue = grades.includes(row.grade as UnitGrade) ? (row.grade as UnitGrade) : "UNKNOWN";
-          const numericPrice = Number(row.askingPrice);
-          return apartment && numericPrice ? ({
-            id: `listing_${Date.now()}_${Math.random()}`,
-            apartmentId: apartment.id,
-            listingType: (row.listingType || "sale") as ListingType,
-            exclusiveArea: Number(row.exclusiveArea || 84),
-            askingPrice: numericPrice,
-            floor: row.floor ? Number(row.floor) : undefined,
-            buildingNo: row.buildingNo || undefined,
-            unitNo: row.unitNo || undefined,
-            direction: row.direction || undefined,
-            grade: gradeValue,
-            adjustedAskingPrice: normalizeToBGrade(numericPrice, gradeValue),
-            source: "csv",
-            listingKey: row.listingKey || `csv_${apartment.id}_${row.buildingNo}_${row.unitNo}_${numericPrice}`,
-            capturedAt: row.capturedAt || new Date().toISOString().slice(0, 10),
-            status: "active",
-            memo: row.memo || undefined
-          } satisfies Listing) : null;
-        }).filter(Boolean) as Listing[];
-        store.setListings([...rows, ...store.listings]);
-        setMessage(`${rows.length}건을 업로드했습니다.`);
-      }
-    });
-  }
-
   function saveInventorySignal() {
     if (!snapshot.current.length) {
       setMessage("현재 단지의 매매 매물이 필요합니다. (호가 수집 먼저)");
@@ -124,8 +46,8 @@ export default function ListingsPage() {
     <AppShell>
       <div className="mb-8">
         <p className="text-sm font-semibold text-blue-600">Listings</p>
-        <h1 className="text-3xl font-black">호가/매물 입력</h1>
-        <p className="mt-2 text-slate-600">현재 매물 + 실거래로 재고소진월수(MOI)를 산출합니다. 스냅샷 1회로도 계산됩니다.</p>
+        <h1 className="text-3xl font-black">호가/매물</h1>
+        <p className="mt-2 text-slate-600">직방·KB에서 현재 매물을 자동수집하고, 실거래와 합쳐 재고소진월수(MOI)를 산출합니다.</p>
       </div>
 
       {/* 직방/KB 자동 수집 — listings 페이지는 전체 단지 목록 제공 */}
@@ -140,118 +62,73 @@ export default function ListingsPage() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
-        <div className="card p-5">
-          {/* 필수 입력 */}
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">필수 입력</p>
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">단지</span>
-              <select className="input mt-1" value={activeApartmentId} onChange={(event) => setApartmentId(event.target.value)}>
-                <option value="">단지 선택</option>
-                {store.apartments.map((apartment) => <option key={apartment.id} value={apartment.id}>{apartment.name}</option>)}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">유형</span>
-              <select className="input mt-1" value={listingType} onChange={(event) => setListingType(event.target.value as ListingType)}><option value="sale">매매</option><option value="jeonse">전세</option></select>
-            </label>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">호가 (만원)</span>
-              <input className="input mt-1" value={askingPrice} onChange={(event) => setAskingPrice(event.target.value)} placeholder="예: 85000" />
-            </label>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">전용면적 (㎡)</span>
-              <input className="input mt-1" value={exclusiveArea} onChange={(event) => setExclusiveArea(event.target.value)} placeholder="84" />
-            </label>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">수집일</span>
-              <input className="input mt-1" type="date" value={capturedAt} onChange={(event) => setCapturedAt(event.target.value)} />
-            </label>
+      <div className="card p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black">매물소진추정 (MOI)</h2>
+            <p className="mt-1 text-xs text-slate-500">재고소진월수 = 활성매물 ÷ 월평균 실거래. 낮을수록 매도자 우위(상승압력).</p>
           </div>
-
-          {/* 선택 입력 */}
-          <details className="group mt-4">
-            <summary className="flex cursor-pointer select-none items-center justify-between rounded-md py-1.5 text-sm font-semibold text-slate-600 hover:text-blue-600">
-              선택 입력 (층 · 동 · 호수 · 향 · 매물키 · 등급)
-              <span className="text-xs text-slate-400 transition-transform group-open:rotate-180">▾</span>
-            </summary>
-            <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-3">
-              <input className="input" value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="층" />
-              <input className="input" value={buildingNo} onChange={(event) => setBuildingNo(event.target.value)} placeholder="동" />
-              <input className="input" value={unitNo} onChange={(event) => setUnitNo(event.target.value)} placeholder="호수" />
-              <input className="input" value={direction} onChange={(event) => setDirection(event.target.value)} placeholder="향" />
-              <input className="input" value={listingKey} onChange={(event) => setListingKey(event.target.value)} placeholder="매물키" />
-              <select className="input" value={grade} onChange={(event) => setGrade(event.target.value as UnitGrade)}>{grades.map((item) => <option key={item} value={item}>등급 {item}</option>)}</select>
-            </div>
-          </details>
-
-          <button className="btn-primary mt-4 w-full" onClick={addListing}>매물 추가</button>
-
-          <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 text-sm text-slate-600">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">CSV 일괄 업로드</p>
-            <input type="file" accept=".csv" onChange={(event) => event.target.files?.[0] && uploadCsv(event.target.files[0])} />
-            <p className="text-xs text-slate-400">컬럼: apartmentName 또는 apartmentId, listingType, askingPrice, exclusiveArea, capturedAt, listingKey, floor, buildingNo, unitNo, direction, grade</p>
-            {message && <p className="font-semibold text-blue-700">{message}</p>}
-          </div>
+          <label className="block">
+            <span className="text-xs font-semibold text-slate-600">단지</span>
+            <select className="input mt-1" value={activeApartmentId} onChange={(event) => setApartmentId(event.target.value)}>
+              <option value="">단지 선택</option>
+              {store.apartments.map((apartment) => <option key={apartment.id} value={apartment.id}>{apartment.name}</option>)}
+            </select>
+          </label>
         </div>
 
-        <div className="card p-5">
-          <h2 className="text-lg font-black">매물소진추정 (MOI)</h2>
-          <p className="mt-1 text-xs text-slate-500">재고소진월수 = 활성매물 ÷ 월평균 실거래. 낮을수록 매도자 우위(상승압력).</p>
-
-          {/* 핵심 지표: MOI */}
-          <div className={`mt-4 rounded-xl border-2 p-4 ${moiBoxStyle(liveSignal.conclusion)}`}>
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-500">재고소진월수 (MOI)</p>
-                <p className="mt-1 text-4xl font-black">
-                  {liveSignal.monthsOfInventory && liveSignal.monthsOfInventory > 0
-                    ? `${liveSignal.monthsOfInventory}개월`
-                    : "—"}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className={`text-sm font-black ${moiTextStyle(liveSignal.conclusion)}`}>
-                  {moiRegimeLabel(liveSignal.conclusion)}
-                </p>
-                <p className="text-xs text-slate-500">신호점수 {liveSignal.signalScore}점</p>
-              </div>
+        {/* 핵심 지표: MOI */}
+        <div className={`mt-4 rounded-xl border-2 p-4 ${moiBoxStyle(liveSignal.conclusion)}`}>
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500">재고소진월수 (MOI)</p>
+              <p className="mt-1 text-4xl font-black">
+                {liveSignal.monthsOfInventory && liveSignal.monthsOfInventory > 0
+                  ? `${liveSignal.monthsOfInventory}개월`
+                  : "—"}
+              </p>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              {liveSignal.monthsOfInventory && liveSignal.monthsOfInventory > 0
-                ? "기준: <3 강한상승 · 3~6 보합 · >6.5 하락 (US NAR, 수도권 보정 전)"
-                : "활성매물 + 최근 매매 실거래가 모두 있어야 계산됩니다."}
-            </p>
-          </div>
-
-          {/* 보조 지표 */}
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <Metric label="활성 매물수 (디둡)" value={`${liveSignal.activeListingCount ?? 0}건`} />
-            <Metric label="월평균 실거래" value={`${liveSignal.monthlySalesPace ?? 0}건/월`} />
-            <Metric label="흡수율(월)" value={formatPercent(liveSignal.absorptionRate)} />
-            <Metric
-              label="거래회전율(연)"
-              value={liveSignal.turnoverAnnualized !== undefined ? `${liveSignal.turnoverAnnualized}%` : "세대수 필요"}
-            />
-            <Metric label="매매수급 프록시" value={`${liveSignal.supplyDemandProxy ?? 100}`} />
-            <Metric label="실거래 집계기간" value={`${liveSignal.transactionWindowMonths ?? 6}개월`} />
-          </div>
-
-          {/* 보조 확인용: 스냅샷 매물 증감 (2개 스냅샷 있을 때만) */}
-          {snapshot.previous.length > 0 && (
-            <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-              <span className="font-semibold">스냅샷 매물 증감</span> · 전일 {snapshot.previous.length}건 → 금일 {snapshot.current.length}건
+            <div className="text-right">
+              <p className={`text-sm font-black ${moiTextStyle(liveSignal.conclusion)}`}>
+                {moiRegimeLabel(liveSignal.conclusion)}
+              </p>
+              <p className="text-xs text-slate-500">신호점수 {liveSignal.signalScore}점</p>
             </div>
-          )}
-
-          <button className="btn-primary mt-4 w-full" onClick={saveInventorySignal}>매물소진 신호 저장</button>
-          {latestSignal && (
-            <p className="mt-3 text-sm text-slate-500">
-              최근 저장: {latestSignal.signalDate} · MOI {latestSignal.monthsOfInventory ?? "-"}개월 · {latestSignal.signalScore}점
-            </p>
-          )}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {liveSignal.monthsOfInventory && liveSignal.monthsOfInventory > 0
+              ? "기준: <3 강한상승 · 3~6 보합 · >6.5 하락 (US NAR, 수도권 보정 전)"
+              : "활성매물 + 최근 매매 실거래가 모두 있어야 계산됩니다."}
+          </p>
         </div>
+
+        {/* 보조 지표 */}
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
+          <Metric label="활성 매물수 (디둡)" value={`${liveSignal.activeListingCount ?? 0}건`} />
+          <Metric label="월평균 실거래" value={`${liveSignal.monthlySalesPace ?? 0}건/월`} />
+          <Metric label="흡수율(월)" value={formatPercent(liveSignal.absorptionRate)} />
+          <Metric
+            label="거래회전율(연)"
+            value={liveSignal.turnoverAnnualized !== undefined ? `${liveSignal.turnoverAnnualized}%` : "세대수 필요"}
+          />
+          <Metric label="매매수급 프록시" value={`${liveSignal.supplyDemandProxy ?? 100}`} />
+          <Metric label="실거래 집계기간" value={`${liveSignal.transactionWindowMonths ?? 6}개월`} />
+        </div>
+
+        {/* 보조 확인용: 스냅샷 매물 증감 (2개 스냅샷 있을 때만) */}
+        {snapshot.previous.length > 0 && (
+          <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+            <span className="font-semibold">스냅샷 매물 증감</span> · 전일 {snapshot.previous.length}건 → 금일 {snapshot.current.length}건
+          </div>
+        )}
+
+        <button className="btn-primary mt-4 w-full" onClick={saveInventorySignal}>매물소진 신호 저장</button>
+        {message && <p className="mt-2 text-sm font-semibold text-blue-700">{message}</p>}
+        {latestSignal && (
+          <p className="mt-2 text-sm text-slate-500">
+            최근 저장: {latestSignal.signalDate} · MOI {latestSignal.monthsOfInventory ?? "-"}개월 · {latestSignal.signalScore}점
+          </p>
+        )}
       </div>
 
       <div className="card mt-6 overflow-hidden">
