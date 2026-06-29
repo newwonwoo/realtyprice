@@ -35,6 +35,19 @@ function extraCols(entity: string, data: Record<string, unknown>) {
   }
 }
 
+// 엔티티별 정렬 컬럼 — 테이블마다 시간 컬럼이 달라서 고정 ORDER BY는 42703 유발
+// (transactions: 시간컬럼 없음 → contract_date, price_estimates: created_at, settings: key)
+const ORDER_COL: Record<string, string> = {
+  apartments: "updated_at",
+  comparable_rules: "updated_at",
+  comparable_apartments: "updated_at",
+  transactions: "contract_date",
+  listings: "updated_at",
+  inventory_signals: "updated_at",
+  price_estimates: "created_at",
+  settings: "key",
+};
+
 let dbInitialized = false;
 async function ensureDb() {
   if (!dbInitialized) {
@@ -53,7 +66,10 @@ export async function GET(
   }
   try {
     await ensureDb();
-    const result = await sql.query(`SELECT data FROM ${entity} ORDER BY updated_at DESC`);
+    // settings 테이블만 컬럼명이 다름(key/value) — 그 외는 모두 id/data
+    const selectExpr = entity === "settings" ? "value AS data" : "data";
+    const orderCol = ORDER_COL[entity] ?? "id";
+    const result = await sql.query(`SELECT ${selectExpr} FROM ${entity} ORDER BY ${orderCol} DESC`);
     const items = result.rows.map((r) => r.data as Record<string, unknown>);
     return NextResponse.json({ items });
   } catch (err) {
