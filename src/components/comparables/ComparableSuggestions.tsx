@@ -6,6 +6,7 @@ import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import { nowIso } from "@/lib/format";
 import { locationGradeScore } from "@/lib/locationScore";
 import { isLeaderApartment } from "@/lib/leaderApartments";
+import { isPublicHousing } from "@/lib/publicHousing";
 import type { AptSearchResult } from "@/app/api/apt-search/route";
 import type { SchoolDistrictResult } from "@/app/api/school-district/route";
 
@@ -160,11 +161,8 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       const items: AptSearchResult[] = json.items ?? [];
       d.rawCount = items.length;
 
-      // 1차: 공공임대 브랜드 제외 (민간 시세 비교 불가)
-      const PUBLIC_BRANDS = ["휴먼시아", "뜨란채", "천년나무", "안단테", "주공그린빌", "주공", "행복주택", "임대", "LH", "SH"];
-      const afterPublic = items.filter((item) =>
-        !PUBLIC_BRANDS.some((b) => item.name.includes(b))
-      );
+      // 1차: 공공임대 브랜드 제외 (민간 시세 비교 불가) — 판별은 publicHousing 유틸 단일출처
+      const afterPublic = items.filter((item) => !isPublicHousing(item.name));
 
       // 2차: 이름·유사도·세대수 필터
       const afterName = afterPublic.filter((item) => item.name !== target.name && item.name !== target.shortName);

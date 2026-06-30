@@ -8,6 +8,7 @@ import { ExternalLinks } from "@/components/targets/ExternalLinks";
 import { UnifiedTransactionFetcher } from "@/components/targets/UnifiedTransactionFetcher";
 import { ListingFetcher, type ApartmentWithRole } from "@/components/listings/ListingFetcher";
 import { AptDetailInfo } from "@/components/targets/AptDetailInfo";
+import { ComparablesManager } from "@/components/comparables/ComparablesManager";
 import { SignalWaterfall } from "@/components/charts/SignalWaterfall";
 import { PriceTimeline } from "@/components/charts/PriceTimeline";
 import { UpsideGauge } from "@/components/charts/UpsideGauge";
@@ -158,14 +159,22 @@ export default function TargetDetailPage() {
   const locationPremiumRate = calculateLocationPremium(apartment);
   const comparableGradeAnalysis = calculateComparableGradeAnalysis(apartment, selectedComparables);
 
-  // ── 조작 동선 단계 체크 ─────────────────────────────────────────
-  const steps = [
+  // ── 조작 동선 단계 체크 (모두 이 페이지 안에서 처리 — 외부 페이지로 이탈하지 않음) ──
+  const steps: { label: string; done: boolean; anchor?: string; tab?: "setup" | "analysis" | "model" }[] = [
     { label: "대상아파트 선정", done: true },
-    { label: `비교단지 선택 (${selectedComparables.length}개)`, done: selectedComparables.length > 0, href: "/comparables" },
-    { label: `실거래 수집 (${targetTransactions.length + comparableTransactions.length}건)`, done: targetTransactions.length + comparableTransactions.length > 0 },
-    { label: `호가 수집 (${targetListings.length}건)`, done: targetListings.length > 0, href: "/listings" },
-    { label: "가격 추정 실행", done: !!latestEstimate },
+    { label: `비교단지 선택 (${selectedComparables.length}개)`, done: selectedComparables.length > 0, anchor: "sec-comparables" },
+    { label: `실거래 수집 (${targetTransactions.length + comparableTransactions.length}건)`, done: targetTransactions.length + comparableTransactions.length > 0, anchor: "sec-transactions" },
+    { label: `호가 수집 (${targetListings.length}건)`, done: targetListings.length > 0, anchor: "sec-listings" },
+    { label: "가격 추정 실행", done: !!latestEstimate, tab: "analysis" },
   ];
+  function goToStep(step: { anchor?: string; tab?: "setup" | "analysis" | "model" }) {
+    if (step.tab) { setTab(step.tab); return; }
+    if (step.anchor) {
+      setTab("setup");
+      const id = step.anchor;
+      setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+    }
+  }
   const currentStep = steps.findIndex((s) => !s.done);
   const allReady = steps.slice(0, 4).every((s) => s.done);
 
@@ -358,8 +367,8 @@ export default function TargetDetailPage() {
                       ? "bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-1 shadow-sm"
                       : "bg-slate-100 text-slate-400"}`}>
                   {step.done ? "✓" : `${i + 1}`} {step.label}
-                  {step.href && !step.done && (
-                    <a href={step.href} className="underline opacity-80">→</a>
+                  {(step.anchor || step.tab) && !step.done && (
+                    <button type="button" onClick={() => goToStep(step)} className="underline opacity-80">→</button>
                   )}
                 </span>
               </div>
@@ -396,8 +405,23 @@ export default function TargetDetailPage() {
       <>
       <AptDetailInfo apartment={apartment} />
 
+      {/* ── 비교단지 설정 ── */}
+      <div id="sec-comparables" className="mt-6 scroll-mt-4">
+        <details open={selectedComparables.length === 0} className="card overflow-hidden">
+          <summary className="flex cursor-pointer items-center justify-between p-5 font-bold text-slate-700 hover:bg-slate-50">
+            <span>비교단지 설정</span>
+            <span className="text-sm font-normal text-slate-500">
+              {selectedComparables.length > 0 ? `${selectedComparables.length}개 선택됨` : "비교단지를 선택하세요"}
+            </span>
+          </summary>
+          <div className="border-t border-slate-100 p-4">
+            <ComparablesManager targetId={apartment.id} />
+          </div>
+        </details>
+      </div>
+
       {/* ── 실거래 통합수집 ── */}
-      <div className="mt-6">
+      <div id="sec-transactions" className="mt-6 scroll-mt-4">
         <details open={targetTransactions.length === 0} className="card overflow-hidden">
           <summary className="flex cursor-pointer items-center justify-between p-5 font-bold text-slate-700 hover:bg-slate-50">
             <span>실거래 통합수집</span>
@@ -419,7 +443,7 @@ export default function TargetDetailPage() {
         </details>
 
         {/* ── 호가 수집 (직방/KB) ── */}
-        <details className="group" open>
+        <details id="sec-listings" className="group scroll-mt-4" open>
           <summary className="flex cursor-pointer items-center justify-between px-5 py-4 select-none">
             <span className="font-semibold text-slate-700">호가 수집 (직방 · KB)</span>
             <span className="text-xs text-slate-400">

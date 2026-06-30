@@ -29,6 +29,7 @@ const KNOWN_BRANDS: string[] = [
   "리첸시아", "골든센트로", "트리마제",
   "신안인스빌", "우방아이유쉘", "제일풍경채",
   "엠코헤리츠", "동원로얄듀크",
+  "금강펜테리움", "금강",
 ].sort((a, b) => b.length - a.length);
 
 // 브랜드 별칭 — 검색 실패 시 대체 표기로 추가 후보 생성
@@ -58,9 +59,11 @@ function normalize(name: string): string {
     .trim();
 }
 
-// 단지 번호/차수 suffix 제거
+// 단지 번호/차수/블록 suffix 제거
+// "오산역 금강펜테리움 센트럴파크 A8블록" → "오산역 금강펜테리움 센트럴파크"
 function stripComplexNo(name: string): string {
   return name
+    .replace(/\s*[A-Za-z]?\d*\s*블록.*$/, "")   // "A8블록", "8블록", "블록" (신축 분양권 블록 표기)
     .replace(/\s*(1|2|3|4|A|B|C)단지.*$/, "")
     .replace(/\d+차$/, "")
     .trim();
