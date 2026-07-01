@@ -20,6 +20,7 @@ import { median } from "@/lib/inventory";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import { findSggCode } from "@/data/regionCodes";
 import type { ModelWeights } from "@/types/model";
+import type { Apartment } from "@/types/apartment";
 import type { SupplyVolumeResult } from "@/app/api/supply-volume/route";
 
 const conclusionLabel: Record<string, string> = {
@@ -158,6 +159,22 @@ export default function TargetDetailPage() {
 
   const locationPremiumRate = calculateLocationPremium(apartment);
   const comparableGradeAnalysis = calculateComparableGradeAnalysis(apartment, selectedComparables);
+
+  // ── 수집 대상 단일 소스 = 대상 + 대장 + 비교(이 대상 연결분), 중복 제거 ──
+  // 실거래 수집기·호가 수집기가 이 동일한 리스트를 공유한다(불일치 방지).
+  const collectionTargets: ApartmentWithRole[] = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ApartmentWithRole[] = [];
+    const add = (apt: Apartment | undefined, role: "target" | "leader" | "comparable") => {
+      if (apt && !seen.has(apt.id)) { seen.add(apt.id); out.push({ apartment: apt, role }); }
+    };
+    add(apartment, "target");
+    if (!isSelfLeader) add(leaderApartment, "leader");
+    selectedComparables.forEach((a) => add(a, "comparable"));
+    return out;
+  }, [apartment, leaderApartment, isSelfLeader, selectedComparables]);
+  const collectionIds = new Set(collectionTargets.map((c) => c.apartment.id));
+  const collectionTransactions = store.transactions.filter((t) => collectionIds.has(t.apartmentId));
 
   // ── 조작 동선 단계 체크 (모두 이 페이지 안에서 처리 — 외부 페이지로 이탈하지 않음) ──
   const steps: { label: string; done: boolean; anchor?: string; tab?: "setup" | "analysis" | "model" }[] = [
@@ -433,10 +450,8 @@ export default function TargetDetailPage() {
           </summary>
           <div className="border-t border-slate-100">
             <UnifiedTransactionFetcher
-              targetApartment={apartment}
-              leaderApartmentId={rule?.leaderApartmentId}
-              comparables={selectedComparables}
-              existingTransactions={[...targetTransactions, ...comparableTransactions]}
+              apartments={collectionTargets}
+              existingTransactions={collectionTransactions}
               onImport={importTransactions}
             />
           </div>
@@ -447,19 +462,13 @@ export default function TargetDetailPage() {
           <summary className="flex cursor-pointer items-center justify-between px-5 py-4 select-none">
             <span className="font-semibold text-slate-700">호가 수집 (직방 · KB)</span>
             <span className="text-xs text-slate-400">
-              {[apartment, ...selectedComparables].reduce((sum, a) =>
+              {collectionTargets.reduce((sum, { apartment: a }) =>
                 sum + store.listings.filter((l) => l.apartmentId === a.id).length, 0
               )}건 수집됨
             </span>
           </summary>
           <div className="border-t border-slate-100 p-4">
-            <ListingFetcher
-              apartments={[
-                { apartment, role: "target" },
-                ...(leaderApartment && !isSelfLeader ? [{ apartment: leaderApartment, role: "leader" as const }] : []),
-                ...selectedComparables.map((a): ApartmentWithRole => ({ apartment: a, role: "comparable" })),
-              ]}
-            />
+            <ListingFetcher apartments={collectionTargets} />
           </div>
         </details>
       </div>

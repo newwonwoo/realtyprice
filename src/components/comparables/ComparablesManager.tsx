@@ -61,12 +61,15 @@ export function ComparablesManager({ targetId }: { targetId: string }) {
   const linkFor = (apartmentId: string) =>
     store.comparableApartments.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartmentId);
 
-  // 가중치 합계 → 합이 100이 아닐 때 경고. 표시되는 비교단지 기준(링크 없으면 기본 20)
-  const weightSum = store.comparables.reduce((s, apt) => s + (linkFor(apt.id)?.compareWeight ?? 20), 0);
+  // 이 대상에 연결된 비교단지만 표시(전역 store.comparables는 다른 대상 것도 섞임 → 수집 리스트와 불일치 유발).
+  const linkedComparables = store.comparables.filter((a) => currentLinks.some((l) => l.apartmentId === a.id));
 
-  // 균등배분: 표시된 비교단지 전체를 100/N으로 리셋. 링크 없는 단지는 새로 생성한다.
+  // 가중치 합계 → 합이 100이 아닐 때 경고. 표시되는 비교단지 기준(링크 없으면 기본 20)
+  const weightSum = linkedComparables.reduce((s, apt) => s + (linkFor(apt.id)?.compareWeight ?? 20), 0);
+
+  // 균등배분: 이 대상에 연결된 비교단지를 100/N으로 리셋.
   function distributeWeightsEvenly() {
-    const comps = store.comparables;
+    const comps = linkedComparables;
     const n = comps.length;
     if (!n) return;
     const base = Math.floor(100 / n);
@@ -181,7 +184,7 @@ export function ComparablesManager({ targetId }: { targetId: string }) {
         </div>
       )}
       {/* 가중치 합계 sticky 배너 */}
-      {store.comparables.length > 0 && weightSum !== 100 && (
+      {linkedComparables.length > 0 && weightSum !== 100 && (
         <div className="sticky top-0 z-40 flex items-center justify-between gap-3 bg-amber-50 border-b border-amber-200 px-5 py-2 text-sm rounded-lg">
           <span className="text-amber-800 font-semibold">
             ⚠️ 가중치 합계 {weightSum} — 100이 아닙니다 (상대 비율로 자동 환산됨)
@@ -318,14 +321,14 @@ export function ComparablesManager({ targetId }: { targetId: string }) {
             가중치 합계: <span className={weightSum === 100 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>{weightSum}</span>
             {weightSum !== 100 && <span className="text-amber-500 text-xs ml-1">(합이 100이 아닙니다 — 상대 비율로 자동 환산됩니다)</span>}
           </span>
-          {store.comparables.length > 0 && (
+          {linkedComparables.length > 0 && (
             <button className="btn-secondary text-xs px-3 py-1" onClick={distributeWeightsEvenly}>균등배분</button>
           )}
         </div>
         <table className="table w-full">
           <thead><tr><th>단지명</th><th>지역</th><th>입주</th><th>세대수</th><th>가중치</th><th>삭제</th></tr></thead>
           <tbody>
-            {store.comparables.map((apartment) => {
+            {linkedComparables.map((apartment) => {
               const link = store.comparableApartments.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartment.id);
               return (
                 <tr key={apartment.id}>
@@ -358,8 +361,8 @@ export function ComparablesManager({ targetId }: { targetId: string }) {
                 </tr>
               );
             })}
-            {!store.comparables.length && (
-              <tr><td colSpan={6} className="text-center text-slate-500">비교단지가 없습니다. 자동추천 또는 대상아파트 검색으로 추가하세요.</td></tr>
+            {!linkedComparables.length && (
+              <tr><td colSpan={6} className="text-center text-slate-500">이 대상에 연결된 비교단지가 없습니다. 위 자동추천에서 추가하세요.</td></tr>
             )}
           </tbody>
         </table>

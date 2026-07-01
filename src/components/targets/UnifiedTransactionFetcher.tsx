@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Apartment } from "@/types/apartment";
 import type { Transaction } from "@/types/transaction";
 import { fetchTransactions } from "@/components/targets/TransactionFetcher";
+import type { ApartmentWithRole } from "@/components/listings/ListingFetcher";
 
 type AptEntry = {
   apartment: Apartment;
@@ -11,10 +12,11 @@ type AptEntry = {
   existingCount: number;
 };
 
+// 호가 수집기(ListingFetcher)와 동일한 수집대상 리스트를 공유한다.
+const ROLE_TO_LABEL = { target: "대상", leader: "대장", comparable: "비교" } as const;
+
 type Props = {
-  targetApartment: Apartment;
-  leaderApartmentId?: string;
-  comparables: Apartment[];
+  apartments: ApartmentWithRole[];
   existingTransactions: Transaction[];
   onImport: (txs: Transaction[]) => void;
 };
@@ -28,7 +30,7 @@ const LABEL_BADGE: Record<string, string> = {
   비교: "bg-slate-100 text-slate-600",
 };
 
-export function UnifiedTransactionFetcher({ targetApartment, leaderApartmentId, comparables, existingTransactions, onImport }: Props) {
+export function UnifiedTransactionFetcher({ apartments, existingTransactions, onImport }: Props) {
   const [fromYm, setFromYm] = useState(`${thisYear - 1}${thisMonth}`);
   const [toYm] = useState(`${thisYear}${thisMonth}`);
 
@@ -43,14 +45,11 @@ export function UnifiedTransactionFetcher({ targetApartment, leaderApartmentId, 
   const [progress, setProgress] = useState<{ done: number; total: number; current?: string } | null>(null);
   const [results, setResults] = useState<{ name: string; label: string; imported: number; error?: string }[]>([]);
 
-  const entries: AptEntry[] = [
-    { apartment: targetApartment, label: "대상", existingCount: existingTransactions.filter((t) => t.apartmentId === targetApartment.id).length },
-    ...comparables.map((apt) => ({
-      apartment: apt,
-      label: (apt.id === leaderApartmentId ? "대장" : "비교") as "대장" | "비교",
-      existingCount: existingTransactions.filter((t) => t.apartmentId === apt.id).length,
-    })),
-  ];
+  const entries: AptEntry[] = apartments.map(({ apartment, role }) => ({
+    apartment,
+    label: ROLE_TO_LABEL[role],
+    existingCount: existingTransactions.filter((t) => t.apartmentId === apartment.id).length,
+  }));
 
   const totalExisting = existingTransactions.length;
 
