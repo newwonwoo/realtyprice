@@ -1,5 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { useRealtyStore } from "@/lib/clientStore";
+import { formatEok } from "@/lib/format";
 
 const patchTimeline = [
   { date: "2026.06", title: "평형 선택형 가격추정", detail: "대상단지와 비교단지 실거래·호가를 선택 전용면적 기준으로 환산합니다." },
@@ -13,7 +17,82 @@ const pillars = [
   { k: "시장심리", v: "KB 매수우위·가격전망 지수" },
 ];
 
+const conclusionLabel: Record<string, string> = {
+  strong_up: "강한 상승예상",
+  up: "상승예상",
+  neutral: "보합",
+  weak: "약세주의",
+  price_cut_needed: "매각가 조정 필요",
+  insufficient_data: "데이터 부족",
+};
+const conclusionBadge: Record<string, string> = {
+  strong_up: "bg-emerald-500/15 text-emerald-300",
+  up: "bg-blue-500/15 text-blue-300",
+  neutral: "bg-slate-500/15 text-slate-300",
+  weak: "bg-amber-500/15 text-amber-300",
+  price_cut_needed: "bg-red-500/15 text-red-300",
+  insufficient_data: "bg-slate-700 text-slate-400",
+};
+
 export default function LandingPage() {
+  const store = useRealtyStore();
+
+  // 로딩 중엔 마케팅 화면이 잠깐 번쩍였다 그리드로 바뀌는 걸 피하기 위해 빈 배경만 표시
+  if (!store.ready) {
+    return <main className="min-h-screen bg-slate-950" />;
+  }
+
+  // 저장된 대상아파트가 있으면 — 앱을 다시 열었을 때 결과 그리드를 바로 보여준다.
+  if (store.targets.length > 0) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-100">
+        <div className="mx-auto max-w-5xl px-6 py-16">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <span className="text-sm font-bold text-blue-400">realtyprice</span>
+              <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">저장된 추정 결과</h1>
+              <p className="mt-1 text-sm text-slate-400">대상아파트 {store.targets.length}개 · 클릭하면 상세로 이동합니다.</p>
+            </div>
+            <Link
+              href="/targets"
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-500 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-400"
+            >
+              + 새 대상아파트
+            </Link>
+          </div>
+
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {store.targets.map((target) => {
+              const estimate = store.priceEstimates.find((e) => e.targetApartmentId === target.id);
+              return (
+                <Link
+                  key={target.id}
+                  href={`/targets/${target.id}`}
+                  className="rounded-2xl border border-slate-800 bg-slate-900 p-5 transition-colors hover:border-blue-500/60 hover:bg-slate-900/80"
+                >
+                  <p className="font-bold text-slate-100">{target.shortName ?? target.name}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{target.region}</p>
+                  {estimate ? (
+                    <div className="mt-4">
+                      <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${conclusionBadge[estimate.conclusion]}`}>
+                        {conclusionLabel[estimate.conclusion]}
+                      </span>
+                      <p className="mt-2 text-xl font-black text-white tabular-nums">{formatEok(estimate.expectedSaleMid)}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{estimate.estimateDate} 추정 · 상승점수 {estimate.upsideScore}점</p>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-slate-500">아직 추정 전 — 데이터 설정을 진행하세요.</p>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 첫 방문(저장된 대상 없음) — 기존 마케팅 랜딩
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       {/* Hero — 좌측 정렬, 초기 화면에 맞춤 */}

@@ -13,10 +13,15 @@ import { TransactionFetcher } from "@/components/targets/TransactionFetcher";
 import { BulkTransactionFetcher } from "@/components/comparables/BulkTransactionFetcher";
 
 /**
- * 비교단지 관리 (대상아파트 1개 기준) — 추천·선택·가중치·대장 설정·일괄 실거래 수집.
+ * 비교단지 관리 (대상아파트 1개 기준) — 추천·선택·가중치·대장 설정.
  * /comparables 페이지와 대상 상세페이지(올인원 동선) 양쪽에서 동일하게 사용한다.
+ *
+ * showCollectors: 대장·비교단지 실거래 수집 버튼을 이 컴포넌트 안에서도 보여줄지 여부.
+ * 대상 상세페이지는 이후 단계(데이터 수집)에서 대상+대장+비교단지를 한 번에 수집하는
+ * 통합 수집기를 별도로 두므로 false로 꺼서 중복 버튼을 없앤다. 단독 페이지(/comparables,
+ * 통합 수집기 없는 일괄 도구)에서는 true(기본값)로 이 화면 안에서 바로 수집한다.
  */
-export function ComparablesManager({ targetId }: { targetId: string }) {
+export function ComparablesManager({ targetId, showCollectors = true }: { targetId: string; showCollectors?: boolean }) {
   const store = useRealtyStore();
   const [removedNotice, setRemovedNotice] = useState<string[]>([]);
   const activeTargetId = targetId;
@@ -193,10 +198,18 @@ export function ComparablesManager({ targetId }: { targetId: string }) {
         </div>
       )}
 
-      {/* 필터 조건 — 핵심(거리)은 항상, 나머지는 접이식 */}
+      {/* 필터 조건 — 핵심(거리)은 항상, 나머지는 접이식. 숫자 1~2자리라 입력창을 좁게 유지. */}
       <div className="card p-5">
         <p className="text-sm font-black text-slate-700 mb-3">필터 조건</p>
-        <NumberField label="최대 거리(km)" value={rule.maxDistanceKm} onChange={(value) => updateRule("maxDistanceKm", value)} />
+        <label className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">최대 거리(km)</span>
+          <input
+            type="number"
+            className="input w-20"
+            value={rule.maxDistanceKm}
+            onChange={(e) => updateRule("maxDistanceKm", e.target.value)}
+          />
+        </label>
         <details className="group mt-3">
           <summary className="flex cursor-pointer select-none items-center justify-between rounded-md py-1.5 text-sm font-semibold text-slate-600 hover:text-blue-600">
             상세 필터 (입주연도 · 세대수 · 면적 · 키워드)
@@ -235,10 +248,34 @@ export function ComparablesManager({ targetId }: { targetId: string }) {
         <p className="mt-1 text-xs text-blue-600">가격 추정 시 spillover 앵커로 사용됩니다. 대장 단지의 실거래도 수집하면 비율이 더 정확해집니다.</p>
 
         {currentLeaderName && suggestedLeader && currentLeaderName === suggestedLeader.name && (
-          <p className="mt-2 text-xs text-blue-600">지역 테이블에서 자동 지정됨 — 변경 가능</p>
+          <p className="mt-2 text-xs text-blue-600">지역 테이블에서 자동 지정됨 ({suggestedLeader.name}) — 변경 가능</p>
         )}
         {!suggestedLeader && !rule.leaderApartmentId && (
           <p className="mt-2 text-xs text-slate-400">이 지역의 대장단지가 테이블에 없습니다. 아래에서 수동 선택하세요.</p>
+        )}
+        {/* 지역 추천과 현재 지정이 다르면 원클릭 수정 제공 — 과거 오매칭/유령 데이터가 남아있어도 바로 잡을 수 있게 */}
+        {suggestedLeader && rule.leaderApartmentId && currentLeaderName !== suggestedLeader.name && (
+          <div className="mt-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <span>현재 지정된 대장(<b>{currentLeaderName ?? "알수없음"}</b>)이 지역 추천(<b>{suggestedLeader.name}</b>)과 다릅니다.</span>
+            <button
+              type="button"
+              className="ml-auto rounded bg-amber-600 px-2 py-1 font-bold text-white hover:bg-amber-700 whitespace-nowrap"
+              onClick={() => {
+                const leaderId = `leader_${suggestedLeader.region.replace(/\s/g, "_")}_${suggestedLeader.name.replace(/\s/g, "_")}`;
+                const existing = store.apartments.find((a) => a.id === leaderId);
+                const leaderApt: Apartment = existing ?? {
+                  id: leaderId, name: suggestedLeader.name, region: suggestedLeader.region, address: suggestedLeader.address,
+                  brand: suggestedLeader.brand, households: suggestedLeader.households, role: "comparable",
+                  createdAt: nowIso(), updatedAt: nowIso(),
+                };
+                if (!existing) store.setApartments([...store.apartments, leaderApt]);
+                const ratio = autoLeaderRatio(activeTarget, leaderApt, store.transactions, activeTarget.defaultArea);
+                saveRule({ ...rule, leaderApartmentId: leaderId, targetToLeaderRatio: ratio, targetApartmentId: activeTargetId });
+              }}
+            >
+              추천으로 변경
+            </button>
+          </div>
         )}
 
         <div className="mt-3 grid gap-4 md:grid-cols-2">
@@ -278,8 +315,8 @@ export function ComparablesManager({ targetId }: { targetId: string }) {
           </label>
         </div>
 
-        {/* 대장 실거래 수집 */}
-        {rule.leaderApartmentId && rule.leaderApartmentId !== activeTargetId && (() => {
+        {/* 대장 실거래 수집 — 상세페이지에서는 아래 통합 데이터수집 단계에서 한 번에 처리(중복 방지) */}
+        {showCollectors && rule.leaderApartmentId && rule.leaderApartmentId !== activeTargetId && (() => {
           const leaderApt = store.apartments.find((a) => a.id === rule.leaderApartmentId);
           if (!leaderApt) return null;
           const leaderTxs = store.transactions.filter((tx) => tx.apartmentId === rule.leaderApartmentId);
@@ -301,12 +338,10 @@ export function ComparablesManager({ targetId }: { targetId: string }) {
         })()}
       </div>
 
-      {/* 비교단지 일괄 실거래 수집 */}
-      {store.comparables.length > 0 && (
+      {/* 비교단지 일괄 실거래 수집 — 상세페이지에서는 통합 데이터수집 단계로 대체(중복 방지) */}
+      {showCollectors && linkedComparables.length > 0 && (
         <BulkTransactionFetcher
-          apartments={store.comparables.filter((a) =>
-            store.comparableApartments.some((l) => l.targetApartmentId === activeTargetId && l.apartmentId === a.id)
-          )}
+          apartments={linkedComparables}
           existingTransactions={store.transactions}
           onImport={(newTxs) => {
             if (newTxs.length > 0) store.setTransactions([...store.transactions, ...newTxs]);

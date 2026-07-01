@@ -176,24 +176,24 @@ export default function TargetDetailPage() {
   const collectionIds = new Set(collectionTargets.map((c) => c.apartment.id));
   const collectionTransactions = store.transactions.filter((t) => collectionIds.has(t.apartmentId));
 
-  // ── 조작 동선 단계 체크 (모두 이 페이지 안에서 처리 — 외부 페이지로 이탈하지 않음) ──
-  const steps: { label: string; done: boolean; anchor?: string; tab?: "setup" | "analysis" | "model" }[] = [
-    { label: "대상아파트 선정", done: true },
-    { label: `비교단지 선택 (${selectedComparables.length}개)`, done: selectedComparables.length > 0, anchor: "sec-comparables" },
-    { label: `실거래 수집 (${targetTransactions.length + comparableTransactions.length}건)`, done: targetTransactions.length + comparableTransactions.length > 0, anchor: "sec-transactions" },
-    { label: `호가 수집 (${targetListings.length}건)`, done: targetListings.length > 0, anchor: "sec-listings" },
-    { label: "가격 추정 실행", done: !!latestEstimate, tab: "analysis" },
+  // ── 데이터 설정 3단계 위저드: 상세정보 → 비교단지·대장 → 데이터 수집 ──────────
+  // 대상아파트 검색 → 상세정보 표출 → 비교단지 자동추천/대장설정 → 실거래·호가 수집 → 최종결과.
+  // 이전엔 실거래 수집 버튼이 3곳(대장 개별/비교단지 일괄/통합)에 흩어져 있던 것을
+  // 여기 1개 단계로 합치고, 나머지 단계는 명시적 "다음 단계" 버튼으로만 이동한다.
+  const comparablesReady = selectedComparables.length > 0;
+  const txReady = targetTransactions.length + comparableTransactions.length > 0;
+  const listingsReady = targetListings.length > 0;
+  const allReady = comparablesReady && txReady && listingsReady;
+  const [dataStage, setDataStage] = useState<1 | 2 | 3>(() => {
+    if (!comparablesReady) return 1;
+    if (!txReady && !listingsReady) return 2;
+    return 3;
+  });
+  const DATA_STAGES: { n: 1 | 2 | 3; label: string; done: boolean }[] = [
+    { n: 1, label: "상세정보 확인", done: true },
+    { n: 2, label: `비교단지·대장 설정 (${selectedComparables.length}개)`, done: comparablesReady },
+    { n: 3, label: `실거래·호가 수집 (${targetTransactions.length + comparableTransactions.length + targetListings.length}건)`, done: txReady && listingsReady },
   ];
-  function goToStep(step: { anchor?: string; tab?: "setup" | "analysis" | "model" }) {
-    if (step.tab) { setTab(step.tab); return; }
-    if (step.anchor) {
-      setTab("setup");
-      const id = step.anchor;
-      setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
-    }
-  }
-  const currentStep = steps.findIndex((s) => !s.done);
-  const allReady = steps.slice(0, 4).every((s) => s.done);
 
   if (!store.ready) {
     return (
@@ -368,29 +368,27 @@ export default function TargetDetailPage() {
         </div>
       </div>
 
-      {/* ── 단계별 진행 동선 (설정 단계에서만 노출) ── */}
+      {/* ── 데이터 설정 3단계 위저드 (설정 단계에서만 노출) ── */}
       {tab === "setup" && (
       <div className="mb-6 card p-4">
         <div className="flex items-center flex-wrap gap-y-3">
-          {steps.map((step, i) => {
-            const isActive = i === currentStep;
-            return (
-              <div key={i} className="flex items-center">
-                {i > 0 && <div className="w-6 h-px bg-slate-200 flex-shrink-0 mx-1" />}
-                <span className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-all
-                  ${step.done
-                    ? "bg-emerald-500 text-white shadow-sm"
-                    : isActive
-                      ? "bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-1 shadow-sm"
-                      : "bg-slate-100 text-slate-400"}`}>
-                  {step.done ? "✓" : `${i + 1}`} {step.label}
-                  {(step.anchor || step.tab) && !step.done && (
-                    <button type="button" onClick={() => goToStep(step)} className="underline opacity-80">→</button>
-                  )}
-                </span>
-              </div>
-            );
-          })}
+          {DATA_STAGES.map((stage, i) => (
+            <div key={stage.n} className="flex items-center">
+              {i > 0 && <div className="w-6 h-px bg-slate-200 flex-shrink-0 mx-1" />}
+              <button
+                type="button"
+                onClick={() => setDataStage(stage.n)}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-all
+                  ${dataStage === stage.n
+                    ? "bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-1 shadow-sm"
+                    : stage.done
+                      ? "bg-emerald-500 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
+              >
+                {stage.done ? "✓" : stage.n} {stage.label}
+              </button>
+            </div>
+          ))}
         </div>
       </div>
       )}
@@ -420,59 +418,59 @@ export default function TargetDetailPage() {
 
       {tab === "setup" && (
       <>
-      <AptDetailInfo apartment={apartment} />
-
-      {/* ── 비교단지 설정 ── */}
-      <div id="sec-comparables" className="mt-6 scroll-mt-4">
-        <details open={selectedComparables.length === 0} className="card overflow-hidden">
-          <summary className="flex cursor-pointer items-center justify-between p-5 font-bold text-slate-700 hover:bg-slate-50">
-            <span>비교단지 설정</span>
-            <span className="text-sm font-normal text-slate-500">
-              {selectedComparables.length > 0 ? `${selectedComparables.length}개 선택됨` : "비교단지를 선택하세요"}
-            </span>
-          </summary>
-          <div className="border-t border-slate-100 p-4">
-            <ComparablesManager targetId={apartment.id} />
+      {dataStage === 1 && (
+        <div className="space-y-4">
+          <AptDetailInfo apartment={apartment} />
+          <div className="flex justify-end">
+            <button type="button" className="btn-primary" onClick={() => setDataStage(2)}>
+              다음 단계: 비교단지·대장 설정 →
+            </button>
           </div>
-        </details>
-      </div>
+        </div>
+      )}
 
-      {/* ── 실거래 통합수집 ── */}
-      <div id="sec-transactions" className="mt-6 scroll-mt-4">
-        <details open={targetTransactions.length === 0} className="card overflow-hidden">
-          <summary className="flex cursor-pointer items-center justify-between p-5 font-bold text-slate-700 hover:bg-slate-50">
-            <span>실거래 통합수집</span>
-            <span className="text-sm font-normal text-slate-500">
-              {(targetTransactions.length + comparableTransactions.length) > 0
-                ? `${targetTransactions.length + comparableTransactions.length}건 로드됨`
-                : "데이터 없음"}
-            </span>
-          </summary>
-          <div className="border-t border-slate-100">
+      {dataStage === 2 && (
+        <div className="space-y-4">
+          <ComparablesManager targetId={apartment.id} showCollectors={false} />
+          <div className="flex justify-between">
+            <button type="button" className="btn-secondary" onClick={() => setDataStage(1)}>← 이전</button>
+            <button type="button" className="btn-primary" onClick={() => setDataStage(3)}>다음 단계: 실거래·호가 수집 →</button>
+          </div>
+        </div>
+      )}
+
+      {dataStage === 3 && (
+        <div className="space-y-4">
+          <div className="card overflow-hidden">
+            <div className="border-b border-slate-200 p-5">
+              <p className="font-bold text-slate-700">실거래 수집</p>
+              <p className="mt-1 text-xs text-slate-500">
+                대상·대장·비교단지 {collectionTargets.length}개 단지를 한 번에 수집합니다 (버튼 1개).
+              </p>
+            </div>
             <UnifiedTransactionFetcher
               apartments={collectionTargets}
               existingTransactions={collectionTransactions}
               onImport={importTransactions}
             />
           </div>
-        </details>
 
-        {/* ── 호가 수집 (직방/KB) ── */}
-        <details id="sec-listings" className="group scroll-mt-4" open>
-          <summary className="flex cursor-pointer items-center justify-between px-5 py-4 select-none">
-            <span className="font-semibold text-slate-700">호가 수집 (직방 · KB)</span>
-            <span className="text-xs text-slate-400">
-              {collectionTargets.reduce((sum, { apartment: a }) =>
-                sum + store.listings.filter((l) => l.apartmentId === a.id).length, 0
-              )}건 수집됨
-            </span>
-          </summary>
-          <div className="border-t border-slate-100 p-4">
-            <ListingFetcher apartments={collectionTargets} />
+          <div className="card overflow-hidden">
+            <div className="border-b border-slate-200 p-5">
+              <p className="font-bold text-slate-700">호가·매물 수집 (직방 · KB)</p>
+              <p className="mt-1 text-xs text-slate-500">동일한 {collectionTargets.length}개 단지의 현재 매물 호가를 수집합니다.</p>
+            </div>
+            <div className="p-4">
+              <ListingFetcher apartments={collectionTargets} />
+            </div>
           </div>
-        </details>
-      </div>
 
+          <div className="flex justify-between">
+            <button type="button" className="btn-secondary" onClick={() => setDataStage(2)}>← 이전</button>
+            <button type="button" className="btn-primary" onClick={() => setTab("analysis")}>다음 단계: 최종결과 보기 →</button>
+          </div>
+        </div>
+      )}
       </>
       )}
 
@@ -585,7 +583,7 @@ export default function TargetDetailPage() {
 
           {!allReady && !justDone && (
             <p className="mt-3 text-xs text-amber-600">
-              ⚠ {steps[currentStep]?.label}이 아직 완료되지 않았습니다. 데이터를 보완하면 더 정확한 추정이 가능합니다.
+              ⚠ {!comparablesReady ? "비교단지 선택" : !txReady ? "실거래 수집" : "호가 수집"}이 아직 완료되지 않았습니다. 데이터를 보완하면 더 정확한 추정이 가능합니다.
             </p>
           )}
 

@@ -128,7 +128,7 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
           <Row label="세대수" value={bass.kaptdaCnt ? `${Number(bass.kaptdaCnt).toLocaleString()}세대` : undefined} />
           <Row label="동수" value={bass.kaptdongCnt ? `${bass.kaptdongCnt}동` : undefined} />
           <Row label="사용승인" value={formatDate(bass.kaptUsedate)} />
-          {(apartment.originalPresalePrice || presale?.lowestPrice) && (
+          {Boolean(apartment.originalPresalePrice || presale?.lowestPrice) && (
             <div className="border-b border-slate-100 py-1.5 text-sm">
               <span className="text-slate-500 shrink-0">모집공고 분양가</span>
               <div className="mt-0.5 font-semibold flex flex-wrap gap-1 items-center">
