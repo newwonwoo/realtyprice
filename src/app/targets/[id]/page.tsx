@@ -435,9 +435,16 @@ export default function TargetDetailPage() {
       {dataStage === 2 && (
         <div className="space-y-4">
           <ComparablesManager targetId={apartment.id} showCollectors={false} />
+          {/* 대장은 비교단지 표와 다른 방식(가중치 아닌 비율)으로 관리되어 표에 안 보일 뿐,
+              다음 단계에는 항상 함께 포함된다 — "왜 대장이 빠졌냐" 오해 방지용 명시 안내. */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+            <span className="font-semibold text-slate-700">다음 단계 수집 대상 — 총 {collectionTargets.length}개 단지:</span>{" "}
+            {collectionTargets.map(({ apartment: a, role }) => `${{ target: "대상", leader: "대장", comparable: "비교" }[role]} ${a.shortName ?? a.name}`).join(" · ")}
+            <span className="ml-2 text-emerald-600 font-semibold">모든 변경은 즉시 자동저장됩니다.</span>
+          </div>
           <div className="flex justify-between">
             <button type="button" className="btn-secondary" onClick={() => setDataStage(1)}>← 이전</button>
-            <button type="button" className="btn-primary" onClick={() => setDataStage(3)}>다음 단계: 실거래·호가 수집 →</button>
+            <button type="button" className="btn-primary" onClick={() => setDataStage(3)}>저장하고 다음 단계: 실거래·호가 수집 →</button>
           </div>
         </div>
       )}
@@ -470,7 +477,7 @@ export default function TargetDetailPage() {
 
           <div className="flex justify-between">
             <button type="button" className="btn-secondary" onClick={() => setDataStage(2)}>← 이전</button>
-            <button type="button" className="btn-primary" onClick={() => setTab("analysis")}>다음 단계: 최종결과 보기 →</button>
+            <button type="button" className="btn-primary" onClick={() => setTab("analysis")}>저장하고 최종결과 보기 →</button>
           </div>
         </div>
       )}

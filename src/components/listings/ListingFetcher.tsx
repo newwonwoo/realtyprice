@@ -655,29 +655,49 @@ export function ListingFetcher({ apartments }: Props) {
     </div>
   );
 
-  const listingCount = store.listings.filter((l) => l.apartmentId === apt.id).length;
-
   return (
     <div className="card p-5 space-y-4">
-      {/* 전체 일괄 수집 */}
-      <div className="flex items-center gap-3">
-        <button
-          className="btn-primary text-sm px-4 py-2 whitespace-nowrap"
-          disabled={batchRunning}
-          onClick={fetchAndImportAll}
-        >
-          {batchRunning ? "수집중…" : `전체 수집 (${apartments.length}개 단지 · 직방+KB)`}
-        </button>
+      {/* 단지 목록 — 실거래 수집기와 동일하게 칩 목록을 먼저 배치 */}
+      <div className="flex flex-wrap gap-2">
+        {apartments.map(({ apartment: a, role }) => {
+          const cnt = store.listings.filter((l) => l.apartmentId === a.id).length;
+          const zbS = zbStates[a.id];
+          const kbS = kbStates[a.id];
+          const hasError = (zbS?.reasonCode && !["ok","disambiguation","","no_listings","pre_completion"].includes(zbS.reasonCode)) ||
+                           (kbS?.reasonCode && !["ok","disambiguation","","no_price_data","no_priced_area","pre_completion"].includes(kbS.reasonCode));
+          return (
+            <div
+              key={a.id}
+              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold"
+            >
+              <span className={`text-xs px-1.5 py-0.5 rounded ${ROLE_COLOR[role]}`}>{ROLE_LABEL[role]}</span>
+              {a.name}
+              {cnt > 0 && <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 rounded-full">{cnt}건</span>}
+              {hasError && <span className="text-xs text-red-400 font-bold">!</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 전체 일괄 수집 버튼 — 실거래 수집기와 동일하게 우측 정렬(위치 통일) */}
+      <div className="flex items-center gap-2 flex-wrap">
         {batchProgress && (
           <span className={`text-sm ${batchRunning ? "text-blue-600" : batchResult && batchResult.fail > 0 ? "text-amber-700 font-semibold" : "text-emerald-700 font-semibold"}`}>
             {batchProgress}
           </span>
         )}
+        <button
+          className="btn-primary text-sm px-4 py-2 whitespace-nowrap ml-auto"
+          disabled={batchRunning}
+          onClick={fetchAndImportAll}
+        >
+          {batchRunning ? "수집중…" : `전체 수집 (${apartments.length}개 단지 · 직방+KB)`}
+        </button>
       </div>
       {batchResult && batchResult.fail > 0 && (
         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           <span className="font-semibold">KB 미발견 단지:</span> {batchResult.failNames.join(", ")}
-          <span className="ml-2 text-amber-600">(검색어를 수동으로 수정하거나 KB 미등록 단지일 수 있습니다)</span>
+          <span className="ml-2 text-amber-600">(아래 &quot;개별 단지 검색어 수정&quot;에서 직접 수정하거나 KB 미등록 단지일 수 있습니다)</span>
         </div>
       )}
       {batchResult && batchResult.pendingNames.length > 0 && (
@@ -687,214 +707,228 @@ export function ListingFetcher({ apartments }: Props) {
         </div>
       )}
 
-      {/* 단지 선택 */}
-      <div className="flex flex-wrap gap-2">
+      {/* 단지별 수집 현황 — 읽기 전용 요약 (개별 버튼 없음) */}
+      <div className="divide-y rounded-lg border border-slate-100 text-xs">
         {apartments.map(({ apartment: a, role }) => {
+          const zbS = zbStates[a.id] ?? defaultZb(a);
+          const kbS = kbStates[a.id] ?? defaultKb(a);
           const cnt = store.listings.filter((l) => l.apartmentId === a.id).length;
-          const zbS = zbStates[a.id];
-          const kbS = kbStates[a.id];
-          const hasError = (zbS?.reasonCode && !["ok","disambiguation","","no_listings","pre_completion"].includes(zbS.reasonCode)) ||
-                           (kbS?.reasonCode && !["ok","disambiguation","","no_price_data","no_priced_area","pre_completion"].includes(kbS.reasonCode));
+          const zbPre = zbS.reasonCode === "complex_not_found" && isPreCompletion(a);
+          const zbBad = !!zbS.reasonCode && !["ok","disambiguation","","no_listings"].includes(zbS.reasonCode) && !zbPre;
+          const kbBad = !!kbS.reasonCode && !["ok","disambiguation","","no_price_data","no_priced_area","pre_completion"].includes(kbS.reasonCode);
           return (
-            <button
-              key={a.id}
-              onClick={() => setSelectedAptId(a.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
-                a.id === selectedAptId
-                  ? "border-blue-500 bg-blue-50 text-blue-700"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <span className={`text-xs px-1.5 py-0.5 rounded ${ROLE_COLOR[role]}`}>{ROLE_LABEL[role]}</span>
-              {a.name}
-              {cnt > 0 && <span className="ml-1 text-xs bg-emerald-100 text-emerald-700 px-1.5 rounded-full">{cnt}건</span>}
-              {hasError && <span className="ml-1 text-xs text-red-400">!</span>}
-            </button>
+            <div key={a.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
+              <span className={`px-1.5 py-0.5 rounded font-bold ${ROLE_COLOR[role]}`}>{ROLE_LABEL[role]}</span>
+              <span className="font-semibold text-slate-700">{a.name}</span>
+              <span className={zbBad ? "text-red-500 font-semibold" : zbS.reasonCode === "ok" ? "text-emerald-600" : "text-slate-400"}>
+                직방 {zbS.reasonCode === "ok" ? `매매${zbS.sale.length}·전세${zbS.jeonse.length}` : zbPre ? "미등록(정상)" : zbBad ? "실패" : "미수집"}
+              </span>
+              <span className={kbBad ? "text-red-500 font-semibold" : kbS.reasonCode === "ok" ? "text-blue-600" : "text-slate-400"}>
+                KB {kbS.reasonCode === "ok" ? `${kbS.prices.filter((p) => p.price).length}개 면적` : kbS.reasonCode === "pre_completion" ? "미등록(정상)" : kbBad ? "실패" : "미수집"}
+              </span>
+              {cnt > 0 && <span className="ml-auto rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700">누적 {cnt}건</span>}
+            </div>
           );
         })}
       </div>
 
-      {/* 선택 단지 저장 현황 */}
-      {listingCount > 0 && (
-        <p className="text-xs text-slate-500">
-          {apt.name} — 저장된 데이터 {listingCount}건
-          ({store.listings.filter((l) => l.apartmentId === apt.id && l.source === "kb").length}건 KB시세 포함)
-        </p>
-      )}
-
-      {/* ── 직방 + KB 나란히 ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        {/* 직방 호가 */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 pb-1 border-b">
-            <span className="text-sm font-bold text-orange-600">직방 호가</span>
-            {zb.loading && <span className="text-xs text-slate-400">수집중…</span>}
-            {zb.reasonCode === "ok" && <span className="text-xs text-emerald-600">매매 {zb.sale.length} · 전세 {zb.jeonse.length}건</span>}
+      {/* 개별 단지 검색어 수정 — 자동수집 실패했을 때만 여는 보조 패널 (기본 접힘) */}
+      <details className="group rounded-lg border border-slate-200">
+        <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-xs font-semibold text-slate-500 hover:text-blue-600">
+          개별 단지 검색어 수정 (자동수집 실패했을 때만 사용)
+          <span className="text-slate-300 transition-transform group-open:rotate-180">▾</span>
+        </summary>
+        <div className="border-t border-slate-100 p-4 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {apartments.map(({ apartment: a, role }) => (
+              <button
+                key={a.id}
+                onClick={() => setSelectedAptId(a.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                  a.id === selectedAptId
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <span className={`text-xs px-1.5 py-0.5 rounded ${ROLE_COLOR[role]}`}>{ROLE_LABEL[role]}</span>
+                {a.name}
+              </button>
+            ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              className="input flex-1 text-sm"
-              value={zb.searchQuery ?? apt.name}
-              onChange={(e) => patchZb(apt.id, { searchQuery: e.target.value })}
-              placeholder="직방 검색어"
-              onKeyDown={(e) => e.key === "Enter" && fetchZigbang()}
-            />
-            <button className="btn-primary text-sm px-3 py-1.5 whitespace-nowrap" disabled={zb.loading} onClick={() => fetchZigbang()}>
-              수집
-            </button>
-          </div>
-
-          {zb.complexList.length > 1 && (
-            <div className="flex gap-2">
-              <select className="input flex-1 text-sm" value={zb.selectedId} onChange={(e) => patchZb(apt.id, { selectedId: e.target.value })}>
-                {zb.complexList.map((c) => (
-                  <option key={c.complexId} value={c.complexId}>{c.complexName} ({c.address})</option>
-                ))}
-              </select>
-              <button className="btn-primary text-sm px-2" onClick={() => fetchZigbang(zb.selectedId || zb.complexList[0].complexId)}>선택</button>
-            </div>
-          )}
-
-          {zb.reasonCode && !["ok","disambiguation"].includes(zb.reasonCode) && (() => {
-            const zbPre = zb.reasonCode === "complex_not_found" && isPreCompletion(apt);
-            return (
-              <div className={`rounded border px-3 py-2 text-xs ${zbPre ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-red-50 border-red-200 text-red-700"}`}>
-                <span className="font-semibold">
-                  {zbPre ? "신축·분양권 (미등록 정상)" : zb.reasonCode === "complex_not_found" ? "단지 미발견" : zb.reasonCode === "no_listings" ? "매물 없음" : "오류"}
-                </span>
-                {zbPre
-                  ? <span className="ml-1 text-blue-500">직방은 입주 후 등록됩니다. 분양권 실거래는 국토부에서 수집하세요.</span>
-                  : zb.reason && <span className="ml-1 text-red-500">{zb.reason}</span>}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* 직방 호가 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 pb-1 border-b">
+                <span className="text-sm font-bold text-orange-600">직방 호가 — {apt.name}</span>
+                {zb.loading && <span className="text-xs text-slate-400">수집중…</span>}
+                {zb.reasonCode === "ok" && <span className="text-xs text-emerald-600">매매 {zb.sale.length} · 전세 {zb.jeonse.length}건</span>}
               </div>
-            );
-          })()}
 
-          {zb.sale.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-slate-600">매매 {zb.sale.length}건</span>
-                <span className="text-xs text-emerald-600">자동저장됨</span>
+              <div className="flex items-center gap-2">
+                <input
+                  className="input flex-1 text-sm"
+                  value={zb.searchQuery ?? apt.name}
+                  onChange={(e) => patchZb(apt.id, { searchQuery: e.target.value })}
+                  placeholder="직방 검색어"
+                  onKeyDown={(e) => e.key === "Enter" && fetchZigbang()}
+                />
+                <button className="btn-primary text-sm px-3 py-1.5 whitespace-nowrap" disabled={zb.loading} onClick={() => fetchZigbang()}>
+                  수집
+                </button>
               </div>
-              <div className="max-h-36 overflow-y-auto rounded border divide-y text-xs">
-                {zb.sale.map((l) => (
-                  <div key={l.itemId} className="flex items-center gap-2 px-2 py-1.5">
-                    <span className="font-semibold">{formatEok(l.price)}</span>
-                    <span className="text-slate-400">{l.area}㎡·{l.floor}층</span>
-                    {l.description && <span className="text-slate-400 truncate flex-1">{l.description}</span>}
+
+              {zb.complexList.length > 1 && (
+                <div className="flex gap-2">
+                  <select className="input flex-1 text-sm" value={zb.selectedId} onChange={(e) => patchZb(apt.id, { selectedId: e.target.value })}>
+                    {zb.complexList.map((c) => (
+                      <option key={c.complexId} value={c.complexId}>{c.complexName} ({c.address})</option>
+                    ))}
+                  </select>
+                  <button className="btn-primary text-sm px-2" onClick={() => fetchZigbang(zb.selectedId || zb.complexList[0].complexId)}>선택</button>
+                </div>
+              )}
+
+              {zb.reasonCode && !["ok","disambiguation"].includes(zb.reasonCode) && (() => {
+                const zbPre = zb.reasonCode === "complex_not_found" && isPreCompletion(apt);
+                return (
+                  <div className={`rounded border px-3 py-2 text-xs ${zbPre ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+                    <span className="font-semibold">
+                      {zbPre ? "신축·분양권 (미등록 정상)" : zb.reasonCode === "complex_not_found" ? "단지 미발견" : zb.reasonCode === "no_listings" ? "매물 없음" : "오류"}
+                    </span>
+                    {zbPre
+                      ? <span className="ml-1 text-blue-500">직방은 입주 후 등록됩니다. 분양권 실거래는 국토부에서 수집하세요.</span>
+                      : zb.reason && <span className="ml-1 text-red-500">{zb.reason}</span>}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                );
+              })()}
 
-          {zb.jeonse.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-slate-600">전세 {zb.jeonse.length}건</span>
-                <span className="text-xs text-emerald-600">자동저장됨</span>
-              </div>
-              <div className="max-h-36 overflow-y-auto rounded border divide-y text-xs">
-                {zb.jeonse.map((l) => (
-                  <div key={l.itemId} className="flex items-center gap-2 px-2 py-1.5">
-                    <span className="font-semibold">{formatEok(l.price)}</span>
-                    <span className="text-slate-400">{l.area}㎡·{l.floor}층</span>
-                    {l.description && <span className="text-slate-400 truncate flex-1">{l.description}</span>}
+              {zb.sale.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-slate-600">매매 {zb.sale.length}건</span>
+                    <span className="text-xs text-emerald-600">자동저장됨</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {!zb.reasonCode && !zb.loading && (
-            <p className="text-xs text-slate-400">수집 버튼을 눌러 직방 매물을 가져오세요.</p>
-          )}
-        </div>
-
-        {/* KB 시세 */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 pb-1 border-b">
-            <span className="text-sm font-bold text-blue-700">KB 시세</span>
-            {kb.loading && <span className="text-xs text-slate-400">조회중…</span>}
-            {kb.reasonCode === "ok" && <span className="text-xs text-emerald-600">시세 {kb.prices.filter(p => p.price).length}개 면적</span>}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              className="input flex-1 text-sm"
-              value={kb.searchQuery ?? apt.name}
-              onChange={(e) => patchKb(apt.id, { searchQuery: e.target.value })}
-              placeholder="KB 검색어"
-              onKeyDown={(e) => e.key === "Enter" && fetchKb()}
-            />
-            <button className="btn-primary text-sm px-3 py-1.5 whitespace-nowrap" disabled={kb.loading} onClick={() => fetchKb()}>
-              조회
-            </button>
-          </div>
-
-          {kb.complexList.length > 1 && (
-            <div className="flex gap-2">
-              <select className="input flex-1 text-sm" value={kb.selectedNo} onChange={(e) => patchKb(apt.id, { selectedNo: e.target.value })}>
-                {kb.complexList.map((c) => (
-                  <option key={c.complexNo} value={c.complexNo}>{c.name} ({c.address})</option>
-                ))}
-              </select>
-              <button className="btn-primary text-sm px-2" onClick={() => fetchKb(kb.selectedNo)}>선택</button>
-            </div>
-          )}
-
-          {kb.reasonCode && kb.reasonCode !== "ok" && (
-            <div className={`rounded border px-3 py-2 text-xs ${
-              ["blocked","upstream_error","error"].includes(kb.reasonCode)
-                ? "bg-red-50 border-red-200 text-red-700"
-                : kb.reasonCode === "pre_completion"
-                ? "bg-blue-50 border-blue-200 text-blue-700"
-                : "bg-amber-50 border-amber-200 text-amber-700"
-            }`}>
-              <span className="font-semibold">
-                {kb.reasonCode === "pre_completion" ? "신축·분양권 (미등록 정상)" :
-                 kb.reasonCode === "complex_not_found" ? "KB 미등록" :
-                 kb.reasonCode === "no_area_types" ? "면적 미등록" :
-                 kb.reasonCode === "no_price_data" ? "시세 없음" :
-                 kb.reasonCode === "blocked" ? "접근 차단" : "오류"}
-              </span>
-              {kb.reason && <span className="ml-1">{kb.reason}</span>}
-            </div>
-          )}
-
-          {kb.prices.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-slate-600">{kb.prices.filter(p => p.price).length}개 면적 시세</span>
-                <span className="text-xs text-emerald-600">자동저장됨</span>
-              </div>
-              <div className="rounded border divide-y text-xs">
-                {kb.prices.map(({ area, price, reason }) => (
-                  <div key={area.areaNo} className="px-3 py-2">
-                    <p className="font-semibold text-slate-700 mb-1">{area.typeName} ({area.exclusiveArea}㎡)</p>
-                    {price ? (
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-slate-600">
-                        <span>매매</span><span className="font-semibold text-slate-800">{formatEok(price.saleGeneral)}</span>
-                        <span>매매 상/하한</span><span>{formatEok(price.saleUpper)} / {formatEok(price.saleLower)}</span>
-                        <span>전세</span><span className="font-semibold text-slate-800">{formatEok(price.jeonseGeneral)}</span>
-                        <span>전세 상/하한</span><span>{formatEok(price.jeonseUpper)} / {formatEok(price.jeonseLower)}</span>
-                        <span className="col-span-2 text-slate-400 mt-0.5">기준: {price.baseDate}</span>
+                  <div className="max-h-36 overflow-y-auto rounded border divide-y text-xs">
+                    {zb.sale.map((l) => (
+                      <div key={l.itemId} className="flex items-center gap-2 px-2 py-1.5">
+                        <span className="font-semibold">{formatEok(l.price)}</span>
+                        <span className="text-slate-400">{l.area}㎡·{l.floor}층</span>
+                        {l.description && <span className="text-slate-400 truncate flex-1">{l.description}</span>}
                       </div>
-                    ) : (
-                      <p className="text-amber-600">{reason || "시세 없음"}</p>
-                    )}
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </div>
+              )}
 
-          {kb.prices.length === 0 && !kb.loading && !kb.reasonCode && (
-            <p className="text-xs text-slate-400">조회 버튼을 눌러 KB시세를 확인하세요.</p>
-          )}
+              {zb.jeonse.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-slate-600">전세 {zb.jeonse.length}건</span>
+                    <span className="text-xs text-emerald-600">자동저장됨</span>
+                  </div>
+                  <div className="max-h-36 overflow-y-auto rounded border divide-y text-xs">
+                    {zb.jeonse.map((l) => (
+                      <div key={l.itemId} className="flex items-center gap-2 px-2 py-1.5">
+                        <span className="font-semibold">{formatEok(l.price)}</span>
+                        <span className="text-slate-400">{l.area}㎡·{l.floor}층</span>
+                        {l.description && <span className="text-slate-400 truncate flex-1">{l.description}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!zb.reasonCode && !zb.loading && (
+                <p className="text-xs text-slate-400">수집 버튼을 눌러 직방 매물을 가져오세요.</p>
+              )}
+            </div>
+
+            {/* KB 시세 */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 pb-1 border-b">
+                <span className="text-sm font-bold text-blue-700">KB 시세 — {apt.name}</span>
+                {kb.loading && <span className="text-xs text-slate-400">조회중…</span>}
+                {kb.reasonCode === "ok" && <span className="text-xs text-emerald-600">시세 {kb.prices.filter(p => p.price).length}개 면적</span>}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  className="input flex-1 text-sm"
+                  value={kb.searchQuery ?? apt.name}
+                  onChange={(e) => patchKb(apt.id, { searchQuery: e.target.value })}
+                  placeholder="KB 검색어"
+                  onKeyDown={(e) => e.key === "Enter" && fetchKb()}
+                />
+                <button className="btn-primary text-sm px-3 py-1.5 whitespace-nowrap" disabled={kb.loading} onClick={() => fetchKb()}>
+                  조회
+                </button>
+              </div>
+
+              {kb.complexList.length > 1 && (
+                <div className="flex gap-2">
+                  <select className="input flex-1 text-sm" value={kb.selectedNo} onChange={(e) => patchKb(apt.id, { selectedNo: e.target.value })}>
+                    {kb.complexList.map((c) => (
+                      <option key={c.complexNo} value={c.complexNo}>{c.name} ({c.address})</option>
+                    ))}
+                  </select>
+                  <button className="btn-primary text-sm px-2" onClick={() => fetchKb(kb.selectedNo)}>선택</button>
+                </div>
+              )}
+
+              {kb.reasonCode && kb.reasonCode !== "ok" && (
+                <div className={`rounded border px-3 py-2 text-xs ${
+                  ["blocked","upstream_error","error"].includes(kb.reasonCode)
+                    ? "bg-red-50 border-red-200 text-red-700"
+                    : kb.reasonCode === "pre_completion"
+                    ? "bg-blue-50 border-blue-200 text-blue-700"
+                    : "bg-amber-50 border-amber-200 text-amber-700"
+                }`}>
+                  <span className="font-semibold">
+                    {kb.reasonCode === "pre_completion" ? "신축·분양권 (미등록 정상)" :
+                     kb.reasonCode === "complex_not_found" ? "KB 미등록" :
+                     kb.reasonCode === "no_area_types" ? "면적 미등록" :
+                     kb.reasonCode === "no_price_data" ? "시세 없음" :
+                     kb.reasonCode === "blocked" ? "접근 차단" : "오류"}
+                  </span>
+                  {kb.reason && <span className="ml-1">{kb.reason}</span>}
+                </div>
+              )}
+
+              {kb.prices.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-slate-600">{kb.prices.filter(p => p.price).length}개 면적 시세</span>
+                    <span className="text-xs text-emerald-600">자동저장됨</span>
+                  </div>
+                  <div className="rounded border divide-y text-xs">
+                    {kb.prices.map(({ area, price, reason }) => (
+                      <div key={area.areaNo} className="px-3 py-2">
+                        <p className="font-semibold text-slate-700 mb-1">{area.typeName} ({area.exclusiveArea}㎡)</p>
+                        {price ? (
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-slate-600">
+                            <span>매매</span><span className="font-semibold text-slate-800">{formatEok(price.saleGeneral)}</span>
+                            <span>매매 상/하한</span><span>{formatEok(price.saleUpper)} / {formatEok(price.saleLower)}</span>
+                            <span>전세</span><span className="font-semibold text-slate-800">{formatEok(price.jeonseGeneral)}</span>
+                            <span>전세 상/하한</span><span>{formatEok(price.jeonseUpper)} / {formatEok(price.jeonseLower)}</span>
+                            <span className="col-span-2 text-slate-400 mt-0.5">기준: {price.baseDate}</span>
+                          </div>
+                        ) : (
+                          <p className="text-amber-600">{reason || "시세 없음"}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {kb.prices.length === 0 && !kb.loading && !kb.reasonCode && (
+                <p className="text-xs text-slate-400">조회 버튼을 눌러 KB시세를 확인하세요.</p>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      </details>
     </div>
   );
 }
