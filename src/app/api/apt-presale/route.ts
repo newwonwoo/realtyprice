@@ -64,9 +64,11 @@ export async function GET(req: NextRequest) {
 
   try {
     const kw = houseName.trim();
-    const kwNoSpace = noSpace(kw);
+    // 괄호 표기("(A8블록)" 등)는 청약홈 표기(예: "A8BL")와 달라 매칭에 방해만 되므로 제거.
+    const kwClean = kw.replace(/[（(][^）)]*[）)]/g, " ").replace(/\s+/g, " ").trim();
+    const kwNoSpace = noSpace(kwClean);
     // 띄어쓰기로 분리한 각 단어 (지역+단지명 조합 대응)
-    const words = kw.split(/\s+/).filter((t) => t.length >= 2).map(noSpace);
+    const words = kwClean.split(/\s+/).filter((t) => t.length >= 2).map(noSpace);
 
     const matched: PresaleInfo[] = [];
     const seen = new Set<string>();
@@ -97,8 +99,11 @@ export async function GET(req: NextRequest) {
         if (!p.houseName) continue;
         const nameNoSpace = noSpace(p.houseName);
         const addrNoSpace = noSpace(p.supplyLocation);
+        // 단어 전부 일치를 요구하면 접두어(역명 등) 하나만 어긋나도 전체 매칭이 깨짐.
+        // 단어가 2개 이상이면 최소 (전체-1)개 일치로 완화(오탐 방지 위해 1개 단어는 여전히 엄격).
+        const hitCount = words.filter((w) => nameNoSpace.includes(w) || addrNoSpace.includes(w)).length;
         const hit = words.length
-          ? words.every((w) => nameNoSpace.includes(w) || addrNoSpace.includes(w))
+          ? hitCount >= Math.max(1, words.length - 1)
           : (nameNoSpace.includes(kwNoSpace) || addrNoSpace.includes(kwNoSpace));
         // 단어 분리 매칭이 너무 빡빡할 수 있으니 전체 키워드 포함도 OR 처리
         const looseHit = hit || nameNoSpace.includes(kwNoSpace) || kwNoSpace.includes(nameNoSpace);
