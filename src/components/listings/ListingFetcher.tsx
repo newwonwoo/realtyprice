@@ -221,19 +221,30 @@ export function ListingFetcher({ apartments }: Props) {
     ));
   }
 
-  // ── 직방: 브라우저에서 직접 호출 (Vercel IP 차단 우회) ──────────
+  // ── 직방 단지검색: 서버 라우트(icn1) 경유 ──────────────────────────
+  // ZB_HEADERS의 Origin/Referer는 브라우저 fetch()가 스푸핑을 허용하지 않는
+  // forbidden header(WHATWG Fetch 표준)라서 실제로는 페이지의 진짜 origin이 전송된다.
+  // Zigbang이 이를 서버단에서 걸러 200+빈배열(soft block)로 응답하면 예외가 안 던져져
+  // catch 폴백이 절대 발동하지 않고 "단지 미발견"으로만 보였다(직방이 항상 실패하던 원인).
+  // 서버 라우트는 Node fetch로 실제 헤더를 그대로 보낼 수 있어 이 제약이 없다 — 우선 사용.
   async function zbSearchOne(query: string): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string }> {
-    try {
-      // 하이픈은 URL 안전문자 — encodeURIComponent가 %2D로 변환하면 Zigbang이 못 찾음
-      const zbQ = encodeURIComponent(query).replace(/%2D/gi, "-");
-      const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${zbQ}`, {
-        headers: ZB_HEADERS,
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) {
-        const code = res.status === 403 || res.status === 429 ? "blocked" : res.status >= 500 ? "upstream_error" : "error";
-        return { complexList: [], reasonCode: code, reason: `직방 단지검색 실패 (HTTP ${res.status}).` };
+    async function viaServer(): Promise<{ complexList: ZbComplex[]; reasonCode: string; reason: string }> {
+      const res = await fetch(`/api/zigbang-listings?aptName=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      const list = (data?.complexList ?? []) as ZbComplex[];
+      if (data?.reasonCode && data.reasonCode !== "ok" && data.reasonCode !== "disambiguation" && !list.length) {
+        return { complexList: [], reasonCode: data.reasonCode, reason: data.reason ?? "" };
       }
+      return { complexList: list, reasonCode: list.length > 1 ? "disambiguation" : list.length ? "ok" : "complex_not_found", reason: data?.reason ?? "" };
+    }
+
+    try {
+      const server = await viaServer();
+      if (server.reasonCode === "ok" || server.reasonCode === "disambiguation") return server;
+      // 서버도 못 찾았으면 브라우저 직접 호출로 한 번 더 시도(사용자 실제 한국 IP 세션).
+      const zbQ = encodeURIComponent(query).replace(/%2D/gi, "-");
+      const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${zbQ}`, { headers: ZB_HEADERS, signal: AbortSignal.timeout(8000) });
+      if (!res.ok) return server; // 서버 결과(사유코드 포함)를 우선 반환
       const data = await res.json();
       const items = (data?.items ?? data?.data ?? []) as Record<string, unknown>[];
       const list = items
@@ -244,20 +255,13 @@ export function ListingFetcher({ apartments }: Props) {
           address: String(x.address ?? x.roadAddress ?? ""),
         }))
         .filter((c) => c.complexId);
-      if (!list.length) return { complexList: [], reasonCode: "complex_not_found", reason: "" };
+      if (!list.length) return server;
       return { complexList: list, reasonCode: list.length > 1 ? "disambiguation" : "ok", reason: "" };
     } catch (err) {
-      // 브라우저 직접 실패(CORS/네트워크) → 서버 라우트(icn1) 폴백
       try {
-        const res = await fetch(`/api/zigbang-listings?aptName=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        const list = (data?.complexList ?? []) as ZbComplex[];
-        if (data?.reasonCode && data.reasonCode !== "ok" && data.reasonCode !== "disambiguation" && !list.length) {
-          return { complexList: [], reasonCode: data.reasonCode, reason: data.reason ?? String(err) };
-        }
-        return { complexList: list, reasonCode: list.length > 1 ? "disambiguation" : list.length ? "ok" : "complex_not_found", reason: data?.reason ?? "" };
+        return await viaServer();
       } catch (e2) {
-        return { complexList: [], reasonCode: "error", reason: `직방 브라우저·서버 양쪽 모두 실패: ${String(e2)}` };
+        return { complexList: [], reasonCode: "error", reason: `직방 서버·브라우저 양쪽 모두 실패: ${String(err)} / ${String(e2)}` };
       }
     }
   }
@@ -290,13 +294,33 @@ export function ListingFetcher({ apartments }: Props) {
     };
   }
 
+  // 검색과 동일한 이유로 서버 라우트를 우선 시도 — browser-direct는 Origin/Referer를
+  // 스푸핑 못 해 soft-block되면 조용히 빈 배열을 반환하므로 신뢰할 수 없다.
   async function zbFetchListings(complexId: string, tradeType: "매매" | "전세"): Promise<ZbListing[]> {
+    async function viaServer(): Promise<ZbListing[]> {
+      const type = tradeType === "매매" ? "sale" : "jeonse";
+      const res = await fetch(`/api/zigbang-listings?complexId=${encodeURIComponent(complexId)}&type=${type}`);
+      const data = await res.json();
+      const arr = (type === "sale" ? data?.saleListings : data?.jeonseListings) ?? [];
+      return (arr as Record<string, unknown>[]).map((a) => ({
+        itemId: String(a.itemId ?? a.id ?? ""),
+        tradeType: String(a.tradeType ?? tradeType),
+        price: Number(a.price ?? 0),
+        area: Number(a.area ?? a.supplyArea ?? 0),
+        floor: Number(a.floor ?? 0),
+        description: String(a.description ?? a.memo ?? ""),
+      }));
+    }
+
     try {
+      const server = await viaServer();
+      if (server.length > 0) return server;
+      // 서버도 0건이면 브라우저 직접 호출로 한 번 더 시도(사용자 실제 세션 — 서버가 못 보는 매물을 볼 수도 있음).
       const res = await fetch(
         `${ZB_BASE}/v2/complex/${complexId}/items?tradeType=${encodeURIComponent(tradeType)}&serviceType=아파트`,
         { headers: ZB_HEADERS, signal: AbortSignal.timeout(8000) }
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return server;
       const data = await res.json();
       const items = (data?.items ?? data?.data ?? []) as Record<string, unknown>[];
       return items.map((a) => ({
@@ -308,20 +332,8 @@ export function ListingFetcher({ apartments }: Props) {
         description: String(a.description ?? a.memo ?? ""),
       }));
     } catch {
-      // 브라우저 직접 실패 → 서버 라우트(icn1) 폴백
       try {
-        const type = tradeType === "매매" ? "sale" : "jeonse";
-        const res = await fetch(`/api/zigbang-listings?complexId=${encodeURIComponent(complexId)}&type=${type}`);
-        const data = await res.json();
-        const arr = (type === "sale" ? data?.saleListings : data?.jeonseListings) ?? [];
-        return (arr as Record<string, unknown>[]).map((a) => ({
-          itemId: String(a.itemId ?? a.id ?? ""),
-          tradeType: String(a.tradeType ?? tradeType),
-          price: Number(a.price ?? 0),
-          area: Number(a.area ?? a.supplyArea ?? 0),
-          floor: Number(a.floor ?? 0),
-          description: String(a.description ?? a.memo ?? ""),
-        }));
+        return await viaServer();
       } catch {
         return [];
       }
