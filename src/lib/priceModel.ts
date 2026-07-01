@@ -45,6 +45,21 @@ function temporalWeight(contractDate: string, opts: TemporalOpts = {}): number {
   return w;
 }
 
+// 전월세전환율(연 환산) — 한국부동산원 아파트 전월세전환율 수도권 근래 평균 근사치.
+// 실시간 수신 API가 없어 고정 상수로 근사한다(지역·시점별 실측치는 아님).
+export const MONTHLY_RENT_CONVERSION_RATE = 0.05;
+
+// 월세(보증금+월세) 실거래 → 환산전세가(보증금 상당액)로 변환.
+// 환산전세가 = 보증금 + 월세×12 ÷ 전환율. jeonseFloorPrice 계산에 합류시켜
+// 전세 매물이 적은 단지에서도 월세 실거래를 하방가 신호로 활용한다.
+// (월세가 아니거나 월세금액이 없으면 원본 그대로 반환 — 방어적 폴백)
+export function convertMonthlyRentToJeonse(tx: Transaction): Transaction {
+  if (tx.transactionType !== "monthly_rent" || !tx.monthlyRent) return tx;
+  const depositBase = tx.deposit ?? tx.price ?? 0;
+  const converted = Math.round(depositBase + (tx.monthlyRent * 12) / MONTHLY_RENT_CONVERSION_RATE);
+  return { ...tx, price: converted, transactionType: "jeonse" };
+}
+
 // 전세가율 동적 계산: 실거래 데이터 있으면 실측값, 없으면 지역 기본값 사용
 // 수도권 외곽(오산·평택·안산 등) ~0.70, 서울·주요 도시 ~0.55~0.65
 function deriveJeonseRatio(saleTransactions: Transaction[], jeonseTransactions: Transaction[]): number {

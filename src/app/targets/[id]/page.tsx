@@ -15,7 +15,7 @@ import { UpsideGauge } from "@/components/charts/UpsideGauge";
 import { formatEok, formatPercent } from "@/lib/format";
 import { useRealtyStore } from "@/lib/clientStore";
 import { defaultModelWeights } from "@/lib/seed";
-import { estimatePrice, regionProfileFromAddress } from "@/lib/priceModel";
+import { estimatePrice, regionProfileFromAddress, convertMonthlyRentToJeonse } from "@/lib/priceModel";
 import { median } from "@/lib/inventory";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import { findSggCode } from "@/data/regionCodes";
@@ -286,7 +286,10 @@ export default function TargetDetailPage() {
       targetApartmentId: id,
       targetSaleTransactions: targetTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
       saleTransactions: comparableTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
-      jeonseTransactions: [...comparableTransactions, ...targetTransactions].filter((item) => item.transactionType === "jeonse"),
+      // 전세 실거래 + 월세 실거래(환산전세가로 변환) — 월세만 있는 단지도 하방가 신호로 활용
+      jeonseTransactions: [...comparableTransactions, ...targetTransactions]
+        .filter((item) => item.transactionType === "jeonse" || item.transactionType === "monthly_rent")
+        .map(convertMonthlyRentToJeonse),
       saleListings: targetSaleListings,
       comparableSaleListings,
       jeonseListings: [...targetJeonseListings, ...comparableListings.filter((item) => item.listingType === "jeonse")],
