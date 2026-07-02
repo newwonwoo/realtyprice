@@ -199,8 +199,11 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       // VWorld 지오코더 실시간 좌표(저장 안 함). 키 없으면 배정초교 좌표 proxy로 폴백.
       const vworldKey = keys.find((k) => k.provider === "vworld")?.value;
       d.vworldKeyPresent = !!vworldKey;
-      const geocode = async (address: string): Promise<{ lat: number; lng: number } | null> => {
-        if (!vworldKey || !address) return null;
+      const geocode = async (rawAddress: string): Promise<{ lat: number; lng: number } | null> => {
+        if (!vworldKey || !rawAddress) return null;
+        // 괄호 표기("(오산세교2지구 A8BL)" 등)는 VWorld 주소 매칭을 방해해 항상 404 실패로
+        // 이어짐 — 하이픈은 지번(예: "449-1")에 의미가 있어 보존, 괄호 안 내용만 제거.
+        const address = rawAddress.replace(/[（(][^）)]*[）)]/g, " ").replace(/\s+/g, " ").trim() || rawAddress;
         try {
           const g = await fetch(`/api/geocode?address=${encodeURIComponent(address)}&vworldKey=${encodeURIComponent(vworldKey)}`);
           const j = await g.json();

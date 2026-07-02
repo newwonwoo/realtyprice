@@ -5,6 +5,7 @@ const KEY_MAP: Record<string, string> = {
   vworld: "VWORLD_API_KEY",
   telegram_bot_token: "TELEGRAM_BOT_TOKEN",
   telegram_chat_id: "TELEGRAM_CHAT_ID",
+  hug: "HUG_API_KEY",
 };
 
 // Vercel 환경변수에 각 키가 설정됐는지 여부만 반환 (값은 노출 안 함)
