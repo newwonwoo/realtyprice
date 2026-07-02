@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// 한국부동산원_청약홈 분양정보 조회 서비스
+// 한국부동산원_청약홈 분양정보 조회 서비스 (단지 상세 — 이름/주소/시공사/시행사)
 // https://www.data.go.kr/data/15098547/openapi.do
-// ⚠️ 공식 매뉴얼 기준 정확한 오퍼레이션명은 getAPTLttotPblancDetail (APT 분양정보 상세조회).
+// ⚠️ 공식 매뉴얼(활용가이드 PDF) 기준 정확한 오퍼레이션명은 getAPTLttotPblancDetail.
 //    잘못된 이름(getAPTLttotPblancList)을 호출하면 HTTP 400이 반환됩니다.
+//    ⚠️ 이 API 응답에는 분양가 필드가 없습니다(공식 가이드의 응답 예시로 확인됨).
 const API_BASE = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail";
+
+// 한국부동산원_청약홈_APT 주택형별 분양정보 (파일데이터 기반, 데이터셋 15101047)
+// — 분양가(공급금액_분양최고금액)는 이 API에만 있음. 평형(주택형)마다 레코드 1개.
+// Swagger: https://infuser.odcloud.kr/oas/docs?namespace=15101047/v1
+// ⚠️ 필드가 전부 한글 키("주택관리번호", "공급금액_분양최고금액" 등)이고,
+//    조회 파라미터는 page/perPage/returnType뿐 — 단지별 필터가 없어 페이지를
+//    넘기며 주택관리번호+공고번호로 직접 걸러야 합니다.
+const MDL_API_BASE = "https://api.odcloud.kr/api/15101047/v1/uddi:69236f4f-13ff-4ecb-a429-ed5398f2b459";
 
 // ⚠️ 이 데이터셋의 검색(cond) 가능 필드는 HOUSE_MANAGE_NO, PBLANC_NO,
 //    SUBSCRPT_AREA_CODE_NM(지역), RCRIT_PBLANC_DE(공고일)뿐입니다.
@@ -12,10 +21,13 @@ const API_BASE = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLtt
 //    필터 없이 목록을 받아 서버에서 직접 부분일치로 거릅니다. (전체 약 1,900건)
 const PER_PAGE = 1000; // 전체(약 1,900건)를 2페이지로 커버
 const MAX_PAGES = 5;
+const MDL_PER_PAGE = 1000;
+const MDL_MAX_PAGES = 20; // 주택형별(평형별) 레코드라 상세보다 훨씬 많음 — 넉넉히 스캔
 
 export type PresaleInfo = {
   houseName: string;
   houseManageNo: string;
+  pblancNo: string;
   supplyLocation: string;
   totalSupplyHouseholds: number;
   recruitPublicNoticeDate: string;
@@ -37,19 +49,67 @@ function buildListUrl(page: number, serviceKey: string): string {
 const noSpace = (s: string) => s.replace(/\s+/g, "");
 
 function toPresale(item: Record<string, unknown>): PresaleInfo {
-  const lowestRaw = String(item["LTTOT_TOP_AMOUNT"] ?? item["MIN_LTTOT_PRICE"] ?? "0").replace(/,/g, "");
-  const highestRaw = String(item["LTTOT_TOP_AMOUNT"] ?? item["MAX_LTTOT_PRICE"] ?? "0").replace(/,/g, "");
   return {
     houseName: String(item["HOUSE_NM"] ?? ""),
     houseManageNo: String(item["HOUSE_MANAGE_NO"] ?? ""),
+    pblancNo: String(item["PBLANC_NO"] ?? ""),
     supplyLocation: String(item["HSSPLY_ADRES"] ?? ""),
     totalSupplyHouseholds: Number(item["TOT_SUPLY_HSHLDCO"] ?? 0),
     recruitPublicNoticeDate: String(item["RCRIT_PBLANC_DE"] ?? ""),
-    lowestPrice: lowestRaw ? Math.round(Number(lowestRaw) / 10000) : undefined,
-    highestPrice: highestRaw ? Math.round(Number(highestRaw) / 10000) : undefined,
     constructor: String(item["CNSTRCT_ENTRPS_NM"] ?? "") || undefined,
     developer: String(item["BSNS_MBY_NM"] ?? "") || undefined,
   };
+}
+
+// 주택관리번호+공고번호로 주택형별(평형별) 분양가를 찾아 최저/최고가를 반환.
+// 단지별 필터가 없는 API라 페이지를 넘기며 직접 걸러야 한다.
+async function fetchPriceRange(
+  serviceKey: string,
+  houseManageNo: string,
+  pblancNo: string,
+  diag: StrategyDiag[],
+): Promise<{ lowestPrice?: number; highestPrice?: number }> {
+  if (!houseManageNo) return {};
+  let normalizedKey = serviceKey;
+  try { normalizedKey = decodeURIComponent(serviceKey); } catch { /* 그대로 사용 */ }
+  const keyEncoded = encodeURIComponent(normalizedKey);
+
+  const amounts: number[] = [];
+  for (let page = 1; page <= MDL_MAX_PAGES; page++) {
+    const url = `${MDL_API_BASE}?serviceKey=${keyEncoded}&page=${page}&perPage=${MDL_PER_PAGE}`;
+    let rows: Record<string, unknown>[] = [];
+    let totalCount = 0;
+    try {
+      const res = await fetch(url, { headers: { Accept: "application/json" }, next: { revalidate: 0 } });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        diag.push({ field: `mdl page ${page}`, value: houseManageNo, httpStatus: res.status, rawCount: 0, error: body.slice(0, 300) });
+        break;
+      }
+      const data = await res.json();
+      rows = (data?.data ?? []) as Record<string, unknown>[];
+      totalCount = Number(data?.totalCount ?? 0);
+      diag.push({ field: `mdl page ${page}`, value: houseManageNo, httpStatus: res.status, rawCount: rows.length });
+    } catch (e) {
+      diag.push({ field: `mdl page ${page}`, value: houseManageNo, httpStatus: 0, rawCount: 0, error: String(e) });
+      break;
+    }
+
+    for (const row of rows) {
+      const rowHouseManageNo = String(row["주택관리번호"] ?? "");
+      const rowPblancNo = String(row["공고번호"] ?? "");
+      if (rowHouseManageNo !== houseManageNo) continue;
+      if (pblancNo && rowPblancNo && rowPblancNo !== pblancNo) continue;
+      const amount = Number(row["공급금액_분양최고금액"]);
+      if (Number.isFinite(amount) && amount > 0) amounts.push(amount);
+    }
+
+    if (rows.length < MDL_PER_PAGE) break;
+    if (totalCount && page * MDL_PER_PAGE >= totalCount) break;
+  }
+
+  if (!amounts.length) return {};
+  return { lowestPrice: Math.min(...amounts), highestPrice: Math.max(...amounts) };
 }
 
 export async function GET(req: NextRequest) {
@@ -143,6 +203,11 @@ export async function GET(req: NextRequest) {
 
     // 최신 공고 우선 정렬
     finalMatches.sort((a, b) => (b.recruitPublicNoticeDate || "").localeCompare(a.recruitPublicNoticeDate || ""));
+
+    // 분양가는 최상위(최신) 매칭 1건에 대해서만 추가 조회 — 매 후보마다 불필요한 호출 방지
+    const top = finalMatches[0];
+    const priceRange = await fetchPriceRange(serviceKey, top.houseManageNo, top.pblancNo, diag);
+    finalMatches[0] = { ...top, ...priceRange };
 
     return NextResponse.json({ items: finalMatches, total: finalMatches.length, ...(debug ? { diag } : {}) });
   } catch (err) {
