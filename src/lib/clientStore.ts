@@ -131,40 +131,66 @@ export function useRealtyStore() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function setApartments(next: Apartment[]) {
-    if (_cache) _cache.apartments = next;
-    setApartmentsState(next);
-    dbSave("apartments", next).catch(() => writeStorage(STORAGE_KEYS.apartments, next));
+  // 각 setter는 값뿐 아니라 React의 표준 함수형 업데이트(prev => next)도 받는다.
+  // 값 형태(setX(newArray))로만 받으면, 같은 렌더 사이클 안에서 여러 번 연달아
+  // 호출될 때(예: 자동추천 여러 단지를 빠르게 추가) 각 호출이 "마지막 렌더 시점"의
+  // stale한 배열을 기준으로 새 배열을 만들어 서로 덮어써버리는 레이스가 생긴다.
+  // setXState(prev => ...) 형태를 쓰면 React가 항상 최신 대기 상태를 넘겨줘 안전하다.
+  function setApartments(next: Apartment[] | ((prev: Apartment[]) => Apartment[])) {
+    setApartmentsState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      if (_cache) _cache.apartments = resolved;
+      dbSave("apartments", resolved).catch(() => writeStorage(STORAGE_KEYS.apartments, resolved));
+      return resolved;
+    });
   }
-  function setComparableRules(next: ComparableRule[]) {
-    if (_cache) _cache.comparableRules = next;
-    setComparableRulesState(next);
-    dbSave("comparable_rules", next).catch(() => writeStorage(STORAGE_KEYS.comparableRules, next));
+  function setComparableRules(next: ComparableRule[] | ((prev: ComparableRule[]) => ComparableRule[])) {
+    setComparableRulesState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      if (_cache) _cache.comparableRules = resolved;
+      dbSave("comparable_rules", resolved).catch(() => writeStorage(STORAGE_KEYS.comparableRules, resolved));
+      return resolved;
+    });
   }
-  function setComparableApartments(next: ComparableApartment[]) {
-    if (_cache) _cache.comparableApartments = next;
-    setComparableApartmentsState(next);
-    dbSave("comparable_apartments", next).catch(() => writeStorage(STORAGE_KEYS.comparableApartments, next));
+  function setComparableApartments(next: ComparableApartment[] | ((prev: ComparableApartment[]) => ComparableApartment[])) {
+    setComparableApartmentsState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      if (_cache) _cache.comparableApartments = resolved;
+      dbSave("comparable_apartments", resolved).catch(() => writeStorage(STORAGE_KEYS.comparableApartments, resolved));
+      return resolved;
+    });
   }
-  function setTransactions(next: Transaction[]) {
-    if (_cache) _cache.transactions = next;
-    setTransactionsState(next);
-    dbSave("transactions", next).catch(() => writeStorage(STORAGE_KEYS.transactions, next));
+  function setTransactions(next: Transaction[] | ((prev: Transaction[]) => Transaction[])) {
+    setTransactionsState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      if (_cache) _cache.transactions = resolved;
+      dbSave("transactions", resolved).catch(() => writeStorage(STORAGE_KEYS.transactions, resolved));
+      return resolved;
+    });
   }
-  function setListings(next: Listing[]) {
-    if (_cache) _cache.listings = next;
-    setListingsState(next);
-    dbSave("listings", next).catch(() => writeStorage(STORAGE_KEYS.listings, next));
+  function setListings(next: Listing[] | ((prev: Listing[]) => Listing[])) {
+    setListingsState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      if (_cache) _cache.listings = resolved;
+      dbSave("listings", resolved).catch(() => writeStorage(STORAGE_KEYS.listings, resolved));
+      return resolved;
+    });
   }
-  function setInventorySignals(next: InventorySignal[]) {
-    if (_cache) _cache.inventorySignals = next;
-    setInventorySignalsState(next);
-    dbSave("inventory_signals", next).catch(() => writeStorage(STORAGE_KEYS.inventorySignals, next));
+  function setInventorySignals(next: InventorySignal[] | ((prev: InventorySignal[]) => InventorySignal[])) {
+    setInventorySignalsState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      if (_cache) _cache.inventorySignals = resolved;
+      dbSave("inventory_signals", resolved).catch(() => writeStorage(STORAGE_KEYS.inventorySignals, resolved));
+      return resolved;
+    });
   }
-  function setPriceEstimates(next: PriceEstimate[]) {
-    if (_cache) _cache.priceEstimates = next;
-    setPriceEstimatesState(next);
-    dbSave("price_estimates", next).catch(() => writeStorage(STORAGE_KEYS.priceEstimates, next));
+  function setPriceEstimates(next: PriceEstimate[] | ((prev: PriceEstimate[]) => PriceEstimate[])) {
+    setPriceEstimatesState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      if (_cache) _cache.priceEstimates = resolved;
+      dbSave("price_estimates", resolved).catch(() => writeStorage(STORAGE_KEYS.priceEstimates, resolved));
+      return resolved;
+    });
   }
 
   const targets = useMemo(() => apartments.filter((x) => x.role === "target"), [apartments]);

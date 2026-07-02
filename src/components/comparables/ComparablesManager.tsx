@@ -53,9 +53,8 @@ export function ComparablesManager({ targetId, showCollectors = true }: { target
     if (!publicApts.length) return;
     const publicIds = new Set(publicApts.map((a) => a.id));
     setRemovedNotice(publicApts.map((a) => a.name));
-    const linksToRemove = store.comparableApartments.filter((l) => publicIds.has(l.apartmentId));
-    if (linksToRemove.length) store.setComparableApartments(store.comparableApartments.filter((l) => !publicIds.has(l.apartmentId)));
-    store.setApartments(store.apartments.filter((a) => !publicIds.has(a.id)));
+    store.setComparableApartments((prev) => prev.filter((l) => !publicIds.has(l.apartmentId)));
+    store.setApartments((prev) => prev.filter((a) => !publicIds.has(a.id)));
     const timer = setTimeout(() => setRemovedNotice([]), 8000);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,61 +81,67 @@ export function ComparablesManager({ targetId, showCollectors = true }: { target
     const weightByApt = new Map<string, number>();
     comps.forEach((apt, i) => weightByApt.set(apt.id, base + (i < remainder ? 1 : 0)));
 
-    const next = store.comparableApartments.map((item) => {
-      if (item.targetApartmentId !== activeTargetId || !weightByApt.has(item.apartmentId)) return item;
-      const w = weightByApt.get(item.apartmentId)!;
-      weightByApt.delete(item.apartmentId);
-      return { ...item, selected: true, compareWeight: w, updatedAt: nowIso() };
-    });
-    const created = Array.from(weightByApt.entries()).map(([apartmentId, w]) => ({
-      id: `ca_${Date.now()}_${apartmentId}`,
-      targetApartmentId: activeTargetId,
-      apartmentId,
-      selected: true,
-      manualAdded: true,
-      compareWeight: w,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    }));
-    store.setComparableApartments([...next, ...created]);
-  }
-
-  function upsertComparable(apartmentId: string, compareWeight?: number) {
-    const existing = store.comparableApartments.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartmentId);
-    if (existing) {
-      store.setComparableApartments(store.comparableApartments.map((item) => item.id === existing.id ? { ...item, selected: true, compareWeight: compareWeight ?? item.compareWeight, updatedAt: nowIso() } : item));
-      return;
-    }
-    const n = currentLinks.length + 1;
-    const base = Math.floor(100 / n);
-    const remainder = 100 - base * n;
-    let idxCounter = 0;
-    const updated = store.comparableApartments.map((item) => {
-      if (item.targetApartmentId !== activeTargetId) return item;
-      const w = base + (idxCounter < remainder ? 1 : 0);
-      idxCounter++;
-      return { ...item, compareWeight: w, updatedAt: nowIso() };
-    });
-    store.setComparableApartments([
-      ...updated,
-      {
+    store.setComparableApartments((prevLinks) => {
+      const remaining = new Map(weightByApt);
+      const next = prevLinks.map((item) => {
+        if (item.targetApartmentId !== activeTargetId || !remaining.has(item.apartmentId)) return item;
+        const w = remaining.get(item.apartmentId)!;
+        remaining.delete(item.apartmentId);
+        return { ...item, selected: true, compareWeight: w, updatedAt: nowIso() };
+      });
+      const created = Array.from(remaining.entries()).map(([apartmentId, w]) => ({
         id: `ca_${Date.now()}_${apartmentId}`,
         targetApartmentId: activeTargetId,
         apartmentId,
         selected: true,
         manualAdded: true,
-        compareWeight: compareWeight ?? base,
+        compareWeight: w,
         createdAt: nowIso(),
-        updatedAt: nowIso()
+        updatedAt: nowIso(),
+      }));
+      return [...next, ...created];
+    });
+  }
+
+  // prevLinks를 항상 React의 "최신 대기 상태"로 받는 함수형 업데이트 사용 —
+  // 자동추천에서 여러 단지를 연달아 빠르게 추가할 때 이전 클릭의 결과가
+  // 다음 클릭에서 덮어써지는 레이스(추가했는데 하단 목록에 안 보이는 버그)를 방지.
+  function upsertComparable(apartmentId: string, compareWeight?: number) {
+    store.setComparableApartments((prevLinks) => {
+      const existing = prevLinks.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartmentId);
+      if (existing) {
+        return prevLinks.map((item) => item.id === existing.id ? { ...item, selected: true, compareWeight: compareWeight ?? item.compareWeight, updatedAt: nowIso() } : item);
       }
-    ]);
+      const linksForTarget = prevLinks.filter((item) => item.targetApartmentId === activeTargetId);
+      const n = linksForTarget.length + 1;
+      const base = Math.floor(100 / n);
+      const remainder = 100 - base * n;
+      let idxCounter = 0;
+      const updated = prevLinks.map((item) => {
+        if (item.targetApartmentId !== activeTargetId) return item;
+        const w = base + (idxCounter < remainder ? 1 : 0);
+        idxCounter++;
+        return { ...item, compareWeight: w, updatedAt: nowIso() };
+      });
+      return [
+        ...updated,
+        {
+          id: `ca_${Date.now()}_${apartmentId}`,
+          targetApartmentId: activeTargetId,
+          apartmentId,
+          selected: true,
+          manualAdded: true,
+          compareWeight: compareWeight ?? base,
+          createdAt: nowIso(),
+          updatedAt: nowIso()
+        }
+      ];
+    });
   }
 
   // 자동추천에서 새 비교단지(공공데이터) 추가: store에 저장 + 선택 링크 생성
   function addSuggestedComparable(apt: Apartment) {
-    if (!store.apartments.some((a) => a.id === apt.id)) {
-      store.setApartments([...store.apartments, apt]);
-    }
+    store.setApartments((prev) => (prev.some((a) => a.id === apt.id) ? prev : [...prev, apt]));
     upsertComparable(apt.id);
   }
 
