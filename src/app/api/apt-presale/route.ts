@@ -24,6 +24,12 @@ const MAX_PAGES = 5;
 const MDL_PER_PAGE = 1000;
 const MDL_MAX_PAGES = 20; // 주택형별(평형별) 레코드라 상세보다 훨씬 많음 — 넉넉히 스캔
 
+export type PresaleUnitPrice = {
+  houseType: string;     // 주택형 (예: "058.8500A")
+  supplyArea?: string;   // 주택공급면적(㎡)
+  price: number;         // 공급금액(분양최고금액), 단위 만원
+};
+
 export type PresaleInfo = {
   houseName: string;
   houseManageNo: string;
@@ -33,6 +39,7 @@ export type PresaleInfo = {
   recruitPublicNoticeDate: string;
   lowestPrice?: number;
   highestPrice?: number;
+  unitPrices?: PresaleUnitPrice[]; // 평형별 분양가 — "평형이 안 나온다" 문제 대응
   constructor?: string; // 시공사(건설업체명)
   developer?: string;   // 시행사(사업주체명)
 };
@@ -61,20 +68,20 @@ function toPresale(item: Record<string, unknown>): PresaleInfo {
   };
 }
 
-// 주택관리번호+공고번호로 주택형별(평형별) 분양가를 찾아 최저/최고가를 반환.
+// 주택관리번호+공고번호로 주택형별(평형별) 분양가를 찾아 평형별 목록 + 최저/최고가를 반환.
 // 단지별 필터가 없는 API라 페이지를 넘기며 직접 걸러야 한다.
 async function fetchPriceRange(
   serviceKey: string,
   houseManageNo: string,
   pblancNo: string,
   diag: StrategyDiag[],
-): Promise<{ lowestPrice?: number; highestPrice?: number }> {
+): Promise<{ lowestPrice?: number; highestPrice?: number; unitPrices?: PresaleUnitPrice[] }> {
   if (!houseManageNo) return {};
   let normalizedKey = serviceKey;
   try { normalizedKey = decodeURIComponent(serviceKey); } catch { /* 그대로 사용 */ }
   const keyEncoded = encodeURIComponent(normalizedKey);
 
-  const amounts: number[] = [];
+  const unitPrices: PresaleUnitPrice[] = [];
   for (let page = 1; page <= MDL_MAX_PAGES; page++) {
     const url = `${MDL_API_BASE}?serviceKey=${keyEncoded}&page=${page}&perPage=${MDL_PER_PAGE}`;
     let rows: Record<string, unknown>[] = [];
@@ -101,15 +108,24 @@ async function fetchPriceRange(
       if (rowHouseManageNo !== houseManageNo) continue;
       if (pblancNo && rowPblancNo && rowPblancNo !== pblancNo) continue;
       const amount = Number(row["공급금액_분양최고금액"]);
-      if (Number.isFinite(amount) && amount > 0) amounts.push(amount);
+      if (Number.isFinite(amount) && amount > 0) {
+        unitPrices.push({
+          houseType: String(row["주택형"] ?? "").trim(),
+          supplyArea: String(row["주택공급면적"] ?? "").trim() || undefined,
+          price: amount,
+        });
+      }
     }
 
     if (rows.length < MDL_PER_PAGE) break;
     if (totalCount && page * MDL_PER_PAGE >= totalCount) break;
   }
 
-  if (!amounts.length) return {};
-  return { lowestPrice: Math.min(...amounts), highestPrice: Math.max(...amounts) };
+  if (!unitPrices.length) return {};
+  const amounts = unitPrices.map((u) => u.price);
+  // 같은 평형이 여러 타입(A/B/C 등)으로 갈라져도 그대로 보존 — 화면에서 평형별로 나눠 보여줌
+  unitPrices.sort((a, b) => a.price - b.price);
+  return { lowestPrice: Math.min(...amounts), highestPrice: Math.max(...amounts), unitPrices };
 }
 
 export async function GET(req: NextRequest) {

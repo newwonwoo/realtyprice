@@ -132,11 +132,25 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
             <div className="border-b border-slate-100 py-1.5 text-sm">
               <span className="text-slate-500 shrink-0">모집공고 분양가</span>
               <div className="mt-0.5 font-semibold flex flex-wrap gap-1 items-center">
-                <span className="text-blue-700">{formatEok(apartment.originalPresalePrice ?? presale?.lowestPrice ?? 0)}</span>
+                <span className="text-blue-700">
+                  {presale?.lowestPrice && presale?.highestPrice && presale.lowestPrice !== presale.highestPrice
+                    ? `${formatEok(presale.lowestPrice)} ~ ${formatEok(presale.highestPrice)}`
+                    : formatEok(apartment.originalPresalePrice ?? presale?.lowestPrice ?? presale?.highestPrice ?? 0)}
+                </span>
                 {presale?.recruitPublicNoticeDate && (
                   <span className="text-xs text-slate-400">(공고일 {presale.recruitPublicNoticeDate})</span>
                 )}
               </div>
+              {/* 평형별 분양가 — 최저~최고 범위만으론 어느 평형이 얼마인지 안 보여서 목록으로 병기 */}
+              {presale?.unitPrices && presale.unitPrices.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                  {presale.unitPrices.map((u, i) => (
+                    <span key={`${u.houseType}-${i}`}>
+                      {u.supplyArea ? `${Number(u.supplyArea).toFixed(0)}㎡` : u.houseType} {formatEok(u.price)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           <Row label="시공사" value={bass.kaptBcompany || presale?.constructor} />
