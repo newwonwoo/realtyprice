@@ -609,7 +609,6 @@ export default function TargetDetailPage() {
               subtitle="데이터 충분도 (0~100)"
               detail={latestEstimate ? `실거래 ${targetTransactions.length + comparableTransactions.length}건 · 비교호가 ${comparableListings.length}건 · 대장앵커 ${latestEstimate.leaderApartmentAnchorPrice > 0 ? "반영됨" : "미설정"}. 실거래·호가가 많고 대장이 설정될수록 높아집니다.` : undefined}
             />
-            <Summary label="적용 평형" value={`${latestEstimate?.selectedArea ?? effectiveArea}㎡`} />
           </div>
         </div>
       </div>

@@ -42,6 +42,7 @@ export type PresaleInfo = {
   unitPrices?: PresaleUnitPrice[]; // 평형별 분양가 — "평형이 안 나온다" 문제 대응
   constructor?: string; // 시공사(건설업체명)
   developer?: string;   // 시행사(사업주체명)
+  expectedMoveInYm?: string; // 입주예정월 (YYYYMM) — MVN_PREARNGE_YM
 };
 
 type StrategyDiag = { field: string; value: string; httpStatus: number; rawCount: number; error?: string };
@@ -65,6 +66,8 @@ function toPresale(item: Record<string, unknown>): PresaleInfo {
     recruitPublicNoticeDate: String(item["RCRIT_PBLANC_DE"] ?? ""),
     constructor: String(item["CNSTRCT_ENTRPS_NM"] ?? "") || undefined,
     developer: String(item["BSNS_MBY_NM"] ?? "") || undefined,
+    // "2026-10" 같은 하이픈 표기를 우리 앱이 쓰는 YYYYMM(6자리)로 정규화
+    expectedMoveInYm: String(item["MVN_PREARNGE_YM"] ?? "").replace(/\D/g, "").slice(0, 6) || undefined,
   };
 }
 

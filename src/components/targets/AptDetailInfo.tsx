@@ -80,15 +80,18 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
         if (!json.error && json.items?.length) {
           setPresaleItems(json.items);
           const top = json.items[0];
-          // 저장된 분양가가 없으면 첫 번째 결과로 자동 저장 + 브랜드(시공사) 자동 연계
+          // 저장된 분양가가 없으면 첫 번째 결과로 자동 저장 + 브랜드(시공사)·입주예정월 자동 연계
           const needsPresale = !apartment.originalPresalePrice && top?.lowestPrice;
           const builder = top?.constructor as string | undefined;
           const needsBrand = !apartment.brand && builder;
-          if (needsPresale || needsBrand) {
+          const moveInYm = top?.expectedMoveInYm as string | undefined;
+          const needsMoveIn = !apartment.expectedMoveInYm && moveInYm;
+          if (needsPresale || needsBrand || needsMoveIn) {
             const updated = {
               ...apartment,
               ...(needsPresale ? { originalPresalePrice: top.lowestPrice } : {}),
               ...(needsBrand ? { brand: builder } : {}),
+              ...(needsMoveIn ? { expectedMoveInYm: moveInYm } : {}),
             };
             store.setApartments(store.apartments.map((a) => a.id === apartment.id ? updated : a));
           }
