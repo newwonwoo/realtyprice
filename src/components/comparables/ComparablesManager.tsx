@@ -145,7 +145,10 @@ export function ComparablesManager({ targetId, showCollectors = true }: { target
     upsertComparable(apt.id);
   }
 
-  const existingComparableIds = new Set(store.apartments.map((a) => a.id));
+  // 이 대상에 실제로 "링크"된 단지만 반영 — store.apartments 전체 존재 여부로 판단하면
+  // (예전 시도에서 단지 객체는 생겼지만 이 대상과의 링크는 못 만든 경우) "추가됨"으로
+  // 잘못 표시되면서 버튼까지 사라져 재시도할 수 없는 막다른 상태가 됐다(실제 관측된 버그).
+  const existingComparableIds = new Set(currentLinks.map((l) => l.apartmentId));
 
   // 대장아파트 자동 지정: 대상이 바뀌고 대장이 미설정이면 하드코딩 테이블에서 즉시 적용
   const suggestedLeader = activeTarget ? findLeaderForAddress(activeTarget.address ?? activeTarget.region ?? "") : undefined;

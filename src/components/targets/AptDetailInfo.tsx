@@ -129,24 +129,28 @@ export function AptDetailInfo({ apartment }: { apartment: Apartment }) {
           <Row label="동수" value={bass.kaptdongCnt ? `${bass.kaptdongCnt}동` : undefined} />
           <Row label="사용승인" value={formatDate(bass.kaptUsedate)} />
           {Boolean(apartment.originalPresalePrice || presale?.lowestPrice) && (
-            <div className="border-b border-slate-100 py-1.5 text-sm">
-              <span className="text-slate-500 shrink-0">모집공고 분양가</span>
-              <div className="mt-0.5 font-semibold flex flex-wrap gap-1 items-center">
-                <span className="text-blue-700">
-                  {presale?.lowestPrice && presale?.highestPrice && presale.lowestPrice !== presale.highestPrice
-                    ? `${formatEok(presale.lowestPrice)} ~ ${formatEok(presale.highestPrice)}`
-                    : formatEok(apartment.originalPresalePrice ?? presale?.lowestPrice ?? presale?.highestPrice ?? 0)}
-                </span>
+            <div className="border-b border-slate-100 py-2.5 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-500 shrink-0">모집공고 분양가</span>
                 {presale?.recruitPublicNoticeDate && (
-                  <span className="text-xs text-slate-400">(공고일 {presale.recruitPublicNoticeDate})</span>
+                  <span className="text-xs text-slate-400 whitespace-nowrap">공고일 {presale.recruitPublicNoticeDate}</span>
                 )}
               </div>
-              {/* 평형별 분양가 — 최저~최고 범위만으론 어느 평형이 얼마인지 안 보여서 목록으로 병기 */}
+              <p className="mt-1 text-base font-bold text-blue-700 tabular-nums">
+                {presale?.lowestPrice && presale?.highestPrice && presale.lowestPrice !== presale.highestPrice
+                  ? `${formatEok(presale.lowestPrice)} ~ ${formatEok(presale.highestPrice)}`
+                  : formatEok(apartment.originalPresalePrice ?? presale?.lowestPrice ?? presale?.highestPrice ?? 0)}
+              </p>
+              {/* 평형별 분양가 — 최저~최고 범위만으론 어느 평형이 얼마인지 안 보여서 칩으로 병기 */}
               {presale?.unitPrices && presale.unitPrices.length > 0 && (
-                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   {presale.unitPrices.map((u, i) => (
-                    <span key={`${u.houseType}-${i}`}>
-                      {u.supplyArea ? `${Number(u.supplyArea).toFixed(0)}㎡` : u.houseType} {formatEok(u.price)}
+                    <span
+                      key={`${u.houseType}-${i}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50/70 px-2 py-0.5 text-xs tabular-nums"
+                    >
+                      <span className="font-medium text-slate-500">{u.supplyArea ? `${Number(u.supplyArea).toFixed(0)}㎡` : u.houseType}</span>
+                      <span className="font-semibold text-blue-700">{formatEok(u.price)}</span>
                     </span>
                   ))}
                 </div>

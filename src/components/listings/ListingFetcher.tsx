@@ -703,7 +703,7 @@ export function ListingFetcher({ apartments }: Props) {
       {batchResult && batchResult.pendingNames.length > 0 && (
         <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
           <span className="font-semibold">신축·분양권 (직방/KB 미등록 정상):</span> {batchResult.pendingNames.join(", ")}
-          <span className="ml-2 text-blue-500">입주 후 자동 등록됩니다. 실거래(분양권)는 국토부에서 수집하세요.</span>
+          <span className="ml-2 text-blue-500">입주 후 자동 등록됩니다.</span>
         </div>
       )}
 
@@ -797,7 +797,7 @@ export function ListingFetcher({ apartments }: Props) {
                       {zbPre ? "신축·분양권 (미등록 정상)" : zb.reasonCode === "complex_not_found" ? "단지 미발견" : zb.reasonCode === "no_listings" ? "매물 없음" : "오류"}
                     </span>
                     {zbPre
-                      ? <span className="ml-1 text-blue-500">직방은 입주 후 등록됩니다. 분양권 실거래는 국토부에서 수집하세요.</span>
+                      ? <span className="ml-1 text-blue-500">직방은 입주 후 자동 등록됩니다.</span>
                       : zb.reason && <span className="ml-1 text-red-500">{zb.reason}</span>}
                   </div>
                 );
