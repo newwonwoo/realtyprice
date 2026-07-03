@@ -190,7 +190,10 @@ export function ListingFetcher({ apartments }: Props) {
 
   const [zbStates, setZbStates] = useState<Record<string, ZbState>>({});
   const [kbStates, setKbStates] = useState<Record<string, KbState>>({});
-  const [batchResult, setBatchResult] = useState<{ success: number; fail: number; failNames: string[]; pendingNames: string[] } | null>(null);
+  const [batchResult, setBatchResult] = useState<{
+    zbSuccess: number; zbFail: number; zbFailNames: string[]; zbPendingNames: string[];
+    kbSuccess: number; kbFail: number; kbFailNames: string[]; kbPendingNames: string[];
+  } | null>(null);
 
   const selectedEntry = apartments.find((a) => a.apartment.id === selectedAptId) ?? apartments[0];
   const apt = selectedEntry?.apartment;
@@ -377,9 +380,14 @@ export function ListingFetcher({ apartments }: Props) {
     setBatchResult(null);
     const today = new Date().toISOString().slice(0, 10);
     const allImported: Listing[] = [];
-    const failNames: string[] = [];
-    const pendingNames: string[] = []; // 신축·분양권 미등록(정상)
-    let successCount = 0;
+    // 직방/KB 결과를 따로 집계 — 예전엔 이 요약 카운트가 KB 결과만 반영해서
+    // "성공 5개"라고 뜨는데 목록엔 직방이 죄다 "실패"로 보이는 모순이 있었다.
+    const zbFailNames: string[] = [];
+    const zbPendingNames: string[] = [];
+    let zbSuccessCount = 0;
+    const kbFailNames: string[] = [];
+    const kbPendingNames: string[] = [];
+    let kbSuccessCount = 0;
     try {
 
     for (let i = 0; i < apartments.length; i++) {
@@ -391,6 +399,8 @@ export function ListingFetcher({ apartments }: Props) {
       const s = await zbSearch(a.id, query, a.region);
       if (s.reasonCode !== "ok" || !s.complexList.length) {
         setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: false, reasonCode: s.reasonCode, reason: s.reason, complexList: s.complexList } }));
+        if (s.reasonCode === "complex_not_found" && isPreCompletion(a)) zbPendingNames.push(a.name);
+        else zbFailNames.push(a.name);
       } else {
         const complexId = s.complexList[0].complexId;
         const [sale, jeonse] = await Promise.all([zbFetchListings(complexId, "매매"), zbFetchListings(complexId, "전세")]);
@@ -424,6 +434,7 @@ export function ListingFetcher({ apartments }: Props) {
             reason: total > 0 ? "" : "단지 찾음. 직방 등록 매물 0건.",
           },
         }));
+        zbSuccessCount++; // 단지를 찾았으면 매물 0건이어도 "검색 성공"으로 집계(KB와 동일 기준)
       }
 
       // KB 시세 수집 → store.listings에 저장 (가격 모델이 읽을 수 있도록)
@@ -488,19 +499,20 @@ export function ListingFetcher({ apartments }: Props) {
       if (!kbDone) {
         const pre = isPreCompletion(a);
         setKbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultKb(a)), loading: false, reasonCode: pre ? "pre_completion" : "complex_not_found", reason: pre ? `신축·분양권 — KB 미등록은 정상입니다 (입주 후 등록)` : `KB에서 "${kbQuery}" 미발견` } }));
-        if (pre) pendingNames.push(a.name); else failNames.push(a.name);
+        if (pre) kbPendingNames.push(a.name); else kbFailNames.push(a.name);
       } else {
-        successCount++;
+        kbSuccessCount++;
       }
     }
 
     const existingKeys = new Set(store.listings.map((l: Listing) => l.listingKey));
     const newOnes = allImported.filter((l) => !existingKeys.has(l.listingKey));
     if (newOnes.length > 0) store.setListings([...newOnes, ...store.listings]);
-    const result = { success: successCount, fail: failNames.length, failNames, pendingNames };
+    const result = { zbSuccess: zbSuccessCount, zbFail: zbFailNames.length, zbFailNames, zbPendingNames, kbSuccess: kbSuccessCount, kbFail: kbFailNames.length, kbFailNames, kbPendingNames };
     setBatchResult(result);
-    const pendingTxt = pendingNames.length > 0 ? ` · 미등록(신축) ${pendingNames.length}개` : "";
-    setBatchProgress(`완료 — 성공 ${successCount}개 / 실패 ${failNames.length}개${pendingTxt} · ${newOnes.length}건 신규 저장`);
+    const zbPendingTxt = zbPendingNames.length > 0 ? ` · 미등록(신축) ${zbPendingNames.length}개` : "";
+    const kbPendingTxt = kbPendingNames.length > 0 ? ` · 미등록(신축) ${kbPendingNames.length}개` : "";
+    setBatchProgress(`완료 — 직방 성공 ${zbSuccessCount}/실패 ${zbFailNames.length}${zbPendingTxt} · KB 성공 ${kbSuccessCount}/실패 ${kbFailNames.length}${kbPendingTxt} · ${newOnes.length}건 신규 저장`);
     } catch (e) {
       setBatchProgress(`수집 중 오류 발생: ${String(e)}`);
     } finally {
@@ -682,7 +694,7 @@ export function ListingFetcher({ apartments }: Props) {
       {/* 전체 일괄 수집 버튼 — 실거래 수집기와 동일하게 우측 정렬(위치 통일) */}
       <div className="flex items-center gap-2 flex-wrap">
         {batchProgress && (
-          <span className={`text-sm ${batchRunning ? "text-blue-600" : batchResult && batchResult.fail > 0 ? "text-amber-700 font-semibold" : "text-emerald-700 font-semibold"}`}>
+          <span className={`text-sm ${batchRunning ? "text-blue-600" : batchResult && (batchResult.zbFail > 0 || batchResult.kbFail > 0) ? "text-amber-700 font-semibold" : "text-emerald-700 font-semibold"}`}>
             {batchProgress}
           </span>
         )}
@@ -694,16 +706,28 @@ export function ListingFetcher({ apartments }: Props) {
           {batchRunning ? "수집중…" : `전체 수집 (${apartments.length}개 단지 · 직방+KB)`}
         </button>
       </div>
-      {batchResult && batchResult.fail > 0 && (
+      {batchResult && batchResult.zbFail > 0 && (
+        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          <span className="font-semibold">직방 실패 단지:</span> {batchResult.zbFailNames.join(", ")}
+          <span className="ml-2 text-red-600">(검색어 문제일 수도, 직방이 서버 요청 자체를 차단했을 수도 있습니다 — 아래 &quot;개별 단지 검색어 수정&quot;에서 확인하세요)</span>
+        </div>
+      )}
+      {batchResult && batchResult.kbFail > 0 && (
         <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          <span className="font-semibold">KB 미발견 단지:</span> {batchResult.failNames.join(", ")}
+          <span className="font-semibold">KB 미발견 단지:</span> {batchResult.kbFailNames.join(", ")}
           <span className="ml-2 text-amber-600">(아래 &quot;개별 단지 검색어 수정&quot;에서 직접 수정하거나 KB 미등록 단지일 수 있습니다)</span>
         </div>
       )}
-      {batchResult && batchResult.pendingNames.length > 0 && (
+      {batchResult && batchResult.zbPendingNames.length > 0 && (
         <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
-          <span className="font-semibold">신축·분양권 (직방/KB 미등록 정상):</span> {batchResult.pendingNames.join(", ")}
-          <span className="ml-2 text-blue-500">입주 후 자동 등록됩니다.</span>
+          <span className="font-semibold">직방 단지 미검색 (신축·분양권):</span> {batchResult.zbPendingNames.join(", ")}
+          <span className="ml-2 text-blue-500">분양권도 직방에 호가가 등록될 수 있으니, 검색어를 바꿔서 다시 시도해보세요.</span>
+        </div>
+      )}
+      {batchResult && batchResult.kbPendingNames.length > 0 && (
+        <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+          <span className="font-semibold">KB 미등록 (신축·분양권, 정상):</span> {batchResult.kbPendingNames.join(", ")}
+          <span className="ml-2 text-blue-500">KB시세는 입주 후 자동 등록됩니다.</span>
         </div>
       )}
 
@@ -720,8 +744,8 @@ export function ListingFetcher({ apartments }: Props) {
             <div key={a.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
               <span className={`px-1.5 py-0.5 rounded font-bold ${ROLE_COLOR[role]}`}>{ROLE_LABEL[role]}</span>
               <span className="font-semibold text-slate-700">{a.name}</span>
-              <span className={zbBad ? "text-red-500 font-semibold" : zbS.reasonCode === "ok" ? "text-emerald-600" : "text-slate-400"}>
-                직방 {zbS.reasonCode === "ok" ? `매매${zbS.sale.length}·전세${zbS.jeonse.length}` : zbPre ? "미등록(정상)" : zbBad ? "실패" : "미수집"}
+              <span className={zbBad ? "text-red-500 font-semibold" : zbS.reasonCode === "ok" ? "text-emerald-600" : zbPre ? "text-amber-600 font-semibold" : "text-slate-400"}>
+                직방 {zbS.reasonCode === "ok" ? `매매${zbS.sale.length}·전세${zbS.jeonse.length}` : zbPre ? "미검색(분양권 재시도 필요)" : zbBad ? "실패" : "미수집"}
               </span>
               <span className={kbBad ? "text-red-500 font-semibold" : kbS.reasonCode === "ok" ? "text-blue-600" : "text-slate-400"}>
                 KB {kbS.reasonCode === "ok" ? `${kbS.prices.filter((p) => p.price).length}개 면적` : kbS.reasonCode === "pre_completion" ? "미등록(정상)" : kbBad ? "실패" : "미수집"}
@@ -792,12 +816,12 @@ export function ListingFetcher({ apartments }: Props) {
               {zb.reasonCode && !["ok","disambiguation"].includes(zb.reasonCode) && (() => {
                 const zbPre = zb.reasonCode === "complex_not_found" && isPreCompletion(apt);
                 return (
-                  <div className={`rounded border px-3 py-2 text-xs ${zbPre ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+                  <div className={`rounded border px-3 py-2 text-xs ${zbPre ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-red-50 border-red-200 text-red-700"}`}>
                     <span className="font-semibold">
-                      {zbPre ? "신축·분양권 (미등록 정상)" : zb.reasonCode === "complex_not_found" ? "단지 미발견" : zb.reasonCode === "no_listings" ? "매물 없음" : "오류"}
+                      {zbPre ? "신축·분양권 (단지 미검색)" : zb.reasonCode === "complex_not_found" ? "단지 미발견" : zb.reasonCode === "no_listings" ? "매물 없음" : "오류"}
                     </span>
                     {zbPre
-                      ? <span className="ml-1 text-blue-500">직방은 입주 후 자동 등록됩니다.</span>
+                      ? <span className="ml-1 text-amber-600">분양권도 직방에 호가가 등록될 수 있습니다 — 검색어를 다르게 바꿔 다시 시도해보세요.</span>
                       : zb.reason && <span className="ml-1 text-red-500">{zb.reason}</span>}
                   </div>
                 );
