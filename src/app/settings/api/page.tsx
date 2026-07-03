@@ -7,6 +7,7 @@ import { readStorage, STORAGE_KEYS, writeStorage } from "@/lib/storage";
 const providers = [
   ["data_go_kr", "공공데이터포털 API Key", "data.go.kr에서 발급. 아파트 단지 검색·실거래 수집에 모두 사용됩니다."],
   ["vworld", "VWorld 지오코더 인증키", "vworld.kr에서 발급 (무료, 일 4만건). 단지 주소 → GPS 좌표 변환에 사용 (비교단지 1km 인접 필터). ⚠️ VWorld 약관상 좌표는 실시간 사용만 가능하며 저장하지 않습니다."],
+  ["hug", "HUG 분양가 API Key", "data.go.kr '주택도시보증공사_지역별 ㎡당 분양가격(지역)'(15070256)에서 발급. 지역 민간아파트 분양가 추세 → 상승/하락 신호에 사용."],
   ["telegram_bot_token", "Telegram Bot Token", "알림 전송용 (선택)"],
   ["telegram_chat_id", "Telegram Chat ID", "알림 전송용 (선택)"]
 ] as const;
@@ -87,7 +88,7 @@ export default function ApiSettingsPage() {
         <div className="mt-6 space-y-3">
           <p className="rounded-lg bg-blue-50 p-4 text-sm text-blue-800">
             <strong>Vercel 배포 시:</strong> Vercel 대시보드 → Settings → Environment Variables에 아래 키를 등록하세요.<br />
-            <code className="mt-1 block text-xs">DATA_GO_KR_API_KEY, VWORLD_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID</code>
+            <code className="mt-1 block text-xs">DATA_GO_KR_API_KEY, VWORLD_API_KEY, HUG_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID</code>
           </p>
           <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800">브라우저 localStorage 방식은 같은 브라우저에서만 유지됩니다. 환경변수가 우선 적용됩니다.</p>
         </div>

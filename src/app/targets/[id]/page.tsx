@@ -19,9 +19,11 @@ import { estimatePrice, regionProfileFromAddress, convertMonthlyRentToJeonse } f
 import { median } from "@/lib/inventory";
 import { readStorage, STORAGE_KEYS } from "@/lib/storage";
 import { findSggCode } from "@/data/regionCodes";
+import { hugAreaCodeForRegion, presalePriceYoYPct, shiftYyyymm } from "@/lib/hugTrend";
 import type { ModelWeights } from "@/types/model";
 import type { Apartment } from "@/types/apartment";
 import type { SupplyVolumeResult } from "@/app/api/supply-volume/route";
+import type { HugPriceItem } from "@/app/api/hug-presale-trend/route";
 
 const conclusionLabel: Record<string, string> = {
   strong_up: "강한 상승예상",
@@ -282,6 +284,30 @@ export default function TargetDetailPage() {
       }
     } catch { /* 모든 단계 실패 — macroSignalPrice=0 */ }
 
+    // ── HUG 지역 민간아파트 ㎡당 분양가 전년비 추세 → 분양가 추세 상승/하락 신호 ──
+    // 실패(키 미등록·지역코드 없음·차단)해도 undefined → 신호 비활성(중립)으로 자연 폴백.
+    let presalePriceTrendPct: number | undefined = undefined;
+    try {
+      const areaDcd = hugAreaCodeForRegion(apartment?.region ?? apartment?.address);
+      if (areaDcd) {
+        const now = new Date();
+        const endYym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const startYym = shiftYyyymm(endYym, -14); // 전년비 계산 위해 14개월 창 확보
+        const hugKey = readStorage<{ provider: string; value: string }[]>(STORAGE_KEYS.apiKeys, [])
+          .find((k) => k.provider === "hug")?.value;
+        const qs = new URLSearchParams({ startYym, endYym, areaDcd });
+        if (hugKey) qs.set("apiKey", hugKey); // 없으면 서버 env HUG_API_KEY 사용
+        const r = await fetch(`/api/hug-presale-trend?${qs.toString()}`, { signal: AbortSignal.timeout(8000) });
+        if (r.ok) {
+          const j = await r.json();
+          if (Array.isArray(j.items)) {
+            const pct = presalePriceYoYPct(j.items as HugPriceItem[]);
+            if (pct != null) presalePriceTrendPct = pct;
+          }
+        }
+      }
+    } catch { /* HUG 미조회/실패 → presalePriceTrendPct undefined (신호 비활성) */ }
+
     const result = estimatePrice({
       targetApartmentId: id,
       targetSaleTransactions: targetTransactions.filter((item) => item.transactionType === "sale" || item.transactionType === "presale"),
@@ -308,6 +334,7 @@ export default function TargetDetailPage() {
       regionProfile: regionProfileFromAddress(apartment?.address),
       supplyCliffMode,
       supplyPressurePct: supplyVolume?.priceImpactPct,
+      presalePriceTrendPct,
     });
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
     setEstimating(false);

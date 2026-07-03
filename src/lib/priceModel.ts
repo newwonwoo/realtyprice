@@ -235,6 +235,7 @@ export function estimatePrice(params: {
   supplyCliffMode?: boolean;
   supplyPressurePct?: number; // 현재 입주물량 공급압력 % (음수=하락압력, 양수=희소)
   monthsOfInventory?: number; // MOI(재고소진월수) = 활성매물 / 월판매속도. 0=계산불가
+  presalePriceTrendPct?: number; // HUG 지역 민간아파트 ㎡당 분양가 전년比 변화율(%) — 신규공급 가격기준선 추세
 }) {
   const targetArea = params.targetArea > 0 ? params.targetArea : 84;
   // 지역 레짐에 맞춰 가격 앵커 가중치 재조정 (서울/경기 상승 동인 차이 반영)
@@ -516,6 +517,21 @@ export function estimatePrice(params: {
     : rawSupplyPct >= -3 ? -5
     : -8;
 
+  // 분양가 추세 신호: HUG 지역 민간아파트 ㎡당 분양가 전년비 변화율.
+  // 신규공급의 가격 기준선(분양가)이 오르면 인근 기존단지에 키맞추기·낙수 상방압력을 준다
+  // (특히 경기·수도권 — presalePremium 가중이 gyeonggi에서 1.4로 큰 것과 정합).
+  // 분양가는 토지비·원자재로 상방경직적이라 통상 상승분(~+2%) 위를 유효 상방으로 본다.
+  // ⚠️ 방향성 prior(실증 계수 아님). HUG 미조회 시 null → 비활성(중립 0).
+  const presaleTrendPct = params.presalePriceTrendPct;
+  const presalePriceTrendScore =
+    presaleTrendPct == null ? 0
+    : presaleTrendPct >= 10 ? 6
+    : presaleTrendPct >= 5 ? 4
+    : presaleTrendPct >= 2 ? 2
+    : presaleTrendPct > -2 ? 0
+    : presaleTrendPct > -5 ? -3
+    : -5;
+
   const UPSIDE_BASE = 35; // 기저값 (데이터 존재 시 중립 출발점)
   const upsideScore = hasMinData
     ? Math.min(100, Math.round(
@@ -526,6 +542,7 @@ export function estimatePrice(params: {
         + leaderBoost              // 대장 앵커 상방압력 (+6)
         + comparablePressureScore  // 비교단지 압력 (-3~+6)
         + supplyPressureScore      // 입주물량 공급압력 (-8~+6)
+        + presalePriceTrendScore   // 분양가 추세 (HUG, -5~+6)
       ))
     : 0;
 
@@ -562,6 +579,7 @@ export function estimatePrice(params: {
         { group: "upside", label: "대장 앵커 상방압력", source: "가격 — 대장 환산가 vs 비교단지 시세", rawValue: leaderApartmentAnchorPrice > 0 ? (leaderBoost > 0 ? "대장 > 비교 시세" : "대장 ≤ 비교 시세") : "대장 미설정", weight: "0/+6", result: `+${leaderBoost}점`, active: leaderBoost > 0 },
         { group: "upside", label: "비교단지 상·하급지 압력", source: "등급(가격대) — 비교단지 등급차 → 압력률", rawValue: `${Math.round(comparableMarketPressureRate * 100)}%`, weight: "-3~+6", result: `${comparablePressureScore >= 0 ? "+" : ""}${comparablePressureScore}점`, active: comparablePressureScore !== 0 },
         { group: "upside", label: "입주물량 공급압력", source: "국토부 입주예정물량 — 3개월 합산 세대", rawValue: rawSupplyPct != null ? `공급영향 ${rawSupplyPct > 0 ? "+" : ""}${rawSupplyPct}%` : "미조회", weight: "-8~+6", result: `${supplyPressureScore >= 0 ? "+" : ""}${supplyPressureScore}점`, active: rawSupplyPct != null },
+        { group: "upside", label: "분양가 추세(HUG)", source: "HUG — 지역 민간아파트 ㎡당 분양가(전년比)", rawValue: presaleTrendPct != null ? `분양가 ${presaleTrendPct > 0 ? "+" : ""}${presaleTrendPct}% (전년比)` : "미조회", weight: "-5~+6", result: `${presalePriceTrendScore >= 0 ? "+" : ""}${presalePriceTrendScore}점`, active: presaleTrendPct != null },
       ]
     : [];
 
@@ -594,6 +612,7 @@ export function estimatePrice(params: {
     jeonseSupplyDemandScore > 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 수요 우위 신호.` : jeonseSupplyDemandScore < 0 ? `전세가율 ${Math.round(jeonseRatio * 100)}% — 공급 여력 있음.` : null,
     supplyCliffMode ? "공급절벽 모드 ON: 입지 비중을 낮추고 전세 소진·호가 lock-in 중심으로 가중치를 재편했습니다." : null,
     supplyPressureScore > 0 ? `입주물량 희소 (공급영향 +${rawSupplyPct}%) — 공급압력 상승 반영 (+${supplyPressureScore}점).` : supplyPressureScore < 0 ? `입주물량 과다 (공급영향 ${rawSupplyPct}%) — 하락압력 반영 (${supplyPressureScore}점).` : null,
+    presalePriceTrendScore > 0 ? `지역 분양가 상승 추세 (전년비 +${presaleTrendPct}%) — 신규공급 가격기준선 상방압력 (+${presalePriceTrendScore}점).` : presalePriceTrendScore < 0 ? `지역 분양가 하락 추세 (전년비 ${presaleTrendPct}%) — 공급 기준선 약화 (${presalePriceTrendScore}점).` : null,
   ].filter(Boolean) as string[];
 
   const warnings = [
