@@ -14,6 +14,7 @@ type Props = {
   target: Apartment;
   existingComparableIds: Set<string>;
   onAddComparable: (apt: Apartment) => void;
+  maxDistanceKm: number; // 위 "필터 조건" 카드의 최대 거리(km) 입력값 — 실제 반경 필터에 반영
 };
 
 // 입지(주소 일치) 중심 유사도 스코어링
@@ -99,6 +100,7 @@ type Diag = {
   geocodeSampleErrors: string[];
   refCoordSource: string;
   distApplied: boolean;
+  maxDistanceKm: number;
   after1km: number;
   dongApplied: boolean;        // 행정동 필터 적용 여부
   targetDong: string;          // 대상 행정동
@@ -106,13 +108,15 @@ type Diag = {
   finalCount: number;
 };
 
-const ADJACENCY_M = 1000; // 인접 기준: 반경 1km
 const HOUSEHOLD_FLOOR = 0.8; // 세대수 하한: 대상의 80% (−20% 초과 축소 시 제외, +는 허용)
 
 // 단지명 → 학군 캐시
 const districtCache: Record<string, SchoolDistrictResult | null> = {};
 
-export function ComparableSuggestions({ target, existingComparableIds, onAddComparable }: Props) {
+export function ComparableSuggestions({ target, existingComparableIds, onAddComparable, maxDistanceKm }: Props) {
+  // 이전엔 반경이 1000m로 하드코딩돼 있어서 위 "필터 조건" 카드의 최대 거리(km) 입력이
+  // 실제 추천 결과엔 전혀 반영되지 않는 죽은 입력값이었다 — 지금부터 이 값을 그대로 씀.
+  const adjacencyM = Math.max(0.1, maxDistanceKm || 1) * 1000;
   const [suggestions, setSuggestions] = useState<AptSearchResult[]>([]);
   // 단지명 → 학군 정보
   const [districtMap, setDistrictMap] = useState<Record<string, SchoolDistrictResult | null>>({});
@@ -148,7 +152,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
       regionKeyword, searchHttp: 0, rawCount: 0, afterNameFilter: 0, afterHouseholdFilter: 0,
       droppedByHousehold: 0, afterSimilarity: 0, rankedCount: 0, vworldKeyPresent: false,
       targetGeocoded: false, candidateGeocodeOk: 0, candidateGeocodeFail: 0, geocodeSampleErrors: [],
-      refCoordSource: "없음", distApplied: false, after1km: 0,
+      refCoordSource: "없음", distApplied: false, maxDistanceKm, after1km: 0,
       dongApplied: false, targetDong: "", afterDongFilter: 0, finalCount: 0,
     };
     try {
@@ -257,7 +261,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
         }
         filtered = ranked.filter((item) => {
           const dist = newDistMap[item.complexPk];
-          return dist === undefined || dist <= ADJACENCY_M;
+          return dist === undefined || dist <= adjacencyM;
         });
       }
       d.distApplied = canDistance;
@@ -287,7 +291,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
         setError(
           dongApplied
             ? `같은 행정동(${targetDong}) 내 유사 비교단지 후보를 찾지 못했습니다. '행정동 다르면 제외'를 끄면 인근 다른 동도 포함됩니다.`
-            : canDistance ? "반경 1km 이내 유사 비교단지 후보를 찾지 못했습니다." : "유사한 비교단지 후보를 찾지 못했습니다."
+            : canDistance ? `반경 ${maxDistanceKm}km 이내 유사 비교단지 후보를 찾지 못했습니다.` : "유사한 비교단지 후보를 찾지 못했습니다."
         );
         return;
       }
@@ -369,7 +373,7 @@ export function ComparableSuggestions({ target, existingComparableIds, onAddComp
               <p className="font-bold text-sm">자동추천 비교단지</p>
               <p className="text-xs text-slate-500">
                 {target.region} · 입지등급(상/동/하급지) 분류 · 세대수 −20% 이상만
-                {distApplied ? " · 반경 1km 이내(VWorld 좌표, 키 없으면 배정초교 좌표)" : " · 거리기준 미적용(좌표 확보 실패)"}
+                {distApplied ? ` · 반경 ${maxDistanceKm}km 이내(VWorld 좌표, 키 없으면 배정초교 좌표)` : " · 거리기준 미적용(좌표 확보 실패)"}
                 {excludeOtherDong ? " · 같은 행정동만" : ""}
               </p>
             </div>
@@ -465,7 +469,7 @@ function DiagPanel({ diag }: { diag: Diag }) {
       <Row k="후보 지오코딩 성공/실패" v={`${diag.candidateGeocodeOk} / ${diag.candidateGeocodeFail}`} warn={diag.candidateGeocodeOk === 0 && diag.rankedCount > 0} />
       {diag.geocodeSampleErrors.map((e, i) => <Row key={i} k={`지오코딩 오류 ${i + 1}`} v={e} warn />)}
       <div className="my-1 border-t border-amber-200" />
-      <Row k={`⑥ 1km 필터 ${diag.distApplied ? "적용" : "미적용"} 후`} v={diag.after1km} warn={diag.after1km === 0 && diag.rankedCount > 0} />
+      <Row k={`⑥ 거리 필터(${diag.maxDistanceKm}km) ${diag.distApplied ? "적용" : "미적용"} 후`} v={diag.after1km} warn={diag.after1km === 0 && diag.rankedCount > 0} />
       <Row k={`⑦ 행정동 필터 ${diag.dongApplied ? `적용(${diag.targetDong})` : "미적용"} 후`} v={diag.afterDongFilter} warn={diag.dongApplied && diag.afterDongFilter === 0 && diag.after1km > 0} />
       <Row k="⑧ 최종 표시" v={diag.finalCount} warn={diag.finalCount === 0} />
     </div>

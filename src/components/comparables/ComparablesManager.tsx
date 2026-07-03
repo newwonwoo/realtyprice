@@ -254,6 +254,7 @@ export function ComparablesManager({ targetId, showCollectors = true }: { target
           target={activeTarget}
           existingComparableIds={existingComparableIds}
           onAddComparable={addSuggestedComparable}
+          maxDistanceKm={rule.maxDistanceKm}
         />
       </div>
 
