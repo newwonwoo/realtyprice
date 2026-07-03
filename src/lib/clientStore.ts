@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { Apartment, ComparableApartment, ComparableRule } from "@/types/apartment";
 import type { InventorySignal, Listing } from "@/types/listing";
 import type { PriceEstimate } from "@/types/model";
@@ -9,8 +9,13 @@ import { defaultComparableRule, defaultModelWeights } from "./seed";
 import { readStorage, STORAGE_KEYS, writeStorage } from "./storage";
 import { dbGet, dbSave } from "./dbClient";
 
-// ── 모듈 레벨 캐시 싱글톤 ──────────────────────────────────────────
-// 클라이언트 사이드 내비게이션 시 재마운트돼도 DB 재조회 없이 즉시 반환
+// ── 전역 공유 스토어(단일 소스) ──────────────────────────────────────
+// 이전엔 useRealtyStore()를 호출하는 컴포넌트마다 독립된 useState를 갖고
+// 모듈 캐시(_state)는 "재마운트 시 즉시 복원"용으로만 썼다. 그 결과 한 컴포넌트
+// (예: ComparablesManager)에서 저장해도 같은 화면의 다른 컴포넌트(예: 상위 페이지)는
+// 자기 useState가 그대로라 갱신을 못 보고, "저장했는데 다음 단계에 0개로 보임" 같은
+// 버그가 났다. useSyncExternalStore로 모든 인스턴스가 동일한 _state를 구독하게 해서
+// 어느 컴포넌트가 바꾸든 즉시 전체에 반영되게 한다.
 type StoreSnapshot = {
   apartments: Apartment[];
   comparableRules: ComparableRule[];
@@ -23,10 +28,47 @@ type StoreSnapshot = {
 
 type LoadResult = { snapshot: StoreSnapshot; source: "db" | "local" };
 
-let _cache: StoreSnapshot | null = null;
+type FullState = {
+  ready: boolean;
+  dataSource: "db" | "local" | null;
+  snapshot: StoreSnapshot;
+};
+
+function emptySnapshot(): StoreSnapshot {
+  return {
+    apartments: [],
+    comparableRules: [],
+    comparableApartments: [],
+    transactions: [],
+    listings: [],
+    inventorySignals: [],
+    priceEstimates: [],
+  };
+}
+
+let _state: FullState = { ready: false, dataSource: null, snapshot: emptySnapshot() };
 let _cacheAt = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 let _loadPromise: Promise<LoadResult> | null = null;
+const _listeners = new Set<() => void>();
+
+function _setState(patch: Partial<FullState>) {
+  _state = { ..._state, ...patch };
+  _listeners.forEach((fn) => fn());
+}
+
+function _subscribe(fn: () => void) {
+  _listeners.add(fn);
+  return () => _listeners.delete(fn);
+}
+
+function _getState() {
+  return _state;
+}
+
+function _getServerState() {
+  return _state;
+}
 
 async function _loadFromSource(): Promise<LoadResult> {
   try {
@@ -70,10 +112,9 @@ async function _loadFromSource(): Promise<LoadResult> {
 
 function _getOrLoad(): Promise<LoadResult> {
   const now = Date.now();
-  if (_cache && now - _cacheAt < CACHE_TTL_MS) return Promise.resolve({ snapshot: _cache, source: "db" as const });
+  if (_state.ready && now - _cacheAt < CACHE_TTL_MS) return Promise.resolve({ snapshot: _state.snapshot, source: _state.dataSource ?? "db" });
   if (!_loadPromise) {
     _loadPromise = _loadFromSource().then((r) => {
-      _cache = r.snapshot;
       _cacheAt = Date.now();
       _loadPromise = null;
       return r;
@@ -83,122 +124,79 @@ function _getOrLoad(): Promise<LoadResult> {
 }
 
 export function invalidateStoreCache() {
-  _cache = null;
   _cacheAt = 0;
   _loadPromise = null;
+  _setState({ ready: false, dataSource: null, snapshot: emptySnapshot() });
+}
+
+// ── 공유 setter — 항상 최신 _state.snapshot 기준으로 갱신하므로 어느 컴포넌트에서
+// 호출해도 레이스 없이 안전하다(함수형 업데이트도 계속 지원). ─────────────────────
+function setApartments(next: Apartment[] | ((prev: Apartment[]) => Apartment[])) {
+  const resolved = typeof next === "function" ? next(_state.snapshot.apartments) : next;
+  _setState({ snapshot: { ..._state.snapshot, apartments: resolved } });
+  dbSave("apartments", resolved).catch(() => writeStorage(STORAGE_KEYS.apartments, resolved));
+}
+function setComparableRules(next: ComparableRule[] | ((prev: ComparableRule[]) => ComparableRule[])) {
+  const resolved = typeof next === "function" ? next(_state.snapshot.comparableRules) : next;
+  _setState({ snapshot: { ..._state.snapshot, comparableRules: resolved } });
+  dbSave("comparable_rules", resolved).catch(() => writeStorage(STORAGE_KEYS.comparableRules, resolved));
+}
+function setComparableApartments(next: ComparableApartment[] | ((prev: ComparableApartment[]) => ComparableApartment[])) {
+  const resolved = typeof next === "function" ? next(_state.snapshot.comparableApartments) : next;
+  _setState({ snapshot: { ..._state.snapshot, comparableApartments: resolved } });
+  dbSave("comparable_apartments", resolved).catch(() => writeStorage(STORAGE_KEYS.comparableApartments, resolved));
+}
+function setTransactions(next: Transaction[] | ((prev: Transaction[]) => Transaction[])) {
+  const resolved = typeof next === "function" ? next(_state.snapshot.transactions) : next;
+  _setState({ snapshot: { ..._state.snapshot, transactions: resolved } });
+  dbSave("transactions", resolved).catch(() => writeStorage(STORAGE_KEYS.transactions, resolved));
+}
+function setListings(next: Listing[] | ((prev: Listing[]) => Listing[])) {
+  const resolved = typeof next === "function" ? next(_state.snapshot.listings) : next;
+  _setState({ snapshot: { ..._state.snapshot, listings: resolved } });
+  dbSave("listings", resolved).catch(() => writeStorage(STORAGE_KEYS.listings, resolved));
+}
+function setInventorySignals(next: InventorySignal[] | ((prev: InventorySignal[]) => InventorySignal[])) {
+  const resolved = typeof next === "function" ? next(_state.snapshot.inventorySignals) : next;
+  _setState({ snapshot: { ..._state.snapshot, inventorySignals: resolved } });
+  dbSave("inventory_signals", resolved).catch(() => writeStorage(STORAGE_KEYS.inventorySignals, resolved));
+}
+function setPriceEstimates(next: PriceEstimate[] | ((prev: PriceEstimate[]) => PriceEstimate[])) {
+  const resolved = typeof next === "function" ? next(_state.snapshot.priceEstimates) : next;
+  _setState({ snapshot: { ..._state.snapshot, priceEstimates: resolved } });
+  dbSave("price_estimates", resolved).catch(() => writeStorage(STORAGE_KEYS.priceEstimates, resolved));
 }
 
 // ── Hook ──────────────────────────────────────────────────────────
 export function useRealtyStore() {
-  // 캐시 있으면 lazy initializer로 즉시 초기화 (재마운트 시 로딩 없음)
-  const [apartments, setApartmentsState] = useState<Apartment[]>(() => _cache?.apartments ?? []);
-  const [comparableRules, setComparableRulesState] = useState<ComparableRule[]>(() => _cache?.comparableRules ?? []);
-  const [comparableApartments, setComparableApartmentsState] = useState<ComparableApartment[]>(() => _cache?.comparableApartments ?? []);
-  const [transactions, setTransactionsState] = useState<Transaction[]>(() => _cache?.transactions ?? []);
-  const [listings, setListingsState] = useState<Listing[]>(() => _cache?.listings ?? []);
-  const [inventorySignals, setInventorySignalsState] = useState<InventorySignal[]>(() => _cache?.inventorySignals ?? []);
-  const [priceEstimates, setPriceEstimatesState] = useState<PriceEstimate[]>(() => _cache?.priceEstimates ?? []);
-  const [ready, setReady] = useState(() => _cache !== null);
-  const [dataSource, setDataSource] = useState<"db" | "local" | null>(() => _cache ? "db" : null);
-
-  function _applySnapshot(s: StoreSnapshot, source: "db" | "local") {
-    setApartmentsState(s.apartments);
-    setComparableRulesState(s.comparableRules);
-    setComparableApartmentsState(s.comparableApartments);
-    setTransactionsState(s.transactions);
-    setListingsState(s.listings);
-    setInventorySignalsState(s.inventorySignals);
-    setPriceEstimatesState(s.priceEstimates);
-    setReady(true);
-    setDataSource(source);
-  }
+  const state = useSyncExternalStore(_subscribe, _getState, _getServerState);
 
   useEffect(() => {
-    if (_cache) return; // 이미 캐시됨 — DB 재조회 불필요
-    _getOrLoad().then((r) => _applySnapshot(r.snapshot, r.source));
+    if (state.ready) return;
+    _getOrLoad().then((r) => _setState({ ready: true, dataSource: r.source, snapshot: r.snapshot }));
     if (!readStorage(STORAGE_KEYS.modelSettings, null)) writeStorage(STORAGE_KEYS.modelSettings, defaultModelWeights);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.ready]);
 
   // 다른 탭에서 데이터를 변경하면 캐시 무효화 후 재로드
   useEffect(() => {
     function handleStorageChange(e: StorageEvent) {
-      if (!e.key?.startsWith("realty_")) return;
-      _cache = null;
+      if (!e.key?.startsWith("realty_") && !e.key?.startsWith("real_estate_signal_")) return;
+      _cacheAt = 0;
       _loadPromise = null;
-      _getOrLoad().then((r) => _applySnapshot(r.snapshot, r.source));
+      _getOrLoad().then((r) => _setState({ ready: true, dataSource: r.source, snapshot: r.snapshot }));
     }
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
-  // 각 setter는 값뿐 아니라 React의 표준 함수형 업데이트(prev => next)도 받는다.
-  // 값 형태(setX(newArray))로만 받으면, 같은 렌더 사이클 안에서 여러 번 연달아
-  // 호출될 때(예: 자동추천 여러 단지를 빠르게 추가) 각 호출이 "마지막 렌더 시점"의
-  // stale한 배열을 기준으로 새 배열을 만들어 서로 덮어써버리는 레이스가 생긴다.
-  // setXState(prev => ...) 형태를 쓰면 React가 항상 최신 대기 상태를 넘겨줘 안전하다.
-  function setApartments(next: Apartment[] | ((prev: Apartment[]) => Apartment[])) {
-    setApartmentsState((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      if (_cache) _cache.apartments = resolved;
-      dbSave("apartments", resolved).catch(() => writeStorage(STORAGE_KEYS.apartments, resolved));
-      return resolved;
-    });
-  }
-  function setComparableRules(next: ComparableRule[] | ((prev: ComparableRule[]) => ComparableRule[])) {
-    setComparableRulesState((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      if (_cache) _cache.comparableRules = resolved;
-      dbSave("comparable_rules", resolved).catch(() => writeStorage(STORAGE_KEYS.comparableRules, resolved));
-      return resolved;
-    });
-  }
-  function setComparableApartments(next: ComparableApartment[] | ((prev: ComparableApartment[]) => ComparableApartment[])) {
-    setComparableApartmentsState((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      if (_cache) _cache.comparableApartments = resolved;
-      dbSave("comparable_apartments", resolved).catch(() => writeStorage(STORAGE_KEYS.comparableApartments, resolved));
-      return resolved;
-    });
-  }
-  function setTransactions(next: Transaction[] | ((prev: Transaction[]) => Transaction[])) {
-    setTransactionsState((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      if (_cache) _cache.transactions = resolved;
-      dbSave("transactions", resolved).catch(() => writeStorage(STORAGE_KEYS.transactions, resolved));
-      return resolved;
-    });
-  }
-  function setListings(next: Listing[] | ((prev: Listing[]) => Listing[])) {
-    setListingsState((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      if (_cache) _cache.listings = resolved;
-      dbSave("listings", resolved).catch(() => writeStorage(STORAGE_KEYS.listings, resolved));
-      return resolved;
-    });
-  }
-  function setInventorySignals(next: InventorySignal[] | ((prev: InventorySignal[]) => InventorySignal[])) {
-    setInventorySignalsState((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      if (_cache) _cache.inventorySignals = resolved;
-      dbSave("inventory_signals", resolved).catch(() => writeStorage(STORAGE_KEYS.inventorySignals, resolved));
-      return resolved;
-    });
-  }
-  function setPriceEstimates(next: PriceEstimate[] | ((prev: PriceEstimate[]) => PriceEstimate[])) {
-    setPriceEstimatesState((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      if (_cache) _cache.priceEstimates = resolved;
-      dbSave("price_estimates", resolved).catch(() => writeStorage(STORAGE_KEYS.priceEstimates, resolved));
-      return resolved;
-    });
-  }
+  const { apartments, comparableRules, comparableApartments, transactions, listings, inventorySignals, priceEstimates } = state.snapshot;
 
   const targets = useMemo(() => apartments.filter((x) => x.role === "target"), [apartments]);
   const comparables = useMemo(() => apartments.filter((x) => x.role === "comparable"), [apartments]);
 
   return {
-    ready,
-    dataSource,
+    ready: state.ready,
+    dataSource: state.dataSource,
     apartments,
     targets,
     comparables,

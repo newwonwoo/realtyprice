@@ -183,6 +183,13 @@ export function ComparablesManager({ targetId, showCollectors = true }: { target
     ? (store.apartments.find((a) => a.id === rule.leaderApartmentId)?.name ?? LEADER_APARTMENTS.find((e) => e.region + "_" + e.name === rule.leaderApartmentId)?.name)
     : undefined;
 
+  // 대장은 가중치 평균이 아니라 별도 비율(spillover 앵커)로 반영되지만, 사용자가 "표에 왜 없냐"고
+  // 반복 지적한 항목 — 비교단지 표에도 항상 같이 보여준다(자신이 대장인 경우는 제외).
+  const isSelfLeader = rule.leaderApartmentId === activeTargetId;
+  const leaderApt = rule.leaderApartmentId && !isSelfLeader
+    ? store.apartments.find((a) => a.id === rule.leaderApartmentId)
+    : undefined;
+
   if (!activeTarget) {
     return <p className="text-sm text-slate-400">대상아파트를 먼저 선택하세요.</p>;
   }
@@ -362,6 +369,7 @@ export function ComparablesManager({ targetId, showCollectors = true }: { target
         <div className="px-5 py-3 flex items-center gap-3 border-b border-slate-100">
           <span className="text-sm text-slate-600">
             가중치 합계: <span className={weightSum === 100 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>{weightSum}</span>
+            <span className="text-slate-400 text-xs ml-1">(비교단지만 해당 · 대장은 위 비율로 별도 반영)</span>
             {weightSum !== 100 && <span className="text-amber-500 text-xs ml-1">(합이 100이 아닙니다 — 상대 비율로 자동 환산됩니다)</span>}
           </span>
           {linkedComparables.length > 0 && (
@@ -371,6 +379,21 @@ export function ComparablesManager({ targetId, showCollectors = true }: { target
         <table className="table w-full">
           <thead><tr><th>단지명</th><th>지역</th><th>입주</th><th>세대수</th><th>가중치</th><th>삭제</th></tr></thead>
           <tbody>
+            {leaderApt && (
+              <tr className="bg-blue-50/60">
+                <td className="font-semibold flex items-center gap-1.5">
+                  <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white shrink-0">대장</span>
+                  {leaderApt.name}
+                </td>
+                <td>{leaderApt.region}</td>
+                <td>{leaderApt.builtYear ?? "-"}</td>
+                <td>{leaderApt.households ?? "-"}</td>
+                <td className="text-xs text-blue-700 font-semibold whitespace-nowrap">
+                  대상 비율 {rule.targetToLeaderRatio !== undefined ? `${Math.round(rule.targetToLeaderRatio * 100)}%` : "미설정"}
+                </td>
+                <td className="text-xs text-slate-400 whitespace-nowrap">위 설정에서 변경</td>
+              </tr>
+            )}
             {linkedComparables.map((apartment) => {
               const link = store.comparableApartments.find((item) => item.targetApartmentId === activeTargetId && item.apartmentId === apartment.id);
               return (
@@ -404,7 +427,7 @@ export function ComparablesManager({ targetId, showCollectors = true }: { target
                 </tr>
               );
             })}
-            {!linkedComparables.length && (
+            {!linkedComparables.length && !leaderApt && (
               <tr><td colSpan={6} className="text-center text-slate-500">이 대상에 연결된 비교단지가 없습니다. 위 자동추천에서 추가하세요.</td></tr>
             )}
           </tbody>

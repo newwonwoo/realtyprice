@@ -897,24 +897,24 @@ export function ListingFetcher({ apartments }: Props) {
 
               {kb.prices.length > 0 && (
                 <div>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-semibold text-slate-600">{kb.prices.filter(p => p.price).length}개 면적 시세</span>
-                    <span className="text-xs text-emerald-600">자동저장됨</span>
+                    <span className="text-xs font-semibold text-emerald-600">자동저장됨</span>
                   </div>
-                  <div className="rounded border divide-y text-xs">
+                  <div className="rounded-lg border border-slate-300 divide-y divide-slate-200 text-xs overflow-hidden">
                     {kb.prices.map(({ area, price, reason }) => (
-                      <div key={area.areaNo} className="px-3 py-2">
-                        <p className="font-semibold text-slate-700 mb-1">{area.typeName} ({area.exclusiveArea}㎡)</p>
+                      <div key={area.areaNo} className="bg-white px-3 py-2.5">
+                        <p className="font-semibold text-slate-700 mb-1.5">{area.typeName} <span className="text-slate-400 font-normal">({area.exclusiveArea}㎡)</span></p>
                         {price ? (
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-slate-600">
-                            <span>매매</span><span className="font-semibold text-slate-800">{formatEok(price.saleGeneral)}</span>
-                            <span>매매 상/하한</span><span>{formatEok(price.saleUpper)} / {formatEok(price.saleLower)}</span>
-                            <span>전세</span><span className="font-semibold text-slate-800">{formatEok(price.jeonseGeneral)}</span>
-                            <span>전세 상/하한</span><span>{formatEok(price.jeonseUpper)} / {formatEok(price.jeonseLower)}</span>
-                            <span className="col-span-2 text-slate-400 mt-0.5">기준: {price.baseDate}</span>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md bg-slate-50 px-2.5 py-2 text-slate-600">
+                            <span>매매</span><span className="text-right font-semibold text-slate-800 tabular-nums">{formatEok(price.saleGeneral)}</span>
+                            <span>매매 상/하한</span><span className="text-right tabular-nums">{formatEok(price.saleUpper)} / {formatEok(price.saleLower)}</span>
+                            <span>전세</span><span className="text-right font-semibold text-slate-800 tabular-nums">{formatEok(price.jeonseGeneral)}</span>
+                            <span>전세 상/하한</span><span className="text-right tabular-nums">{formatEok(price.jeonseUpper)} / {formatEok(price.jeonseLower)}</span>
+                            <span className="col-span-2 mt-0.5 border-t border-slate-200 pt-1 text-slate-400">기준: {price.baseDate}</span>
                           </div>
                         ) : (
-                          <p className="text-amber-600">{reason || "시세 없음"}</p>
+                          <p className="rounded-md bg-amber-50 px-2.5 py-2 text-amber-600">{reason || "시세 없음"}</p>
                         )}
                       </div>
                     ))}

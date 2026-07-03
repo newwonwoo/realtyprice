@@ -332,12 +332,12 @@ export default function TargetDetailPage() {
           <h1 className="mt-1.5 text-3xl font-black">{apartment.name}</h1>
           <p className="mt-2 text-slate-600">{apartment.address}</p>
         </div>
-        <div className="flex flex-col gap-2 items-start sm:items-end">
+        <div className="flex flex-col gap-3 items-start sm:items-end">
           <ExternalLinks apartmentName={apartment.name} />
           {/* 입주예정년월 빠른 편집 */}
           {editingMoveIn ? (
             <form
-              className="flex items-center gap-2"
+              className="flex flex-wrap items-center justify-end gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 const val = moveInInput.replace(/\D/g, "").slice(0, 6);
@@ -435,8 +435,6 @@ export default function TargetDetailPage() {
       {dataStage === 2 && (
         <div className="space-y-4">
           <ComparablesManager targetId={apartment.id} showCollectors={false} />
-          {/* 대장은 비교단지 표와 다른 방식(가중치 아닌 비율)으로 관리되어 표에 안 보일 뿐,
-              다음 단계에는 항상 함께 포함된다 — "왜 대장이 빠졌냐" 오해 방지용 명시 안내. */}
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
             <span className="font-semibold text-slate-700">다음 단계 수집 대상 — 총 {collectionTargets.length}개 단지:</span>{" "}
             {collectionTargets.map(({ apartment: a, role }) => `${{ target: "대상", leader: "대장", comparable: "비교" }[role]} ${a.shortName ?? a.name}`).join(" · ")}
@@ -534,41 +532,41 @@ export default function TargetDetailPage() {
               <h2 className="text-xl font-black">가격추정 실행</h2>
               <p className="mt-1 text-sm text-slate-500">대상·비교단지 실거래/호가를 선택 평형 기준으로 환산하고 입지 보정을 반영합니다.</p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <label className="text-xs font-bold text-slate-600">전용면적
+            <div className="flex flex-col flex-wrap items-stretch gap-3 lg:flex-row lg:items-center">
+              <label className="text-xs font-bold text-slate-600 whitespace-nowrap">전용면적
                 <select className="input ml-2 w-32" value={effectiveArea} onChange={(event) => setSelectedArea(Number(event.target.value))}>
                   {areaOptions.length ? areaOptions.map((area) => <option key={area} value={area}>{area}㎡</option>) : <option value={effectiveArea}>{effectiveArea}㎡</option>}
                 </select>
               </label>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 lg:max-w-[220px]">
                 <label
                   className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${supplyCliffMode ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-500"}`}
                 >
                   <input type="checkbox" className="sr-only" checked={supplyCliffMode} onChange={(e) => setSupplyCliffMode(e.target.checked)} />
-                  <span className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${supplyCliffMode ? "bg-orange-400" : "bg-slate-200"}`}>
+                  <span className={`flex h-4 w-7 flex-shrink-0 items-center rounded-full p-0.5 transition-colors ${supplyCliffMode ? "bg-orange-400" : "bg-slate-200"}`}>
                     <span className={`block h-3 w-3 rounded-full bg-white shadow transition-transform ${supplyCliffMode ? "translate-x-3" : "translate-x-0"}`} />
                   </span>
-                  공급절벽 모드
+                  <span className="whitespace-nowrap">공급절벽 모드</span>
                   {supplyCliffRecommended && !supplyCliffMode && (
-                    <button type="button" onClick={(e) => { e.preventDefault(); setSupplyCliffMode(true); }} className="ml-1 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700 hover:bg-orange-200">
+                    <button type="button" onClick={(e) => { e.preventDefault(); setSupplyCliffMode(true); }} className="ml-1 whitespace-nowrap rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700 hover:bg-orange-200">
                       공급절벽 감지 · 켜기
                     </button>
                   )}
                 </label>
-                <span className="text-[10px] leading-tight text-slate-400 max-w-[200px]">켜면 입지 비중↓, 전세 소진·호가 lock-in을 상방요인으로 가중</span>
+                <span className="text-[10px] leading-tight text-slate-400">켜면 입지 비중↓, 전세 소진·호가 lock-in을 상방요인으로 가중</span>
               </div>
-            <button
-              className={`relative min-w-[140px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all ${!allReady ? "opacity-70" : ""}`}
-              onClick={runEstimate}
-              disabled={estimating}
-            >
-              {estimating ? (
-                <span className="flex items-center gap-2 justify-center">
-                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  추정 중…
-                </span>
-              ) : "가격추정 실행"}
-            </button>
+              <button
+                className={`relative min-w-[140px] shrink-0 bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl shadow-sm hover:shadow-md transition-all ${!allReady ? "opacity-70" : ""}`}
+                onClick={runEstimate}
+                disabled={estimating}
+              >
+                {estimating ? (
+                  <span className="flex items-center gap-2 justify-center">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    추정 중…
+                  </span>
+                ) : "가격추정 실행"}
+              </button>
             </div>
           </div>
 
