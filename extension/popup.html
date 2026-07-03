@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<style>
+  body { font: 13px/1.5 -apple-system, sans-serif; width: 300px; padding: 12px; color: #222; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  label { display: block; margin: 8px 0 2px; color: #555; font-size: 12px; }
+  input { width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+  button { width: 100%; padding: 8px; margin-top: 8px; border: 0; border-radius: 6px; cursor: pointer; font-weight: bold; }
+  .primary { background: #03c75a; color: #fff; }
+  .ghost { background: #f2f2f2; }
+  #st { margin-top: 8px; color: #666; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h1>리얼티 실호가 수집기</h1>
+  <label>앱 주소 (Origin)</label>
+  <input id="origin" placeholder="https://내앱.vercel.app" />
+  <label>인제스트 시크릿 (앱 INGEST_SECRET 설정 시)</label>
+  <input id="secret" type="password" placeholder="선택 — 미설정이면 비워둠" />
+  <button id="save" class="ghost">설정 저장</button>
+  <button id="all" class="primary">대상 리스트 전체 수집 (실험적)</button>
+  <div id="st"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

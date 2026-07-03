@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "리얼티 실호가 수집기",
+  "version": "0.1.0",
+  "description": "네이버 부동산에서 대상 단지의 전용84 실매물 호가를 사용자 브라우저로 수집해 리얼티프라이스 앱으로 저장합니다. 사용자가 직접 트리거할 때만 동작합니다.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": [
+    "https://new.land.naver.com/*",
+    "https://*.vercel.app/*",
+    "http://localhost/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "리얼티 실호가 수집기" },
+  "content_scripts": [
+    {
+      "matches": ["https://new.land.naver.com/*"],
+      "js": ["content-naver.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.vercel.app/*", "http://localhost/*"],
+      "js": ["content-app.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    { "resources": ["injected.js"], "matches": ["https://new.land.naver.com/*"] }
+  ]
+}

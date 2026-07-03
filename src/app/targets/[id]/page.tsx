@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { ExternalLinks } from "@/components/targets/ExternalLinks";
 import { UnifiedTransactionFetcher } from "@/components/targets/UnifiedTransactionFetcher";
 import { ListingFetcher, type ApartmentWithRole } from "@/components/listings/ListingFetcher";
+import { NaverCollectButton } from "@/components/listings/NaverCollectButton";
 import { AptDetailInfo } from "@/components/targets/AptDetailInfo";
 import { ComparablesManager } from "@/components/comparables/ComparablesManager";
 import { SignalWaterfall } from "@/components/charts/SignalWaterfall";
@@ -492,10 +493,11 @@ export default function TargetDetailPage() {
 
           <div className="card overflow-hidden">
             <div className="border-b border-slate-200 p-5">
-              <p className="font-bold text-slate-700">호가·매물 수집 (직방 · KB)</p>
-              <p className="mt-1 text-xs text-slate-500">동일한 {collectionTargets.length}개 단지의 현재 매물 호가를 수집합니다.</p>
+              <p className="font-bold text-slate-700">호가·매물 수집 (네이버 실호가 · KB시세)</p>
+              <p className="mt-1 text-xs text-slate-500">동일한 {collectionTargets.length}개 단지의 현재 매물 호가를 수집합니다. (직방은 서버 IP 차단으로 중단 — 네이버 실호가는 확장으로 사용자 브라우저 수집)</p>
             </div>
-            <div className="p-4">
+            <div className="p-4 space-y-3">
+              <NaverCollectButton apartments={collectionTargets} />
               <ListingFetcher apartments={collectionTargets} />
             </div>
           </div>
