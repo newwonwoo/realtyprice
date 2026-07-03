@@ -35,6 +35,19 @@ function tradeTypeToListingType(a: NaverArticle): "sale" | "jeonse" | null {
   return null; // 월세(B2) 등은 제외
 }
 
+// 전용면적(㎡) 추출 — 스키마 변형에 강하게.
+// 우선순위: area2(전용, 표준) → exclusiveArea/spc2 → areaName 파싱.
+// areaName은 "109/84"(공급/전용) 또는 "84.98" 형태 → 두 값이면 작은 쪽(전용), 하나면 그 값.
+export function extractExclusiveArea(a: NaverArticle): number {
+  const direct = Number(a.area2 ?? a.exclusiveArea ?? a.spc2 ?? 0);
+  if (direct > 0) return direct;
+  const name = String(a.areaName ?? "");
+  const nums = (name.match(/\d+(\.\d+)?/g) ?? []).map(Number).filter((n) => n >= 20 && n <= 400);
+  if (nums.length >= 2) return Math.min(...nums); // 공급/전용 → 전용(작은 값)
+  if (nums.length === 1) return nums[0];
+  return 0;
+}
+
 export type IngestParams = {
   apartmentId: string;
   complexNo: string;
@@ -52,7 +65,7 @@ export function naverArticlesToListings(p: IngestParams): Listing[] {
   for (const a of p.articles ?? []) {
     const listingType = tradeTypeToListingType(a);
     if (!listingType) continue;
-    const exclusiveArea = Number(a.area2 ?? a.exclusiveArea ?? a.spc2 ?? 0);
+    const exclusiveArea = extractExclusiveArea(a);
     if (!exclusiveArea || Math.abs(exclusiveArea - targetArea) > areaTol) continue;
     const askingPrice = parseNaverPrice(a.dealOrWarrantPrc);
     if (!askingPrice) continue;
