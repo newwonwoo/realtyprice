@@ -94,7 +94,8 @@
         (res) => {
           if (res && res.ok) {
             $("#rp-res").style.color = "#0a7";
-            $("#rp-res").textContent = `저장됨: 매매 ${res.sale}건 · 전세 ${res.jeonse}건`;
+            const moiTxt = res.moi ? ` · MOI ${res.moi}개월` : "";
+            $("#rp-res").textContent = `저장됨: 매매 ${res.sale}건 · 전세 ${res.jeonse}건 · 활성매물 ${res.activeListings ?? res.sale}${moiTxt}`;
           } else {
             $("#rp-res").style.color = "#c00";
             $("#rp-res").textContent = "저장 실패: " + ((res && res.error) || "앱 설정(팝업)에서 앱 주소 확인");

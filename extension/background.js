@@ -22,7 +22,7 @@ async function ingest(apartmentId, complexNo, articles) {
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false, error: j.error || ("HTTP " + res.status) };
-    return { ok: true, sale: j.sale, jeonse: j.jeonse, saved: j.saved };
+    return { ok: true, sale: j.sale, jeonse: j.jeonse, saved: j.saved, moi: j.moi, activeListings: j.activeListings };
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
   }
