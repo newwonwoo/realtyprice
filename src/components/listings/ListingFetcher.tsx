@@ -244,6 +244,8 @@ export function ListingFetcher({ apartments }: Props) {
     try {
       const server = await viaServer();
       if (server.reasonCode === "ok" || server.reasonCode === "disambiguation") return server;
+      // 직방이 서버 IP를 지속 차단해 기본 비활성화된 상태 — 브라우저 직접 호출도 시도하지 않는다.
+      if (server.reasonCode === "disabled") return server;
       // 서버도 못 찾았으면 브라우저 직접 호출로 한 번 더 시도(사용자 실제 한국 IP 세션).
       const zbQ = encodeURIComponent(query).replace(/%2D/gi, "-");
       const res = await fetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${zbQ}`, { headers: ZB_HEADERS, signal: AbortSignal.timeout(8000) });
@@ -276,6 +278,10 @@ export function ListingFetcher({ apartments }: Props) {
 
     for (const candidate of candidates) {
       const r = await zbSearchOne(candidate);
+      if (r.reasonCode === "disabled") {
+        // 비활성화 상태면 다른 후보로 재시도해도 동일한 결과 — 즉시 반환
+        return { ...r, usedQuery: candidate };
+      }
       if (r.reasonCode === "blocked" || r.reasonCode === "upstream_error" || r.reasonCode === "error") {
         // 네트워크/차단 오류면 재시도 의미 없음
         return { ...r, usedQuery: candidate };
@@ -399,7 +405,9 @@ export function ListingFetcher({ apartments }: Props) {
       const s = await zbSearch(a.id, query, a.region);
       if (s.reasonCode !== "ok" || !s.complexList.length) {
         setZbStates((p) => ({ ...p, [a.id]: { ...(p[a.id] ?? defaultZb(a)), loading: false, reasonCode: s.reasonCode, reason: s.reason, complexList: s.complexList } }));
-        if (s.reasonCode === "complex_not_found" && isPreCompletion(a)) zbPendingNames.push(a.name);
+        // 직방은 서버 차단으로 기본 비활성화됨 — 시도조차 안 한 상태라 성공/실패 어느 쪽에도 안 셈
+        if (s.reasonCode === "disabled") { /* no-op */ }
+        else if (s.reasonCode === "complex_not_found" && isPreCompletion(a)) zbPendingNames.push(a.name);
         else zbFailNames.push(a.name);
       } else {
         const complexId = s.complexList[0].complexId;
@@ -675,7 +683,7 @@ export function ListingFetcher({ apartments }: Props) {
           const cnt = store.listings.filter((l) => l.apartmentId === a.id).length;
           const zbS = zbStates[a.id];
           const kbS = kbStates[a.id];
-          const hasError = (zbS?.reasonCode && !["ok","disambiguation","","no_listings","pre_completion"].includes(zbS.reasonCode)) ||
+          const hasError = (zbS?.reasonCode && !["ok","disambiguation","","no_listings","pre_completion","disabled"].includes(zbS.reasonCode)) ||
                            (kbS?.reasonCode && !["ok","disambiguation","","no_price_data","no_priced_area","pre_completion"].includes(kbS.reasonCode));
           return (
             <div
@@ -738,14 +746,15 @@ export function ListingFetcher({ apartments }: Props) {
           const kbS = kbStates[a.id] ?? defaultKb(a);
           const cnt = store.listings.filter((l) => l.apartmentId === a.id).length;
           const zbPre = zbS.reasonCode === "complex_not_found" && isPreCompletion(a);
-          const zbBad = !!zbS.reasonCode && !["ok","disambiguation","","no_listings"].includes(zbS.reasonCode) && !zbPre;
+          const zbDisabled = zbS.reasonCode === "disabled";
+          const zbBad = !!zbS.reasonCode && !["ok","disambiguation","","no_listings","disabled"].includes(zbS.reasonCode) && !zbPre;
           const kbBad = !!kbS.reasonCode && !["ok","disambiguation","","no_price_data","no_priced_area","pre_completion"].includes(kbS.reasonCode);
           return (
             <div key={a.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
               <span className={`px-1.5 py-0.5 rounded font-bold ${ROLE_COLOR[role]}`}>{ROLE_LABEL[role]}</span>
               <span className="font-semibold text-slate-700">{a.name}</span>
-              <span className={zbBad ? "text-red-500 font-semibold" : zbS.reasonCode === "ok" ? "text-emerald-600" : zbPre ? "text-amber-600 font-semibold" : "text-slate-400"}>
-                직방 {zbS.reasonCode === "ok" ? `매매${zbS.sale.length}·전세${zbS.jeonse.length}` : zbPre ? "미검색(분양권 재시도 필요)" : zbBad ? "실패" : "미수집"}
+              <span className={zbBad ? "text-red-500 font-semibold" : zbS.reasonCode === "ok" ? "text-emerald-600" : zbPre ? "text-amber-600 font-semibold" : "text-slate-300"}>
+                직방 {zbS.reasonCode === "ok" ? `매매${zbS.sale.length}·전세${zbS.jeonse.length}` : zbDisabled ? "비활성화됨" : zbPre ? "미검색(분양권 재시도 필요)" : zbBad ? "실패" : "미수집"}
               </span>
               <span className={kbBad ? "text-red-500 font-semibold" : kbS.reasonCode === "ok" ? "text-blue-600" : "text-slate-400"}>
                 KB {kbS.reasonCode === "ok" ? `${kbS.prices.filter((p) => p.price).length}개 면적` : kbS.reasonCode === "pre_completion" ? "미등록(정상)" : kbBad ? "실패" : "미수집"}
@@ -815,12 +824,15 @@ export function ListingFetcher({ apartments }: Props) {
 
               {zb.reasonCode && !["ok","disambiguation"].includes(zb.reasonCode) && (() => {
                 const zbPre = zb.reasonCode === "complex_not_found" && isPreCompletion(apt);
+                const zbDisabled = zb.reasonCode === "disabled";
                 return (
-                  <div className={`rounded border px-3 py-2 text-xs ${zbPre ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+                  <div className={`rounded border px-3 py-2 text-xs ${zbDisabled ? "bg-slate-50 border-slate-200 text-slate-500" : zbPre ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-red-50 border-red-200 text-red-700"}`}>
                     <span className="font-semibold">
-                      {zbPre ? "신축·분양권 (단지 미검색)" : zb.reasonCode === "complex_not_found" ? "단지 미발견" : zb.reasonCode === "no_listings" ? "매물 없음" : "오류"}
+                      {zbDisabled ? "직방 수집 비활성화됨" : zbPre ? "신축·분양권 (단지 미검색)" : zb.reasonCode === "complex_not_found" ? "단지 미발견" : zb.reasonCode === "no_listings" ? "매물 없음" : "오류"}
                     </span>
-                    {zbPre
+                    {zbDisabled
+                      ? <span className="ml-1 text-slate-400">직방이 서버 요청을 지속 차단해 기본 비활성화했습니다. 국토부 실거래·KB 시세로 대체됩니다.</span>
+                      : zbPre
                       ? <span className="ml-1 text-amber-600">분양권도 직방에 호가가 등록될 수 있습니다 — 검색어를 다르게 바꿔 다시 시도해보세요.</span>
                       : zb.reason && <span className="ml-1 text-red-500">{zb.reason}</span>}
                   </div>

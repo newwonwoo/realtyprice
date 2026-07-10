@@ -34,6 +34,7 @@ export type ZigbangReasonCode =
   | "no_listings"      // 단지는 찾았으나 등록 매물 0건 (분양권/신축 등)
   | "blocked"          // 직방이 (서버 IP) 차단/요청제한 (403/429)
   | "upstream_error"   // 직방 서버 오류 (5xx)
+  | "disabled"         // ENABLE_ZIGBANG!=="true" — 서버가 계속 차단당해 기본 비활성화
   | "error";           // 네트워크/타임아웃/예외
 
 type FetchJson = { ok: boolean; status: number; json: unknown };
@@ -98,7 +99,13 @@ function empty(reasonCode: ZigbangReasonCode, reason: string, extra: Record<stri
   });
 }
 
+// 직방이 서버(Vercel) IP 요청을 지속적으로 차단해(완공단지 포함 전면 실패 관측됨)
+// 기본 비활성화. 재활성화하려면 ENABLE_ZIGBANG=true를 명시적으로 설정.
 export async function GET(req: NextRequest) {
+  if (process.env.ENABLE_ZIGBANG !== "true") {
+    return empty("disabled", "직방 수집이 비활성화되어 있습니다 (직방의 서버 IP 차단으로 인한 기본 설정). 재활성화하려면 ENABLE_ZIGBANG=true 환경변수를 설정하세요.");
+  }
+
   const { searchParams } = new URL(req.url);
   const aptName = searchParams.get("aptName");
   const complexId = searchParams.get("complexId");

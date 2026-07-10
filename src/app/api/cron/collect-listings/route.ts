@@ -78,9 +78,9 @@ async function collectOne(apt: AptRow, today: string): Promise<{ listings: Listi
   const region: string = (apt.data.region as string) || "";
   const defaultArea: number = (apt.data.defaultArea as number) || 0;
 
-  // ── 직방 ──
-  const candidates = generateSearchCandidates(aptName, region);
+  // ── 직방 (직방이 서버 IP를 지속 차단해 기본 비활성화 — ENABLE_ZIGBANG=true로 재활성화) ──
   let zbComplexId = "";
+  const candidates = process.env.ENABLE_ZIGBANG === "true" ? generateSearchCandidates(aptName, region) : [];
   for (const candidate of candidates) {
     const zbQ = encodeURIComponent(candidate).replace(/%2D/gi, "-");
     const s = await zbFetch(`${ZB_BASE}/v2/search?serviceType=아파트&q=${zbQ}`);
