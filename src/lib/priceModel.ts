@@ -546,8 +546,8 @@ export function estimatePrice(params: {
         // ── 예상가(매매) 앵커 ──
         priceFactor("대상단지 실거래가", "가격 — 대상단지 매매·분양권 실거래", targetSalePrice, weights.targetSale ?? 0),
         priceFactor("비교단지 보정 실거래가", "가격 — 비교단지 매매 실거래(상·하급지 보정)", adjustedComparableSalePrice, weights.adjustedComparableSale ?? 0),
-        priceFactor("비교단지 현재 호가", "가격 — 비교단지 매물 호가", comparableAskingPrice, weights.comparableAskingPrice ?? 0),
-        priceFactor("대상단지 현재 호가", "가격 — 대상단지 매물 호가", saleAskingPrice, weights.askingPrice ?? 0),
+        priceFactor("비교단지 수집된 시세·호가", "가격 — 비교단지 매물 호가", comparableAskingPrice, weights.comparableAskingPrice ?? 0),
+        priceFactor("대상단지 수집된 시세·호가", "가격 — 대상단지 매물 호가", saleAskingPrice, weights.askingPrice ?? 0),
         priceFactor("전세기반 하방가", "가격 — 전세 실거래가(보증금) ÷ 전세가율", jeonseFloorPrice, weights.jeonseFloorPrice ?? 0),
         priceFactor("매물 회전속도 반영가", "매물 회전 — MOI(활성매물 ÷ 월판매속도)", inventorySignalPriceEffect, weights.inventorySignal ?? 0),
         priceFactor("분양가 프리미엄", "가격 — 분양가 대비 실거래 시세비율", presalePremiumPrice, weights.presalePremium ?? 0),
@@ -581,8 +581,8 @@ export function estimatePrice(params: {
   const reasonSummary = [
     targetSalePrice > 0 ? "대상단지 실거래가를 선택 평형 기준으로 반영했습니다." : null,
     adjustedComparableSalePrice > 0 ? "비교단지 보정 실거래가를 선택 평형 기준으로 반영했습니다." : null,
-    comparableAskingPrice > 0 ? "비교단지 현재 호가를 선택 평형 기준으로 반영했습니다." : null,
-    saleAskingPrice > 0 ? "현재 매매호가를 반영했습니다." : null,
+    comparableAskingPrice > 0 ? "비교단지 수집된 시세·호가를 선택 평형 기준으로 반영했습니다." : null,
+    saleAskingPrice > 0 ? "수집된 시세·호가를 반영했습니다." : null,
     jeonseFloorPrice > 0 ? `전세기반 하방가를 반영했습니다. (전세가율 ${Math.round(jeonseRatio * 100)}% ${jeonseRatio !== 0.65 ? "실측" : "기본값"})` : null,
     moiForPrice > 0 && moiForPrice < 3 ? `매물 회전속도가 빠릅니다 (MOI ${moiForPrice}개월 — 매도자우위).` : null,
     leaderApartmentAnchorPrice > 0 ? "인근 대장아파트 실거래가 앵커를 반영했습니다." : null,

@@ -92,13 +92,13 @@ export function PriceTimeline({
           />
           <YAxis type="number" domain={[yMin, yMax]} tickFormatter={(v) => `${v}억`} tick={{ fontSize: 11, fill: "#94a3b8" }} width={44} />
           <Tooltip
-            formatter={(v: number, n: string) => [`${v}억`, n === "tx" ? "실거래" : n === "ask" ? "현재 호가" : n === "avg" ? "실거래 추세" : n]}
+            formatter={(v: number, n: string) => [`${v}억`, n === "tx" ? "실거래" : n === "ask" ? "수집된 시세·호가" : n === "avg" ? "실거래 추세" : n]}
             labelFormatter={(i) => allYms[i as number] ?? ""}
           />
           {/* 예상가 밴드 (min~max) */}
           <ReferenceArea y1={min} y2={max} fill="#3b82f6" fillOpacity={0.08} ifOverflow="extendDomain" />
           <ReferenceLine y={mid} stroke="#2563eb" strokeDasharray="5 4" label={{ value: `예상 ${mid}억`, position: "insideTopRight", fontSize: 10, fill: "#2563eb" }} />
-          <ReferenceLine y={rec} stroke="#10b981" strokeDasharray="2 3" label={{ value: `권장호가 ${rec}억`, position: "insideBottomRight", fontSize: 10, fill: "#10b981" }} />
+          <ReferenceLine y={rec} stroke="#10b981" strokeDasharray="2 3" label={{ value: `권장 등록가 ${rec}억`, position: "insideBottomRight", fontSize: 10, fill: "#10b981" }} />
           <ReferenceLine y={def} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: `방어 ${def}억`, position: "insideBottomRight", fontSize: 10, fill: "#f59e0b" }} />
           {/* 실거래 점 */}
           <Scatter data={txPoints} dataKey="tx" fill="#1d4ed8" />

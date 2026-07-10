@@ -67,7 +67,7 @@ export default function DashboardPage() {
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Summary label="대상아파트" value={`${store.targets.length}개`} />
         <Summary label="가격추정 완료" value={`${store.priceEstimates.length}개`} />
-        <Summary label="중앙 예상 매매가" value={formatEok(median(expectedSales))} />
+        <Summary label="중앙 공식데이터 추정가" value={formatEok(median(expectedSales))} />
         <Summary label="빠른 매물회전(매도자우위)" value={`${strongSignals}개`} helper="MOI<3개월" />
       </div>
 

@@ -26,10 +26,10 @@ export function ApartmentSignalCard({ apartment, estimate }: { apartment: Apartm
         </span>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2">
-        <Metric label="예상 매매가" value={estimate ? `${formatEok(estimate.expectedSaleMin)} ~ ${formatEok(estimate.expectedSaleMax)}` : "-"} />
-        <Metric label="권장 매각호가" value={estimate ? formatEok(estimate.recommendedAskingPrice) : "-"} />
+        <Metric label="공식데이터 추정가" value={estimate ? `${formatEok(estimate.expectedSaleMin)} ~ ${formatEok(estimate.expectedSaleMax)}` : "-"} />
+        <Metric label="모델 권장 등록가" value={estimate ? formatEok(estimate.recommendedAskingPrice) : "-"} />
         <Metric label="예상 전세가" value={estimate ? formatEok(estimate.expectedJeonseMid) : "-"} />
-        <Metric label="상승가능성" value={estimate ? `${estimate.upsideScore}점` : "-"} />
+        <Metric label="시장강도 점수" value={estimate ? `${estimate.upsideScore}점` : "-"} />
         <Metric label="신뢰도" value={estimate ? `${estimate.confidenceScore}점` : "-"} />
         <Metric label="방어가격" value={estimate ? formatEok(estimate.defensePrice) : "-"} />
       </div>

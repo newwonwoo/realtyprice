@@ -9,8 +9,8 @@ import type { ModelWeights } from "@/types/model";
 const labels: Record<keyof ModelWeights, string> = {
   targetSale: "대상단지 실거래가 (선택 평형 환산)",
   adjustedComparableSale: "비교단지 보정 실거래가 (선택 평형 환산)",
-  comparableAskingPrice: "비교단지 현재 호가",
-  askingPrice: "대상단지 현재 호가",
+  comparableAskingPrice: "비교단지 수집된 시세·호가",
+  askingPrice: "대상단지 수집된 시세·호가",
   jeonseFloorPrice: "전세기반 하방가",
   inventorySignal: "매물소진속도",
   presalePremium: "분양가 대비 프리미엄",

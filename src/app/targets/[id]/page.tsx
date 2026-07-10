@@ -500,19 +500,19 @@ export default function TargetDetailPage() {
           )}
         </div>
         <div className="rounded-xl border border-l-4 border-blue-400 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">예상 매매가</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">공식데이터 추정가</p>
           <p className="mt-1 text-4xl font-black tabular-nums text-blue-800">{latestEstimate ? formatEok(latestEstimate.expectedSaleMid) : "-"}</p>
           {latestEstimate && (
             <p className="mt-1 text-xs text-slate-400 tabular-nums">{formatEok(latestEstimate.expectedSaleMin)} ~ {formatEok(latestEstimate.expectedSaleMax)}</p>
           )}
         </div>
         <div className="rounded-xl border border-l-4 border-emerald-400 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">권장 매각호가</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">모델 권장 등록가</p>
           <p className="mt-1 text-2xl font-black tabular-nums text-emerald-800">{latestEstimate ? formatEok(latestEstimate.recommendedAskingPrice) : "-"}</p>
           <p className="mt-1 text-xs text-slate-400">{moi > 0 && moi < 3 ? "예상가 +4~5% 상향 제시호가 (빠른 회전)" : "예상가 +3% 상향 제시호가"}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">상승가능성 점수</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">시장강도 점수</p>
           <p className={`mt-1 text-2xl font-black tabular-nums ${latestEstimate ? upsideScoreColor(latestEstimate.upsideScore) : "text-slate-950"}`}>{latestEstimate ? `${latestEstimate.upsideScore}점` : "-"}</p>
           {latestEstimate && (
             <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100">
@@ -577,7 +577,7 @@ export default function TargetDetailPage() {
               <div>
               <p className="font-bold text-emerald-800">가격 추정이 완료되었습니다.</p>
               <p className="mt-1 text-sm text-emerald-700">
-                예상 매매가 <strong>{formatEok(latestEstimate.expectedSaleMid)}</strong>
+                공식데이터 추정가 <strong>{formatEok(latestEstimate.expectedSaleMid)}</strong>
                 &nbsp;({formatEok(latestEstimate.expectedSaleMin)} ~ {formatEok(latestEstimate.expectedSaleMax)})
                 &nbsp;|&nbsp;신뢰도 {latestEstimate.confidenceScore}점
                 &nbsp;|&nbsp;<span className={conclusionColor[latestEstimate.conclusion]}>{conclusionLabel[latestEstimate.conclusion]}</span>
@@ -615,11 +615,11 @@ export default function TargetDetailPage() {
         <div className="mt-6 grid gap-5 lg:grid-cols-3">
           <div className="card p-5 lg:col-span-2">
             <h3 className="text-base font-black text-slate-800">실거래 · 호가 · 예상가 추이</h3>
-            <p className="mb-3 mt-0.5 text-xs text-slate-500">실거래(진한 점) · 현재 호가(회색 점) · 예상가 밴드(파란 음영)와 권장호가·방어선을 한눈에.</p>
+            <p className="mb-3 mt-0.5 text-xs text-slate-500">실거래(진한 점) · 수집된 시세·호가(회색 점) · 예상가 밴드(파란 음영)와 권장 등록가·방어선을 한눈에.</p>
             <PriceTimeline estimate={latestEstimate} transactions={[...targetTransactions, ...comparableTransactions]} listings={[...targetListings, ...comparableListings]} />
           </div>
           <div className="card p-5">
-            <h3 className="text-base font-black text-slate-800">상승가능성 · 신뢰도</h3>
+            <h3 className="text-base font-black text-slate-800">시장강도 · 신뢰도</h3>
             <p className="mb-3 mt-0.5 text-xs text-slate-500">점수대별 색과 신호별 적립 구성.</p>
             <UpsideGauge estimate={latestEstimate} />
           </div>
@@ -660,8 +660,8 @@ export default function TargetDetailPage() {
 
             {/* ── 예상가(매매) 앵커 ── */}
             <div className="mt-5 flex items-baseline justify-between">
-              <h3 className="text-base font-black text-slate-700">① 예상가 앵커 (가중평균 → 예상가)</h3>
-              <p className="text-sm font-bold text-slate-500">예상가 <span className="text-xl text-slate-900">{formatEok(latestEstimate.expectedSaleMid)}</span></p>
+              <h3 className="text-base font-black text-slate-700">① 공식데이터 추정가 앵커 (가중평균 → 추정가)</h3>
+              <p className="text-sm font-bold text-slate-500">추정가 <span className="text-xl text-slate-900">{formatEok(latestEstimate.expectedSaleMid)}</span></p>
             </div>
             <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
               <p className="mb-1 text-xs font-semibold text-slate-500">신호별 기여도 — 대상 실거래 앵커에서 각 신호가 예상가를 얼마나 올리고(파랑) 내렸는지(빨강)</p>
@@ -671,10 +671,10 @@ export default function TargetDetailPage() {
 
             {/* ── 상승가능성 점수 ── */}
             <div className="mt-6 flex items-baseline justify-between">
-              <h3 className="text-base font-black text-slate-700">② 상승가능성 점수 (원점수 합산)</h3>
+              <h3 className="text-base font-black text-slate-700">② 시장강도 점수 (원점수 합산)</h3>
               <p className="text-sm font-bold text-slate-500">합계 <span className="text-xl text-blue-700">{latestEstimate.upsideScore}</span>점 / 100</p>
             </div>
-            <ModelTable factors={latestEstimate.modelBreakdown.filter((f) => f.group === "upside")} resultHeader="점수" totalLabel="상승가능성 합계 (최대 100)" totalResult={`${latestEstimate.upsideScore}점`} />
+            <ModelTable factors={latestEstimate.modelBreakdown.filter((f) => f.group === "upside")} resultHeader="점수" totalLabel="시장강도 합계 (최대 100)" totalResult={`${latestEstimate.upsideScore}점`} />
 
             {leaderApartment && rule?.targetToLeaderRatio && (
               <p className="mt-3 rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">

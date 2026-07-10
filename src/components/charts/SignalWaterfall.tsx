@@ -20,8 +20,8 @@ import type { PriceEstimate } from "@/types/model";
 const PRICE_FIELDS: { label: string; key: keyof PriceEstimate }[] = [
   { label: "대상단지 실거래가", key: "targetSalePrice" },
   { label: "비교단지 보정 실거래가", key: "adjustedComparableSalePrice" },
-  { label: "비교단지 현재 호가", key: "comparableAskingPrice" },
-  { label: "대상단지 현재 호가", key: "saleAskingPrice" },
+  { label: "비교단지 수집된 시세·호가", key: "comparableAskingPrice" },
+  { label: "대상단지 수집된 시세·호가", key: "saleAskingPrice" },
   { label: "전세기반 하방가", key: "jeonseFloorPrice" },
   { label: "매물 소진 반영가", key: "inventorySignalPrice" },
   { label: "분양가 프리미엄", key: "presalePremiumPrice" },
@@ -90,7 +90,7 @@ export function SignalWaterfall({ estimate }: { estimate: PriceEstimate }) {
   }
 
   // 최종 예상가 막대
-  rows.push({ name: "예상 매매가", base: 0, value: eok(estimate.expectedSaleMid), delta: estimate.expectedSaleMid, isTotal: true });
+  rows.push({ name: "공식데이터 추정가", base: 0, value: eok(estimate.expectedSaleMid), delta: estimate.expectedSaleMid, isTotal: true });
 
   const maxY = Math.max(...rows.map((r) => r.base + r.value)) * 1.12;
 
