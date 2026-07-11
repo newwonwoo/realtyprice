@@ -22,6 +22,9 @@ export type MolitTransaction = {
   deposit?: string;    // 보증금
   monthlyRent?: string; // 월세금
   contractType?: string; // 계약구분
+  // 해제(취소) 신고 — cdealType="O"면 계약이 해제된 거래. 국토부 실거래 상세자료 응답 필드.
+  cdealType?: string;   // 해제여부
+  cdealDay?: string;    // 해제사유발생일
   transactionType: "sale" | "jeonse" | "monthly_rent";
 };
 
@@ -92,9 +95,11 @@ export async function GET(req: NextRequest) {
     }
 
     // 단지명 필터
-    const filtered = allTx.filter((tx) =>
+    const nameFiltered = allTx.filter((tx) =>
       String(tx.aptNm ?? "").replace(/\s/g, "").includes(aptName.replace(/\s/g, ""))
     );
+    // 해제(취소)거래 제외 — cdealType="O"면 계약이 나중에 해제된 거래라 가격 신호로 쓰면 안 됨
+    const filtered = nameFiltered.filter((tx) => tx.cdealType !== "O");
 
     return NextResponse.json({ items: filtered, total: filtered.length });
   } catch (err) {

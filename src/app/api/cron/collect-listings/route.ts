@@ -190,6 +190,7 @@ async function collectTransactions(apts: AptRow[], serviceKey: string, today: st
       const saleItems = await fetchMolitPage(SALE_API, baseParams);
       for (const x of saleItems) {
         if (!String(x.aptNm ?? "").replace(/\s/g, "").includes(aptName.replace(/\s/g, ""))) continue;
+        if (x.cdealType === "O") continue; // 해제(취소)된 거래 제외
         const price = Number(String(x.dealAmount ?? "").replace(/,/g, ""));
         const cd = `${x.dealYear}-${String(x.dealMonth).padStart(2, "0")}-${String(x.dealDay).padStart(2, "0")}`;
         const id = `tx_molit_${apt.id}_sale_${cd}_${x.floor}_${price}`;
@@ -201,6 +202,7 @@ async function collectTransactions(apts: AptRow[], serviceKey: string, today: st
       const rentItems = await fetchMolitPage(RENT_API, rentParams);
       for (const x of rentItems) {
         if (!String(x.aptNm ?? "").replace(/\s/g, "").includes(aptName.replace(/\s/g, ""))) continue;
+        if (x.cdealType === "O") continue; // 해제(취소)된 거래 제외
         const deposit = Number(String(x.deposit ?? "").replace(/,/g, ""));
         const rent = Number(String(x.monthlyRent ?? "0").replace(/,/g, ""));
         const cd = `${x.dealYear}-${String(x.dealMonth).padStart(2, "0")}-${String(x.dealDay).padStart(2, "0")}`;
