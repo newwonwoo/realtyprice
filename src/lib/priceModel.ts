@@ -4,6 +4,7 @@ import { formatEok } from "./format";
 import type { Transaction } from "@/types/transaction";
 import { normalizeToBGrade } from "./grade";
 import { median, getLowPriceListings } from "./inventory";
+import { calculateLiquidityScore, liquidityToUpsidePoints, liquidityToPriceMultiplier } from "./turnoverSignal";
 
 // 거래일 기준 시간감쇠 가중치 (Hedonic Pricing, Rosen 1974 + USPAP)
 // 시차(Time-Lag) 리서치 반영: 시장별 정보 동조화 속도가 다르므로 recency 곡선을 차등화.
@@ -235,6 +236,7 @@ export function estimatePrice(params: {
   supplyCliffMode?: boolean;
   supplyPressurePct?: number; // 현재 입주물량 공급압력 % (음수=하락압력, 양수=희소)
   monthsOfInventory?: number; // MOI(재고소진월수) = 활성매물 / 월판매속도. 0=계산불가
+  households?: number; // 대상단지 세대수 — 거래유동성(MOI 대체 신호) 계산용
 }) {
   const targetArea = params.targetArea > 0 ? params.targetArea : 84;
   // 지역 레짐에 맞춰 가격 앵커 가중치 재조정 (서울/경기 상승 동인 차이 반영)
@@ -330,15 +332,22 @@ export function estimatePrice(params: {
   // 상승점수(upsideScore)의 moiScore와 역할이 다름:
   //  - upsideScore.moiScore: 방향성 점수 (이산 임계값, stock÷flow 수급 타이트니스)
   //  - inventorySignalPriceEffect: 가격 앵커에 직접 곱하는 배율 → 예상가 자체를 조정
+  // 직방 비활성화 이후 활성매물수 자체가 없어 MOI를 못 구하는 경우가 흔해져,
+  // 그럴 때는 거래유동성 점수(국토부 실거래만으로 계산, liquidityScore)로 대체한다.
+  const liquidity = calculateLiquidityScore(params.targetSaleTransactions, params.households);
   const moiForPrice = params.monthsOfInventory ?? 0;
+  const usingLiquidityFallback = moiForPrice <= 0 && liquidity.hasData;
   const inventoryMultiplier =
-    moiForPrice <= 0 ? 1.00    // 계산불가(매물·실거래 부족) → 중립
-    : moiForPrice < 2 ? 1.05   // 극단 매도자우위
-    : moiForPrice < 3 ? 1.04   // 강한 매도자우위
-    : moiForPrice < 4.5 ? 1.02 // 매도자우위
-    : moiForPrice <= 6 ? 1.00  // 균형
-    : moiForPrice <= 9 ? 0.99  // 매수자우위
-    : 0.98;                    // 강한 매수자우위
+    moiForPrice > 0 ? (
+      moiForPrice < 2 ? 1.05   // 극단 매도자우위
+      : moiForPrice < 3 ? 1.04 // 강한 매도자우위
+      : moiForPrice < 4.5 ? 1.02 // 매도자우위
+      : moiForPrice <= 6 ? 1.00  // 균형
+      : moiForPrice <= 9 ? 0.99  // 매수자우위
+      : 0.98                     // 강한 매수자우위
+    )
+    : usingLiquidityFallback ? liquidityToPriceMultiplier(liquidity.liquidityScore)
+    : 1.00; // 매물·실거래 모두 부족 → 계산불가, 중립
   const lowPriceAbsorptionRate = params.lowPriceAbsorptionRate ?? 0;
   const priceAnchor = targetSalePrice || saleAskingPrice || adjustedComparableSalePrice || comparableAskingPrice || jeonseFloorPrice;
   const inventorySignalPriceEffect = priceAnchor * inventoryMultiplier;
@@ -478,13 +487,16 @@ export function estimatePrice(params: {
   // 기준: <2 극단매도자우위 / 4.5~6 균형 / >9 강한매수자우위 (NAR·FRED, 수도권 보정 전).
   const moi = params.monthsOfInventory ?? 0;
   const moiScore =
-    moi <= 0 ? 0                  // 계산불가(매물·실거래 부족) → 비활성
-    : moi < 2 ? 8
-    : moi < 3 ? 5
-    : moi < 4.5 ? 3
-    : moi <= 6 ? 0
-    : moi <= 9 ? -3
-    : -6;
+    moi > 0 ? (
+      moi < 2 ? 8
+      : moi < 3 ? 5
+      : moi < 4.5 ? 3
+      : moi <= 6 ? 0
+      : moi <= 9 ? -3
+      : -6
+    )
+    : usingLiquidityFallback ? liquidityToUpsidePoints(liquidity.liquidityScore)
+    : 0; // 매물·실거래 모두 부족 → 계산불가, 비활성
 
   // 전세가율 수요/공급 신호: 높을수록 수요 우위, 낮을수록 공급 여력 있음
   // 기준: ≥0.70 수요압력(+7), ≥0.60 보통(+3), ≥0.50 중립(0), <0.50 공급여력(-4)
@@ -549,7 +561,7 @@ export function estimatePrice(params: {
         priceFactor("비교단지 수집된 시세·호가", "가격 — 비교단지 매물 호가", comparableAskingPrice, weights.comparableAskingPrice ?? 0),
         priceFactor("대상단지 수집된 시세·호가", "가격 — 대상단지 매물 호가", saleAskingPrice, weights.askingPrice ?? 0),
         priceFactor("전세기반 하방가", "가격 — 전세 실거래가(보증금) ÷ 전세가율", jeonseFloorPrice, weights.jeonseFloorPrice ?? 0),
-        priceFactor("매물 회전속도 반영가", "매물 회전 — MOI(활성매물 ÷ 월판매속도)", inventorySignalPriceEffect, weights.inventorySignal ?? 0),
+        priceFactor("매물 회전속도 반영가", usingLiquidityFallback ? "매물 회전 — 거래유동성(국토부 실거래 빈도, 매물 미확보 대체)" : "매물 회전 — MOI(활성매물 ÷ 월판매속도)", inventorySignalPriceEffect, weights.inventorySignal ?? 0),
         priceFactor("분양가 프리미엄", "가격 — 분양가 대비 실거래 시세비율", presalePremiumPrice, weights.presalePremium ?? 0),
         priceFactor("대장아파트 앵커", "가격 — 대장 실거래 환산가 × 비율", leaderApartmentAnchorPrice, leaderApartmentAnchorPrice > 0 ? (weights.leaderApartmentAnchor ?? 0) : 0),
         priceFactor("대상 입지 보정", "입지 점수 — 역세권·학군 등", locationPremiumPrice, locationPremiumPrice > 0 ? (weights.locationPremium ?? 0) : 0),
@@ -557,7 +569,9 @@ export function estimatePrice(params: {
         // ── 상승가능성 점수 ──
         { group: "upside", label: "기저값", source: "— (중립 출발점)", rawValue: "—", weight: `+${UPSIDE_BASE}`, result: `${UPSIDE_BASE}점`, active: true },
         { group: "upside", label: "거래 속도", source: "거래량 — 매매 실거래 계약 건수·계약일 (대장1.8>대상1.2>비교≤1.0 가중)", rawValue: `${accelStr} · 2주 ${raw14}건/1개월 ${raw30}건/3개월 ${raw90}건`, weight: "최대 +20", result: `${volumeMomentumScore >= 0 ? "+" : ""}${volumeMomentumScore}점`, active: volumeMomentumScore !== 0 },
-        { group: "upside", label: "MOI 수급 타이트니스", source: "매물 수급 — 활성매물 ÷ 월판매속도 (재고소진월수)", rawValue: moi > 0 ? `${Math.round(moi * 10) / 10}개월 (<2 극단매도자우위·>9 강한매수자우위)` : "매물·실거래 부족", weight: "-6~+8", result: `${moiScore >= 0 ? "+" : ""}${moiScore}점`, active: moiScore !== 0 },
+        moi > 0
+          ? { group: "upside", label: "MOI 수급 타이트니스", source: "매물 수급 — 활성매물 ÷ 월판매속도 (재고소진월수)", rawValue: `${Math.round(moi * 10) / 10}개월 (<2 극단매도자우위·>9 강한매수자우위)`, weight: "-6~+8", result: `${moiScore >= 0 ? "+" : ""}${moiScore}점`, active: moiScore !== 0 }
+          : { group: "upside", label: "거래유동성", source: "거래량 — 국토부 실거래 회전율·최근성·간격 (매물 미확보 시 MOI 대체)", rawValue: usingLiquidityFallback ? `유동성점수 ${liquidity.liquidityScore}점 (세대당회전 ${liquidity.turnover6mPer1000}‰, 최근거래 ${liquidity.daysSinceLastTrade}일 전)` : "실거래 부족", weight: "-6~+8", result: `${moiScore >= 0 ? "+" : ""}${moiScore}점`, active: moiScore !== 0 },
         { group: "upside", label: "전세 수요/공급", source: "가격 — 전세 실거래가 ÷ 매매 실거래가(전세가율)", rawValue: `전세가율 ${Math.round(jeonseRatio * 100)}%`, weight: "-4~+7", result: `${jeonseSupplyDemandScore >= 0 ? "+" : ""}${jeonseSupplyDemandScore}점`, active: true },
         { group: "upside", label: "대장 앵커 상방압력", source: "가격 — 대장 환산가 vs 비교단지 시세", rawValue: leaderApartmentAnchorPrice > 0 ? (leaderBoost > 0 ? "대장 > 비교 시세" : "대장 ≤ 비교 시세") : "대장 미설정", weight: "0/+6", result: `+${leaderBoost}점`, active: leaderBoost > 0 },
         { group: "upside", label: "비교단지 상·하급지 압력", source: "등급(가격대) — 비교단지 등급차 → 압력률", rawValue: `${Math.round(comparableMarketPressureRate * 100)}%`, weight: "-3~+6", result: `${comparablePressureScore >= 0 ? "+" : ""}${comparablePressureScore}점`, active: comparablePressureScore !== 0 },
@@ -585,6 +599,7 @@ export function estimatePrice(params: {
     saleAskingPrice > 0 ? "수집된 시세·호가를 반영했습니다." : null,
     jeonseFloorPrice > 0 ? `전세기반 하방가를 반영했습니다. (전세가율 ${Math.round(jeonseRatio * 100)}% ${jeonseRatio !== 0.65 ? "실측" : "기본값"})` : null,
     moiForPrice > 0 && moiForPrice < 3 ? `매물 회전속도가 빠릅니다 (MOI ${moiForPrice}개월 — 매도자우위).` : null,
+    usingLiquidityFallback ? `매물 데이터가 없어 거래유동성(국토부 실거래 빈도, ${liquidity.liquidityScore}점)으로 수급을 대체 추정했습니다.` : null,
     leaderApartmentAnchorPrice > 0 ? "인근 대장아파트 실거래가 앵커를 반영했습니다." : null,
     locationPremiumPrice > 0 && locationPremiumRate !== 0 ? `대상 자체 입지 보정률 ${Math.round(locationPremiumRate * 100)}%를 반영했습니다.` : null,
     comparableMarketPressurePrice > 0 && comparableMarketPressureRate !== 0 ? `비교단지 상·하급지 압력 ${Math.round(comparableMarketPressureRate * 100)}%를 반영했습니다.` : null,
