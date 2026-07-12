@@ -8,6 +8,7 @@ import { useRealtyStore } from "@/lib/clientStore";
 import { formatEok } from "@/lib/format";
 import { generateSearchCandidates } from "@/lib/aptNameSearch";
 import { NaverLinksPanel } from "./NaverLinksPanel";
+import { ListingPastePanel } from "./ListingPastePanel";
 
 export type ApartmentRole = "target" | "leader" | "comparable";
 
@@ -968,6 +969,7 @@ export function ListingFetcher({ apartments }: Props) {
       </details>
 
       <NaverLinksPanel apartments={apartments} />
+      <ListingPastePanel apartments={apartments} />
     </div>
   );
 }
