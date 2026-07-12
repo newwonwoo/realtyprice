@@ -7,6 +7,7 @@ import { normalizeToBGrade } from "@/lib/grade";
 import { useRealtyStore } from "@/lib/clientStore";
 import { formatEok } from "@/lib/format";
 import { generateSearchCandidates } from "@/lib/aptNameSearch";
+import { NaverLinksPanel } from "./NaverLinksPanel";
 
 export type ApartmentRole = "target" | "leader" | "comparable";
 
@@ -965,6 +966,8 @@ export function ListingFetcher({ apartments }: Props) {
           </div>
         </div>
       </details>
+
+      <NaverLinksPanel apartments={apartments} />
     </div>
   );
 }
