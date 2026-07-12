@@ -308,7 +308,6 @@ export default function TargetDetailPage() {
       regionProfile: regionProfileFromAddress(apartment?.address),
       supplyCliffMode,
       supplyPressurePct: supplyVolume?.priceImpactPct,
-      households: apartment?.households,
     });
     store.setPriceEstimates([result, ...store.priceEstimates.filter((item) => item.targetApartmentId !== id)]);
     setEstimating(false);
