@@ -333,7 +333,7 @@ export default function TargetDetailPage() {
           <p className="mt-2 text-slate-600">{apartment.address}</p>
         </div>
         <div className="flex flex-col gap-3 items-start sm:items-end">
-          <ExternalLinks apartmentName={apartment.name} />
+          <ExternalLinks apartmentName={apartment.name} address={apartment.address ?? apartment.region} />
           {/* 입주예정년월 빠른 편집 */}
           {editingMoveIn ? (
             <form
